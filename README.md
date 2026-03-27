@@ -1,7 +1,65 @@
-# Tauri + Vue + TypeScript
+# AGENT LOBBY
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+A real-time chat application in a cyberpunk hacker aesthetic.
 
-## Recommended IDE Setup
+## Features
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **Real-time Chat**: Anonymous messaging via MQTT broker with encrypted topics
+- **Audio Cues**: Optional notification sounds for incoming messages
+- **Terminal Aesthetic**: Neon-green glitch UI styled like classic hacker terminals
+- **User Presence**: See active operatives
+- **Cross-platform**: Desktop app built with Tauri (Windows, macOS, Linux)
+
+## Architecture
+
+**Frontend**: Vue 3 + TypeScript + Vite
+**Desktop Runtime**: Tauri
+**Real-time Protocol**: MQTT over WebSocket (default: broker.emqx.io)
+
+### Key Components
+
+- `src/App.vue` - Main app shell with routing and state management
+- `src/components/AuthScreen.vue` - Login with username and lobby selection
+- `src/components/ChatArea.vue` - Message display and rendering
+- `src/components/Sidebar.vue` - Active users and lobby controls
+- `src/composables/useLobbyChat.ts` - MQTT logic, message handling, presence tracking
+
+## Getting Started
+
+### Prerequisites
+- Node.js 16+
+- Rust toolchain
+- Tauri CLI
+
+### Installation
+
+```bash
+npm install
+npm run tauri dev
+```
+
+### Build
+
+```bash
+npm run tauri build
+```
+
+## Configuration
+
+If you want to go someplace special before you connect, remember the Praetorians and Mozart's Ghost.
+
+Settings persist in localStorage.
+
+## Usage
+
+1. Enter a username
+2. Start chatting with other operatives in real-time
+3. Toggle audio notifications in settings
+
+## Styling
+
+The application uses a consistent cyberpunk aesthetic:
+- **Primary Colors**: Neon green (`--neon-green`) on dark backgrounds
+- **Typography**: Monospace, uppercase labels, letter-spaced for terminal feel
+- **Glow Effects**: Neon box-shadow effects on interactive elements
+- **Animations**: Glitch and fade effects for immersion

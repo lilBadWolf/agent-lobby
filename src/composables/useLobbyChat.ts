@@ -1,0 +1,269 @@
+import { ref, computed } from 'vue';
+import mqtt from 'mqtt';
+
+export interface ChatMessage {
+  user: string;
+  message: string;
+  isSystem?: boolean;
+}
+
+export interface NetworkConfig {
+  mqttServer: string;
+  defaultLobby: string;
+}
+
+export function useLobbyChat() {
+  // Config defaults
+  const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
+  const DEFAULT_LOBBY = `spy_terminal`;
+  const sysMsg = `NETWORK LINK STABLE. ENCRYPTION ACTIVE.`;
+  const partMsg = `'s SIGNAL TERMINATED`;
+  const joinMsg = ` IS RECEIVING`;
+
+  // Network config state
+  const networkConfig = ref<NetworkConfig>({
+    mqttServer: DEFAULT_MQTT_SERVER,
+    defaultLobby: DEFAULT_LOBBY
+  });
+
+  // State
+  let client: mqtt.MqttClient | null = null;
+  const username = ref<string>('');
+  const roomId = ref<string>(networkConfig.value.defaultLobby);
+  const messages = ref<ChatMessage[]>([]);
+  const users = ref<Set<string>>(new Set());
+  const isConnected = ref(false);
+  const authError = ref(false);
+
+  let CHAT_TOPIC = '';
+  let PRESENCE_TOPIC = '';
+
+  const config = ref({
+    audioEnabled: true,
+    volume: 0.5
+  });
+
+  const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
+
+  // Initialize audio
+  function initAudio() {
+    audio.value.numberStation = new Audio('/sounds/signal-station.mp3');
+    (audio.value.numberStation as HTMLAudioElement).loop = true;
+    audio.value.wombatStation = new Audio('/sounds/number-station-wombat.mp3');
+    (audio.value.wombatStation as HTMLAudioElement).loop = true;
+    audio.value.alerts = {
+      startup: new Audio('/sounds/startup-sound.mp3'),
+      system: new Audio('/sounds/system-sound.mp3'),
+      join: new Audio('/sounds/join-sound.mp3'),
+      part: new Audio('/sounds/part-sound.mp3'),
+      message: new Audio('/sounds/message-sound.mp3'),
+      shutdown: new Audio('/sounds/shutdown-sound.mp3')
+    };
+    applyAudioSettings();
+  }
+
+  // Apply audio settings
+  function applyAudioSettings() {
+    const vol = config.value.audioEnabled ? config.value.volume : 0;
+    const numberStation = audio.value.numberStation as HTMLAudioElement;
+    const wombatStation = audio.value.wombatStation as HTMLAudioElement;
+    if (numberStation) numberStation.volume = vol;
+    if (wombatStation) wombatStation.volume = vol;
+    if (audio.value.alerts) {
+      Object.values(audio.value.alerts).forEach((s: any) => {
+        if (s && s.volume !== undefined) s.volume = vol;
+      });
+    }
+  }
+
+  // Update settings
+  function updateSettings() {
+    localStorage.setItem('agent_settings', JSON.stringify(config.value));
+    applyAudioSettings();
+  }
+
+  // Play alert sound
+  function playAlert(type: string) {
+    if (config.value.audioEnabled && audio.value.alerts && (audio.value.alerts as any)[type]) {
+      const alert = (audio.value.alerts as any)[type];
+      alert.currentTime = 0;
+      alert.play().catch(() => {});
+    }
+  }
+
+  // Scrub HTML
+  function scrub(html: string): string {
+    const tmp = document.createElement('DIV');
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || '';
+  }
+
+  // Get user color
+  function getUserColor(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return `hsl(${Math.abs(hash % 360)}, 80%, 60%)`;
+  }
+
+  // Boot connection
+  function boot(handle: string, customRoomId?: string) {
+    if (!handle) return;
+
+    if (users.value.has(handle)) {
+      authError.value = true;
+      return;
+    }
+
+    username.value = handle;
+    authError.value = false;
+
+    if (customRoomId) {
+      roomId.value = customRoomId.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    }
+
+    CHAT_TOPIC = `${roomId.value}_lobby/chat_global`;
+    PRESENCE_TOPIC = `${roomId.value}_lobby/presence/`;
+
+    const options = {
+      will: { topic: PRESENCE_TOPIC + username.value, payload: '', retain: true, qos: 1 as const }
+    };
+
+    client = mqtt.connect(networkConfig.value.mqttServer, options);
+
+    client.on('connect', () => {
+      const numberStation = audio.value.numberStation as HTMLAudioElement;
+      if (numberStation) {
+        numberStation.pause();
+        numberStation.currentTime = 0;
+      }
+      isConnected.value = true;
+      playAlert('startup');
+      addMessage('SYSTEM', sysMsg, true);
+      client!.subscribe(CHAT_TOPIC);
+      client!.subscribe(PRESENCE_TOPIC + '#');
+      client!.publish(PRESENCE_TOPIC + username.value, username.value, { retain: true });
+    });
+
+    client.on('message', (topic, payload) => {
+      const raw = payload.toString();
+      if (topic.startsWith(PRESENCE_TOPIC)) {
+        const user = topic.split('/').pop()?.toUpperCase() || '';
+        if (raw === '') {
+          if (users.value.has(user)) {
+            playAlert('part');
+            addMessage('SYSTEM', `${user}${partMsg}`, true);
+            users.value.delete(user);
+          }
+        } else {
+          if (!users.value.has(user)) {
+            playAlert('join');
+            addMessage('SYSTEM', `${user}${joinMsg}`, true);
+            users.value.add(user);
+          }
+        }
+        return;
+      }
+      if (topic === CHAT_TOPIC) {
+        const data = JSON.parse(raw);
+        if (data.u !== username.value) playAlert('message');
+        addMessage(data.u, data.m);
+      }
+    });
+  }
+
+  // Add message
+  function addMessage(user: string, message: string, isSystem = false) {
+    messages.value.push({ user, message, isSystem });
+  }
+
+  // Send message
+  function sendMessage(msg: string) {
+    if (!msg || !client || !isConnected.value) return;
+    const cleanMsg = scrub(msg);
+    client.publish(CHAT_TOPIC, JSON.stringify({ u: username.value, m: cleanMsg }));
+  }
+
+  // Disconnect
+  function disconnect() {
+    if (client && isConnected.value) {
+      client.publish(PRESENCE_TOPIC + username.value, '', { retain: true });
+      client.end();
+    }
+    isConnected.value = false;
+    playAlert('shutdown');
+    resetUI();
+  }
+
+  // Reset UI
+  function resetUI() {
+    username.value = '';
+    messages.value = [];
+    users.value.clear();
+    client = null;
+  }
+
+  // Load network config
+  function loadNetworkConfig() {
+    const saved = localStorage.getItem('agent_network_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        networkConfig.value = {
+          mqttServer: parsed.mqttServer || DEFAULT_MQTT_SERVER,
+          defaultLobby: parsed.defaultLobby || DEFAULT_LOBBY
+        };
+        roomId.value = networkConfig.value.defaultLobby;
+      } catch {
+        // Invalid JSON, use defaults
+      }
+    }
+  }
+
+  // Save network config
+  function setNetworkConfig(config: NetworkConfig) {
+    networkConfig.value = config;
+    roomId.value = config.defaultLobby;
+    localStorage.setItem('agent_network_config', JSON.stringify(config));
+  }
+
+  // Load settings
+  function loadSettings() {
+    const saved = localStorage.getItem('agent_settings');
+    if (saved) {
+      config.value = JSON.parse(saved);
+    }
+  }
+
+  // Try play ambience
+  function tryPlayAmbience() {
+    const numberStation = audio.value.numberStation as HTMLAudioElement;
+    if (config.value.audioEnabled && numberStation) {
+      numberStation.play().catch(() => {});
+    }
+  }
+
+  // Initialize on load
+  loadNetworkConfig();
+  loadSettings();
+  initAudio();
+
+  return {
+    username: computed(() => username.value),
+    messages: computed(() => messages.value),
+    users: computed(() => users.value),
+    isConnected: computed(() => isConnected.value),
+    authError: computed(() => authError.value),
+    config,
+    networkConfig: computed(() => networkConfig.value),
+    getUserColor,
+    boot,
+    sendMessage,
+    disconnect,
+    updateSettings,
+    tryPlayAmbience,
+    playAlert,
+    setNetworkConfig
+  };
+}

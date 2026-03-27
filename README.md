@@ -2,6 +2,8 @@
 
 A real-time chat application in a cyberpunk hacker aesthetic.
 
+<img width="801" height="637" alt="{63672AC0-A029-428B-A49B-EFF2AEC59EF5}" src="https://github.com/user-attachments/assets/7e99e8ff-c17b-45e0-8982-10ff443f7cf1" />
+
 ## Features
 
 - **Real-time Chat**: Anonymous messaging via MQTT broker with encrypted topics

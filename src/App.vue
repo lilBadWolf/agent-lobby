@@ -122,6 +122,7 @@ function handleAmbience() {
 @import './styles/global.css';
 .custom-titlebar {
   width: 100%;
+  height: 16px;
   background: #222;
   display: flex;
   justify-content: center;
@@ -129,6 +130,7 @@ function handleAmbience() {
   user-select: none; /* Prevents text selection while dragging */
   z-index: 1000;
   position: relative;
+  flex-shrink: 0;
 }
 
 .maximize-btn {

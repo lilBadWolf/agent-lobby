@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { THEMES } from '../themes';
 
 export function useTheme() {
@@ -23,17 +23,19 @@ export function useTheme() {
     localStorage.setItem('agent_theme', themeName);
   }
 
-  function getUserColor(str: string): string {
-    const theme = THEMES[currentTheme.value as keyof typeof THEMES];
-    if (!theme) return '#39ff14';
+  const getUserColor = computed(() => {
+    return (str: string): string => {
+      const theme = THEMES[currentTheme.value as keyof typeof THEMES];
+      if (!theme) return '#39ff14';
 
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const colorIndex = Math.abs(hash) % theme.userColors.length;
-    return theme.userColors[colorIndex];
-  }
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const colorIndex = Math.abs(hash) % theme.userColors.length;
+      return theme.userColors[colorIndex];
+    };
+  });
 
   watch(currentTheme, (newTheme) => {
     applyTheme(newTheme);

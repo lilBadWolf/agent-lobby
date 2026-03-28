@@ -18,6 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   update: [config: AudioConfig];
   close: [];
+  clearLog: [];
 }>();
 
 const localConfig = ref<AudioConfig>({ ...props.config });
@@ -46,6 +47,10 @@ function handleClose() {
 
 function handleChange() {
   emit('update', { ...localConfig.value });
+}
+
+function handleClearLog() {
+  emit('clearLog');
 }
 </script>
 
@@ -98,6 +103,7 @@ function handleChange() {
           </option>
         </select>
       </div>
+      <button class="clear-btn" @click="handleClearLog">CLEAR LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
     </div>
   </div>
@@ -154,6 +160,28 @@ select {
 select option {
   background: var(--dark-bg);
   color: var(--neon-green);
+}
+
+.clear-btn {
+  width: 100%;
+  padding: 12px;
+  background: transparent;
+  border: 2px solid #ff6b6b;
+  color: #ff6b6b;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.clear-btn:hover {
+  background: #ff6b6b;
+  color: #000;
+  box-shadow: 0 0 15px #ff6b6b;
 }
 
 .close-btn {

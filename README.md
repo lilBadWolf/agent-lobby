@@ -7,61 +7,35 @@ A real-time chat application in a cyberpunk hacker aesthetic.
 ## Features
 
 - **Real-time Chat**: Anonymous messaging via MQTT broker with encrypted topics
-- **Audio Cues**: Optional notification sounds for incoming messages
+- **Audio Cues**: Optional notification sounds for incoming messages (customizable soundpacks)
 - **Terminal Aesthetic**: Neon-green glitch UI styled like classic hacker terminals
+- **Themes**: Multiple color themes to customize your experience
 - **User Presence**: See active operatives
 - **Cross-platform**: Desktop app built with Tauri (Windows, macOS, Linux)
 
-## Architecture
+## Quick Start
 
-**Frontend**: Vue 3 + TypeScript + Vite
-**Desktop Runtime**: Tauri
-**Real-time Protocol**: MQTT over WebSocket (default: broker.emqx.io)
+### Usage
 
-### Key Components
+1. **Enter a username** - Choose your operative handle
+2. **Click Initialize Link** - Connect to a room
+3. **Start chatting** - Real-time messages with other operatives in the lobby
+4. **Customize** - Open settings (⚙) to:
+   - Toggle audio notifications
+   - Adjust volume
+   - Choose a soundpack
+   - Switch themes
 
-- `src/App.vue` - Main app shell with routing and state management
-- `src/components/AuthScreen.vue` - Login with username and lobby selection
-- `src/components/ChatArea.vue` - Message display and rendering
-- `src/components/Sidebar.vue` - Active users and lobby controls
-- `src/composables/useLobbyChat.ts` - MQTT logic, message handling, presence tracking
+## Customization
 
-## Getting Started
+### Themes
 
-### Prerequisites
-- Node.js 16+
-- Rust toolchain
-- Tauri CLI
+Agent Lobby supports multiple color themes. Switch themes in the settings modal. Want to create your own? See [CONTRIBUTING.md](CONTRIBUTING.md#creating-themes).
 
-### Installation
+### Soundpacks
 
-```bash
-npm install
-npm run tauri dev
-```
+Customize notification sounds with different soundpacks. Available packs can be selected in settings. Creating a new soundpack? Check [CONTRIBUTING.md](CONTRIBUTING.md#creating-soundpacks).
 
-### Build
+---
 
-```bash
-npm run tauri build
-```
-
-## Configuration
-
-If you want to go someplace special before you connect, remember the Praetorians and Mozart's Ghost.
-
-Settings persist in localStorage.
-
-## Usage
-
-1. Enter a username
-2. Start chatting with other operatives in real-time
-3. Toggle audio notifications in settings
-
-## Styling
-
-The application uses a consistent cyberpunk aesthetic:
-- **Primary Colors**: Neon green (`--neon-green`) on dark backgrounds
-- **Typography**: Monospace, uppercase labels, letter-spaced for terminal feel
-- **Glow Effects**: Neon box-shadow effects on interactive elements
-- **Animations**: Glitch and fade effects for immersion
+For developers interested in contributing, building new features, or customizing themes/soundpacks, see [CONTRIBUTING.md](CONTRIBUTING.md).

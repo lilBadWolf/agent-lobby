@@ -179,6 +179,11 @@ export function useLobbyChat() {
     messages.value.push({ user, message, isSystem });
   }
 
+  // Clear messages
+  function clearMessages() {
+    messages.value = [];
+  }
+
   // Send message
   function sendMessage(msg: string) {
     if (!msg || !client || !isConnected.value) return;
@@ -293,6 +298,7 @@ export function useLobbyChat() {
     tryPlayAmbience,
     playAlert,
     setNetworkConfig,
-    setSoundpack
+    setSoundpack,
+    clearMessages
   };
 }

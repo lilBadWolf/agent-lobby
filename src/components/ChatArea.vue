@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import type { ChatMessage } from '../composables/useLobbyChat';
 import { useTheme } from '../composables/useTheme';
+import { useImageDetection } from '../composables/useImageDetection';
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -14,10 +15,23 @@ const emit = defineEmits<{
 }>();
 
 const { getUserColor } = useTheme();
+const { extractImageUris, initializeImage, markImageLoaded, markImageError, getImageState } = useImageDetection();
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
 const TYPING_SPEED = 30; // ms per character
+
+// Process images when messages change
+watch(
+  () => props.messages.length,
+  () => {
+    props.messages.forEach((msg) => {
+      const imageUris = extractImageUris(msg.message);
+      imageUris.forEach(uri => initializeImage(uri));
+    });
+  },
+  { immediate: true }
+);
 
 watch(
   () => props.messages.length,
@@ -54,8 +68,25 @@ function getDisplayedText(messageIndex: number): string {
   const message = props.messages[messageIndex];
   if (!message) return '';
 
-  const progress = typingProgress.value[messageIndex] ?? message.message.length;
-  return message.message.substring(0, progress);
+  let text = message.message;
+
+  // Remove successfully loaded image URIs from display text
+  const imageUris = extractImageUris(message.message);
+  imageUris.forEach(uri => {
+    const imageState = getImageState(uri);
+    if (imageState?.loaded && !imageState.error) {
+      text = text.replace(uri, '').trim();
+    }
+  });
+
+  const progress = typingProgress.value[messageIndex] ?? text.length;
+  return text.substring(0, progress);
+}
+
+function getMessageImages(messageIndex: number): string[] {
+  const message = props.messages[messageIndex];
+  if (!message) return [];
+  return extractImageUris(message.message);
 }
 
 function isTyping(messageIndex: number): boolean {
@@ -64,6 +95,14 @@ function isTyping(messageIndex: number): boolean {
 
   const progress = typingProgress.value[messageIndex];
   return progress !== undefined && progress < message.message.length;
+}
+
+function handleImageLoad(uri: string) {
+  markImageLoaded(uri);
+}
+
+function handleImageError(uri: string) {
+  markImageError(uri);
 }
 
 function sendMessage() {
@@ -89,6 +128,18 @@ function sendMessage() {
           >
             {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
           </span>
+          <div v-if="getMessageImages(index).length > 0" class="message-images">
+            <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
+              <img
+                :src="imageUri"
+                :alt="imageUri"
+                @load="handleImageLoad(imageUri)"
+                @error="handleImageError(imageUri)"
+                class="embedded-image"
+              />
+              <span v-if="getImageState(imageUri)?.error" class="image-fallback">{{ imageUri }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -198,6 +249,44 @@ function sendMessage() {
   margin-left: 2px;
   vertical-align: text-bottom;
   font-size: 0.8em;
+}
+
+.message-images {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.image-container {
+  position: relative;
+  max-width: 300px;
+}
+
+.embedded-image {
+  max-width: 100%;
+  max-height: 300px;
+  border: 1px solid var(--dim-green);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.embedded-image:hover {
+  opacity: 0.8;
+}
+
+.image-fallback {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--system-dim);
+  font-size: 12px;
+  font-family: monospace;
+  word-break: break-all;
+  padding: 4px;
+  border: 1px dashed var(--dim-green);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 @keyframes blink {

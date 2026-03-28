@@ -9,10 +9,9 @@ import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 
-const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack } = useLobbyChat();
+const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
-const title = computed(() => !isConnected.value ? 'LOBBY // AUTH' : 'LOBBY // LISTENING');
 const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
 const showNetworkConfig = ref(false);
@@ -71,7 +70,7 @@ function handleAmbience() {
 
 <template>
   <div data-tauri-drag-region class="custom-titlebar">
-    {{ title }}
+    {{ pageTitle }}
     <button class="maximize-btn" @click="toggleMaximize" :title="isMaximized ? 'Restore' : 'Maximize'">
       {{ isMaximized ? '◻' : '◻' }}
     </button>
@@ -99,6 +98,7 @@ function handleAmbience() {
           updateSettings();
         }
       "
+      @clear-log="clearMessages"
       @close="toggleSettings"
     />
 

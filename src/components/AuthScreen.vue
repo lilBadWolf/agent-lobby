@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import SinewaveBackground from './SinewaveBackground.vue';
 
 defineProps<{
   showAuth: boolean;
@@ -28,12 +30,17 @@ function handleInputClick() {
 function handleConfigClick() {
   emit('config-clicked');
 }
+const quit = async () => {
+  const window = getCurrentWindow();
+  await window.close();
+}
 </script>
 
 <template>
   <div v-if="showAuth" id="auth-screen">
+    <SinewaveBackground />
     <div class="login-box">
-      <button class="config-btn" @click="handleConfigClick" title="Network Configuration">π</button>
+      <button class="config-btn" @click="handleConfigClick">π</button>
       <h2 class="glitch-text">AGENT LOBBY</h2>
       <div class="input-group">
         <span class="prompt-char">&gt;</span>
@@ -50,6 +57,7 @@ function handleConfigClick() {
       </div>
       <p v-if="authError" id="auth-err">ERROR: HANDLE_ALREADY_EXISTS</p>
       <button id="login-btn" @click="handleLogin">INITIALIZE LINK</button>
+      <button id="quit-btn" @click="quit">QUIT</button>
     </div>
   </div>
 </template>
@@ -58,7 +66,7 @@ function handleConfigClick() {
 #auth-screen {
   position: absolute;
   inset: 0;
-  background: var(--dark-bg);
+  background: transparent;
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -81,7 +89,7 @@ function handleConfigClick() {
   position: absolute;
   top: -10px;
   left: 10px;
-  background: var(--dark-bg);
+  background: #020a02;
   padding: 0 5px;
   font-size: 10px;
   color: var(--neon-green);
@@ -92,7 +100,7 @@ function handleConfigClick() {
   position: absolute;
   bottom: -10px;
   right: 10px;
-  background: var(--dark-bg);
+  background: #020a02;
   padding: 0 5px;
   font-size: 10px;
   color: var(--neon-green);
@@ -154,6 +162,28 @@ function handleConfigClick() {
   box-shadow: 0 0 15px var(--neon-green);
 }
 
+#quit-btn {
+  width: 100%;
+  padding: 15px;
+  margin-top: 10px;
+  background: transparent;
+  border: 2px solid var(--alert-red);
+  color: var(--alert-red);
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+#quit-btn:hover {
+  background: var(--alert-red);
+  color: #000;
+  box-shadow: 0 0 15px var(--alert-red);
+}
+
 #auth-err {
   color: var(--alert-red);
   font-size: 10px;
@@ -179,7 +209,6 @@ function handleConfigClick() {
   border: none;
   color: var(--neon-green);
   font-size: 8px;
-  cursor: pointer;
   opacity: 0.3;
   transition: all 0.2s;
   padding: 0;

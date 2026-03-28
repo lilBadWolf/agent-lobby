@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "AGENT // LOBBY",
-        "decorations": true,
+        "decorations": false,
         "transparent": true,
         "width": 800,
         "height": 600

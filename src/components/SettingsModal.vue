@@ -4,11 +4,15 @@ import { ref, watch } from 'vue';
 export interface AudioConfig {
   audioEnabled: boolean;
   volume: number;
+  soundpack: string;
+  theme: string;
 }
 
 const props = defineProps<{
   showModal: boolean;
   config: AudioConfig;
+  availableSoundpacks: string[];
+  availableThemes: string[];
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +27,17 @@ watch(
   (newConfig) => {
     localConfig.value = { ...newConfig };
   }
+);
+
+watch(
+  () => props.availableSoundpacks,
+  (newPacks) => {
+    // Ensure the selected soundpack is in the available list
+    if (newPacks.length > 0 && !newPacks.includes(localConfig.value.soundpack)) {
+      localConfig.value.soundpack = newPacks[0];
+    }
+  },
+  { immediate: true }
 );
 
 function handleClose() {
@@ -59,6 +74,30 @@ function handleChange() {
           @change="handleChange"
         />
       </div>
+      <div class="setting-row">
+        <label>SOUNDPACK</label>
+        <select
+          v-model="localConfig.soundpack"
+          id="set-soundpack"
+          @change="handleChange"
+        >
+          <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
+            {{ pack }}
+          </option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>THEME</label>
+        <select
+          v-model="localConfig.theme"
+          id="set-theme"
+          @change="handleChange"
+        >
+          <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
+            {{ themeName }}
+          </option>
+        </select>
+      </div>
       <button class="close-btn" @click="handleClose">CLOSE</button>
     </div>
   </div>
@@ -88,6 +127,7 @@ function handleChange() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
 }
 
 input[type='range'] {
@@ -99,6 +139,21 @@ input[type='checkbox'] {
   cursor: pointer;
   width: 20px;
   height: 20px;
+}
+
+select {
+  background: var(--dark-bg);
+  color: var(--neon-green);
+  border: 1px solid var(--neon-green);
+  padding: 5px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+select option {
+  background: var(--dark-bg);
+  color: var(--neon-green);
 }
 
 .close-btn {

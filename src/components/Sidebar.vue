@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useTheme } from '../composables/useTheme';
+
 const props = defineProps<{
   users: Set<string>;
 }>();
@@ -7,17 +10,8 @@ const emit = defineEmits<{
   disconnect: [];
 }>();
 
-function getUserColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return `hsl(${Math.abs(hash % 360)}, 80%, 60%)`;
-}
-
+const { getUserColor } = useTheme();
 const userList = computed(() => Array.from(props.users));
-
-import { computed } from 'vue';
 </script>
 
 <template>

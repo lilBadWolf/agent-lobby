@@ -40,24 +40,25 @@ export function useLobbyChat() {
 
   const config = ref({
     audioEnabled: true,
-    volume: 0.5
+    volume: 0.5,
+    soundpack: 'default',
+    theme: 'retro-terminal'
   });
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
 
   // Initialize audio
   function initAudio() {
-    audio.value.numberStation = new Audio('/sounds/signal-station.mp3');
+    const soundpack = config.value.soundpack;
+    audio.value.numberStation = new Audio(`/sounds/${soundpack}/signal-station.mp3`);
     (audio.value.numberStation as HTMLAudioElement).loop = true;
-    audio.value.wombatStation = new Audio('/sounds/number-station-wombat.mp3');
-    (audio.value.wombatStation as HTMLAudioElement).loop = true;
     audio.value.alerts = {
-      startup: new Audio('/sounds/startup-sound.mp3'),
-      system: new Audio('/sounds/system-sound.mp3'),
-      join: new Audio('/sounds/join-sound.mp3'),
-      part: new Audio('/sounds/part-sound.mp3'),
-      message: new Audio('/sounds/message-sound.mp3'),
-      shutdown: new Audio('/sounds/shutdown-sound.mp3')
+      startup: new Audio(`/sounds/${soundpack}/startup-sound.mp3`),
+      system: new Audio(`/sounds/${soundpack}/system-sound.mp3`),
+      join: new Audio(`/sounds/${soundpack}/join-sound.mp3`),
+      part: new Audio(`/sounds/${soundpack}/part-sound.mp3`),
+      message: new Audio(`/sounds/${soundpack}/message-sound.mp3`),
+      shutdown: new Audio(`/sounds/${soundpack}/shutdown-sound.mp3`)
     };
     applyAudioSettings();
   }
@@ -244,9 +245,35 @@ export function useLobbyChat() {
     }
   }
 
+  // Change soundpack and reload audio
+  function setSoundpack(newSoundpack: string) {
+    config.value.soundpack = newSoundpack;
+    initAudio();
+    localStorage.setItem('agent_settings', JSON.stringify(config.value));
+  }
+
+  // Get available soundpacks using import.meta.glob
+  let availableSoundpacks = ref<string[]>(['default']);
+
+  async function loadAvailableSoundpacks() {
+    try {
+      const soundModules = import.meta.glob('/public/sounds/*/');
+      const packs = Object.keys(soundModules)
+        .map(path => path.replace('/public/sounds/', '').replace('/', ''))
+        .filter(pack => pack.length > 0);
+      if (packs.length > 0) {
+        availableSoundpacks.value = packs;
+      }
+    } catch (e) {
+      // Fallback to default if glob fails
+      availableSoundpacks.value = ['default'];
+    }
+  }
+
   // Initialize on load
   loadNetworkConfig();
   loadSettings();
+  loadAvailableSoundpacks();
   initAudio();
 
   return {
@@ -257,6 +284,7 @@ export function useLobbyChat() {
     authError: computed(() => authError.value),
     config,
     networkConfig: computed(() => networkConfig.value),
+    availableSoundpacks,
     getUserColor,
     boot,
     sendMessage,
@@ -264,6 +292,7 @@ export function useLobbyChat() {
     updateSettings,
     tryPlayAmbience,
     playAlert,
-    setNetworkConfig
+    setNetworkConfig,
+    setSoundpack
   };
 }

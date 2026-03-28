@@ -2,13 +2,15 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
+import { useTheme } from './composables/useTheme';
 import AuthScreen from './components/AuthScreen.vue';
 import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 
-const { username, messages, users, isConnected, authError, config, networkConfig, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig } = useLobbyChat();
+const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack } = useLobbyChat();
+const { availableThemes, applyTheme } = useTheme();
 
 const title = computed(() => !isConnected.value ? 'LOBBY // AUTH' : 'LOBBY // LISTENING');
 const showAuth = computed(() => !isConnected.value);
@@ -80,11 +82,20 @@ function handleAmbience() {
     <SettingsModal
       :show-modal="showSettings"
       :config="config"
+      :available-soundpacks="availableSoundpacks"
+      :available-themes="availableThemes"
       title="Client Settings"
       @update="
         (newConfig) => {
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
+          if (config.soundpack !== newConfig.soundpack) {
+            setSoundpack(newConfig.soundpack);
+          }
+          if (config.theme !== newConfig.theme) {
+            applyTheme(newConfig.theme);
+            config.theme = newConfig.theme;
+          }
           updateSettings();
         }
       "

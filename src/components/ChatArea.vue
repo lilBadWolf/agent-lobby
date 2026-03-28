@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import type { ChatMessage } from '../composables/useLobbyChat';
+import { useTheme } from '../composables/useTheme';
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -12,6 +13,7 @@ const emit = defineEmits<{
   send: [message: string];
 }>();
 
+const { getUserColor } = useTheme();
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
@@ -69,14 +71,6 @@ function sendMessage() {
     emit('send', chatInput.value.trim());
     chatInput.value = '';
   }
-}
-
-function getUserColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return `hsl(${Math.abs(hash % 360)}, 80%, 60%)`;
 }
 </script>
 

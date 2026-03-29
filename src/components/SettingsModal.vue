@@ -4,6 +4,7 @@ import { ref, watch } from 'vue';
 export interface AudioConfig {
   audioEnabled: boolean;
   volume: number;
+  dmEnabled: boolean;
   soundpack: string;
   theme: string;
 }
@@ -76,6 +77,15 @@ function handleClearLog() {
           min="0"
           max="1"
           step="0.1"
+          @change="handleChange"
+        />
+      </div>
+      <div class="setting-row">
+        <label>DM ENABLED</label>
+        <input
+          v-model="localConfig.dmEnabled"
+          type="checkbox"
+          id="set-dm-toggle"
           @change="handleChange"
         />
       </div>

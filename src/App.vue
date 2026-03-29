@@ -3,14 +3,42 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
+import { useDirectMessage } from './composables/useDirectMessage';
 import AuthScreen from './components/AuthScreen.vue';
 import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
+import DMChatModal from './components/DMChatModal.vue';
 
-const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages } = useLobbyChat();
+const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages, getMqttClient, getRoomId } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
+
+// DM system
+const showDM = ref(false);
+type DMType = ReturnType<typeof useDirectMessage>;
+let dm: DMType | null = null;
+
+// Initialize DM when connected
+watch(isConnected, (connected) => {
+  if (connected && !dm) {
+    const mqttClient = getMqttClient();
+    const roomId = getRoomId();
+    const connectedCallback = (callback: () => void) => {
+      callback(); // Already connected, call immediately
+    };
+
+    dm = useDirectMessage(
+      { value: username.value },
+      roomId,
+      mqttClient,
+      connectedCallback
+    );
+  } else if (!connected && dm) {
+    dm.cleanup();
+    dm = null;
+  }
+});
 
 const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
@@ -19,17 +47,31 @@ const showShutdownAnim = ref(false);
 const isMaximized = ref(false);
 
 const pageTitle = computed(() => {
-  return isConnected.value ? 'LOBBY // LISTENING' : 'LOBBY // AUTH';
+  if (!isConnected.value) return 'LOBBY // AUTH';
+  if (isConnected.value && !showDM.value) {
+    return `${username.value} // LISTENING`;
+  } else if (isConnected.value && showDM.value) {
+    const activeDMs = Array.from((dm as any).activeChats.value.keys());
+    if (activeDMs.length > 0) {
+      return `${username.value} // DM with ${activeDMs.join(', ')}`;
+    }
+  }
 });
 
 onMounted(async () => {
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
 watch(pageTitle, (newTitle) => {
-  document.title = newTitle;
+  document.title = newTitle ?? "LOBBY // AUTH";
 });
+
+function minimize() {
+  const appWindow = getCurrentWindow();
+  appWindow.minimize();
+}
 
 async function toggleMaximize() {
   const appWindow = getCurrentWindow();
@@ -63,14 +105,50 @@ function toggleNetworkConfig() {
   showNetworkConfig.value = !showNetworkConfig.value;
 }
 
+function toggleDM() {
+  showDM.value = !showDM.value;
+}
+
 function handleAmbience() {
   tryPlayAmbience();
+}
+
+function handleDMRequest(user: string) {
+  if (dm) {
+    dm.requestDM(user);
+    showDM.value = true;
+  }
+}
+
+function handleAcceptDM(user: string) {
+  if (dm) {
+    dm.acceptDM(user);
+  }
+}
+
+function handleRejectDM(user: string) {
+  if (dm) {
+    dm.rejectDM(user);
+  }
+}
+
+function handleSendDMMessage(user: string, message: string) {
+  if (dm) {
+    dm.sendDMMessage(user, message);
+  }
+}
+
+function handleCloseDM(user: string) {
+  if (dm) {
+    dm.closeDM(user);
+  }
 }
 </script>
 
 <template>
   <div data-tauri-drag-region class="custom-titlebar">
     {{ pageTitle }}
+    <button class="minimize-btn" @click="minimize" title="Minimize">—</button>
     <button class="maximize-btn" @click="toggleMaximize" :title="isMaximized ? 'Restore' : 'Maximize'">
       {{ isMaximized ? '◻' : '◻' }}
     </button>
@@ -86,6 +164,7 @@ function handleAmbience() {
       title="Client Settings"
       @update="
         (newConfig) => {
+          config.dmEnabled = newConfig.dmEnabled;
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
           if (config.soundpack !== newConfig.soundpack) {
@@ -109,11 +188,23 @@ function handleAmbience() {
       @close="toggleNetworkConfig"
     />
 
+    <DMChatModal
+      :show-modal="showDM"
+      :active-chats="(dm as any)?.activeChats?.value || new Map()"
+      :pending-requests="(dm as any)?.pendingRequests?.value || []"
+      :username="username"
+      @close="toggleDM"
+      @accept-dm="handleAcceptDM"
+      @reject-dm="handleRejectDM"
+      @send-message="handleSendDMMessage"
+      @close-dm="handleCloseDM"
+    />
+
     <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />
 
     <div v-if="!showAuth" class="main-view">
       <ChatArea :messages="messages" :username="username" :is-connected="isConnected" @send="sendMessage" />
-      <Sidebar :users="users" @disconnect="handleDisconnect" />
+      <Sidebar :users="users" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
     </div>
   </div>
 </template>
@@ -131,6 +222,19 @@ function handleAmbience() {
   z-index: 1000;
   position: relative;
   flex-shrink: 0;
+}
+
+.minimize-btn {
+  position: absolute;
+  right: 30px;
+  background: none;
+  border: none;
+  color: var(--neon-green);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+  padding: 4px 8px;
 }
 
 .maximize-btn {

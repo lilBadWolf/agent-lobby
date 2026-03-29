@@ -1,5 +1,10 @@
-import { ref, computed } from 'vue';
+import { ref, reactive, computed } from 'vue';
 import mqtt from 'mqtt';
+
+export interface UserPresence {
+  username: string;
+  dmAvailable: boolean;
+}
 
 export interface ChatMessage {
   user: string;
@@ -11,7 +16,7 @@ export interface NetworkConfig {
   mqttServer: string;
   defaultLobby: string;
 }
-
+const users = reactive<Record<string, UserPresence>>({});
 export function useLobbyChat() {
   // Config defaults
   const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
@@ -31,14 +36,16 @@ export function useLobbyChat() {
   const username = ref<string>('');
   const roomId = ref<string>(networkConfig.value.defaultLobby);
   const messages = ref<ChatMessage[]>([]);
-  const users = ref<Set<string>>(new Set());
+  
   const isConnected = ref(false);
   const authError = ref(false);
 
   let CHAT_TOPIC = '';
   let PRESENCE_TOPIC = '';
+  let PRESENCE_OPTIONS: {};
 
   const config = ref({
+    dmEnabled: true,
     audioEnabled: true,
     volume: 0.5,
     soundpack: 'default',
@@ -81,6 +88,18 @@ export function useLobbyChat() {
   function updateSettings() {
     localStorage.setItem('agent_settings', JSON.stringify(config.value));
     applyAudioSettings();
+     if (client && client.connected &&username.value) {
+      const payload = {
+        username: username.value,
+        dmAvailable: config.value.dmEnabled,
+      };
+
+      client.publish(
+        PRESENCE_TOPIC + username.value, 
+        JSON.stringify(payload), 
+        { retain: true }
+      );
+    }
   }
 
   // Play alert sound
@@ -112,7 +131,7 @@ export function useLobbyChat() {
   function boot(handle: string, customRoomId?: string) {
     if (!handle) return;
 
-    if (users.value.has(handle)) {
+    if (users[handle]) {
       authError.value = true;
       return;
     }
@@ -126,6 +145,10 @@ export function useLobbyChat() {
 
     CHAT_TOPIC = `${roomId.value}_lobby/chat_global`;
     PRESENCE_TOPIC = `${roomId.value}_lobby/presence/`;
+    PRESENCE_OPTIONS = {
+      username: username.value,
+      dmAvailable: config.value.dmEnabled,
+    };
 
     const options = {
       will: { topic: PRESENCE_TOPIC + username.value, payload: '', retain: true, qos: 1 as const }
@@ -144,24 +167,28 @@ export function useLobbyChat() {
       addMessage('SYSTEM', sysMsg, true);
       client!.subscribe(CHAT_TOPIC);
       client!.subscribe(PRESENCE_TOPIC + '#');
-      client!.publish(PRESENCE_TOPIC + username.value, username.value, { retain: true });
+      client!.publish(PRESENCE_TOPIC + username.value, JSON.stringify(PRESENCE_OPTIONS), { retain: true });
     });
 
     client.on('message', (topic, payload) => {
       const raw = payload.toString();
+      console.log(raw);
       if (topic.startsWith(PRESENCE_TOPIC)) {
         const user = topic.split('/').pop()?.toUpperCase() || '';
         if (raw === '') {
-          if (users.value.has(user)) {
+          if (users[user]) {
             playAlert('part');
             addMessage('SYSTEM', `${user}${partMsg}`, true);
-            users.value.delete(user);
+            delete users[user];
           }
         } else {
-          if (!users.value.has(user)) {
+          if (!users[user]) {
             playAlert('join');
             addMessage('SYSTEM', `${user}${joinMsg}`, true);
-            users.value.add(user);
+            users[user] = JSON.parse(raw) as UserPresence;
+          }
+          else {
+            users[user] = JSON.parse(raw) as UserPresence;
           }
         }
         return;
@@ -206,7 +233,9 @@ export function useLobbyChat() {
   function resetUI() {
     username.value = '';
     messages.value = [];
-    users.value.clear();
+    for (const key in users) {
+      delete users[key];
+    }
     client = null;
   }
 
@@ -284,7 +313,7 @@ export function useLobbyChat() {
   return {
     username: computed(() => username.value),
     messages: computed(() => messages.value),
-    users: computed(() => users.value),
+    users: users,
     isConnected: computed(() => isConnected.value),
     authError: computed(() => authError.value),
     config,
@@ -299,6 +328,8 @@ export function useLobbyChat() {
     playAlert,
     setNetworkConfig,
     setSoundpack,
-    clearMessages
+    clearMessages,
+    getMqttClient: () => client,
+    getRoomId: () => roomId.value
   };
 }

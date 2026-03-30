@@ -269,7 +269,9 @@ function handleDragOver(e: DragEvent) {
 }
 
 function handleDragLeave(e: DragEvent) {
-  if (e.target === messagesContainer.value) {
+  // Only clear when the cursor leaves the messages container entirely
+  // (relatedTarget is outside the container or null).
+  if (!messagesContainer.value?.contains(e.relatedTarget as Node | null)) {
     dragOverZone.value = false;
   }
 }

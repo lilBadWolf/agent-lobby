@@ -159,10 +159,12 @@ function sendMessage() {
 
 <style scoped>
 #chat-area {
+  grid-area: chatarea;
   flex: 1;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--neon-green);
+  min-height: 0;
 }
 
 #messages {
@@ -184,7 +186,8 @@ function sendMessage() {
   background: transparent;
   border: none;
   color: var(--neon-green);
-  padding: 0 20px;
+  padding: 0px 20px;
+  margin-top: -16px;
   flex: 1;
   font-family: inherit;
   font-size: 18px;
@@ -205,6 +208,9 @@ function sendMessage() {
   font-family: inherit;
   font-weight: bold;
   transition: all 0.2s;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 16px;
 }
 
 .send-btn:hover:not(:disabled) {

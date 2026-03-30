@@ -196,10 +196,11 @@ function handleCancelPendingMessages(user: string) {
 <template>
   <div data-tauri-drag-region class="custom-titlebar">
     {{ pageTitle }}
-    <button class="minimize-btn" @click="minimize" title="Minimize">—</button>
-    <button class="maximize-btn" @click="toggleMaximize" :title="isMaximized ? 'Restore' : 'Maximize'">
+    <button class="minimize-btn" @click="minimize">—</button>
+    <button class="maximize-btn" @click="toggleMaximize">
       {{ isMaximized ? '◻' : '◻' }}
     </button>
+    <button class="titlebar-close-btn" @click="handleDisconnect">✕</button>
   </div>
   <div id="app" :class="{ 'shutdown-anim': showShutdownAnim }">
     <button class="gear-btn" @click="toggleSettings">⚙</button>
@@ -269,6 +270,7 @@ function handleCancelPendingMessages(user: string) {
 <style>
 @import './styles/global.css';
 .custom-titlebar {
+  grid-area: titlebar;
   width: 100%;
   height: 16px;
   background: #222;
@@ -278,12 +280,11 @@ function handleCancelPendingMessages(user: string) {
   user-select: none; /* Prevents text selection while dragging */
   z-index: 1000;
   position: relative;
-  flex-shrink: 0;
 }
 
 .minimize-btn {
   position: absolute;
-  right: 30px;
+  right: 60px;
   background: none;
   border: none;
   color: var(--neon-green);
@@ -291,12 +292,20 @@ function handleCancelPendingMessages(user: string) {
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.3s;
-  padding: 4px 8px;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.minimize-btn:hover {
+  opacity: 1;
 }
 
 .maximize-btn {
   position: absolute;
-  right: 10px;
+  right: 35px;
   background: none;
   border: none;
   color: var(--neon-green);
@@ -304,10 +313,35 @@ function handleCancelPendingMessages(user: string) {
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.3s;
-  padding: 4px 8px;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .maximize-btn:hover {
+  opacity: 1;
+}
+
+.titlebar-close-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--alert-red);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-close-btn:hover {
   opacity: 1;
 }
 </style>

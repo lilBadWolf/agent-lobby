@@ -40,27 +40,30 @@ const userList = computed(() =>
 
 <style scoped>
 #sidebar {
+  grid-area: sidebar;
   width: 220px;
-  padding: 20px;
+  padding: 10px;
+  padding-bottom: 20px;
   background: rgba(0, 20, 0, 0.3);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 #user-list {
-  margin-top: 15px;
+  margin-top: 10px;
   font-size: 13px;
   flex-grow: 1;
   overflow-y: auto;
 }
 
 .user-node {
-  margin-bottom: 5px;
+  margin-bottom: 3px;
   font-weight: bold;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 2px 0;
   transition: opacity 0.2s;
 }
 

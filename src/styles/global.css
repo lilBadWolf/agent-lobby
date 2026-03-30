@@ -40,12 +40,14 @@ body::after {
 }
 
 #app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 16px 1fr;
+  grid-template-areas:
+    "titlebar"
+    "main";
   width: 100%;
-  height: calc(100vh - 2px);
-  max-height: 98.5%;
-  border: 2px solid var(--neon-green);
+  height: 100vh;
   background: var(--dark-bg);
   transform-origin: center;
 }
@@ -71,10 +73,39 @@ body::after {
   animation-fill-mode: forwards;
 }
 
+/* Custom Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--dark-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--neon-green);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #fff;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-color: var(--neon-green) var(--dark-bg);
+  scrollbar-width: thin;
+}
+
 .main-view {
-  display: flex;
-  flex: 1;
+  grid-area: main;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  grid-template-areas:
+    "chatarea sidebar";
   overflow: hidden;
+  min-height: 0;
 }
 
 .hidden {
@@ -84,7 +115,7 @@ body::after {
 .gear-btn {
   position: absolute;
   top: 32px;
-  right: 16px;
+  right: 6px;
   background: none;
   border: none;
   color: var(--neon-green);
@@ -104,5 +135,10 @@ body::after {
 @media (max-width: 600px) {
   #app {
     border: none;
+    grid-template-rows: 16px 1fr 50px;
+  }
+
+  .main-view {
+    grid-template-columns: 1fr 100px;
   }
 }

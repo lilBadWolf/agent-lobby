@@ -51,73 +51,75 @@ function handleClearLog() {
 <template>
   <div v-if="showModal" id="settings-modal" @click="(e) => e.target === $el && handleClose()">
     <div class="modal-box">
-      <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">CONFIG_SYS</h3>
-      <div class="setting-row">
-        <label>AUDIO ENABLED</label>
-        <input
-          v-model="localConfig.audioEnabled"
-          type="checkbox"
-          id="set-audio-toggle"
-          @change="handleChange"
-        />
-      </div>
-      <div class="setting-row">
-        <label>MASTER VOL</label>
-        <input
-          v-model.number="localConfig.volume"
-          type="range"
-          id="set-volume"
-          min="0"
-          max="1"
-          step="0.1"
-          @change="handleChange"
-        />
-      </div>
-      <div class="setting-row">
-        <label>DM ENABLED</label>
-        <input
-          v-model="localConfig.dmEnabled"
-          type="checkbox"
-          id="set-dm-toggle"
-          @change="handleChange"
-        />
-      </div>
-      <div class="setting-row">
-        <label>SOUNDPACK</label>
-        <select
-          v-model="localConfig.soundpack"
-          id="set-soundpack"
-          @change="handleChange"
-        >
-          <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
-            {{ pack }}
-          </option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label>THEME</label>
-        <select
-          v-model="localConfig.theme"
-          id="set-theme"
-          @change="handleChange"
-        >
-          <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
-            {{ themeName }}
-          </option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <label>DM CHAT EFFECT</label>
-        <select
-          v-model="localConfig.dmChatEffect"
-          id="set-dm-effect"
-          @change="handleChange"
-        >
-          <option value="none">NONE</option>
-          <option value="matrix">MATRIX</option>
-          <option value="glitch">GLITCH</option>
-          <option value="flames">FLAMES</option>
-        </select>
+      <div class="settings-content">
+        <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">CONFIG_SYS</h3>
+        <div class="setting-row">
+          <label>AUDIO ENABLED</label>
+          <input
+            v-model="localConfig.audioEnabled"
+            type="checkbox"
+            id="set-audio-toggle"
+            @change="handleChange"
+          />
+        </div>
+        <div class="setting-row">
+          <label>MASTER VOL</label>
+          <input
+            v-model.number="localConfig.volume"
+            type="range"
+            id="set-volume"
+            min="0"
+            max="1"
+            step="0.1"
+            @change="handleChange"
+          />
+        </div>
+        <div class="setting-row">
+          <label>DM ENABLED</label>
+          <input
+            v-model="localConfig.dmEnabled"
+            type="checkbox"
+            id="set-dm-toggle"
+            @change="handleChange"
+          />
+        </div>
+        <div class="setting-row">
+          <label>DM CHAT EFFECT</label>
+          <select
+            v-model="localConfig.dmChatEffect"
+            id="set-dm-effect"
+            @change="handleChange"
+          >
+            <option value="none">NONE</option>
+            <option value="matrix">MATRIX</option>
+            <option value="glitch">GLITCH</option>
+            <option value="flames">FLAMES</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>SOUNDPACK</label>
+          <select
+            v-model="localConfig.soundpack"
+            id="set-soundpack"
+            @change="handleChange"
+          >
+            <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
+              {{ pack }}
+            </option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>THEME</label>
+          <select
+            v-model="localConfig.theme"
+            id="set-theme"
+            @change="handleChange"
+          >
+            <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
+              {{ themeName }}
+            </option>
+          </select>
+        </div>
       </div>
       <button class="clear-btn" @click="handleClearLog">CLEAR LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
@@ -142,6 +144,15 @@ function handleClearLog() {
   background: var(--dark-bg);
   padding: 20px;
   text-align: left;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .setting-row {

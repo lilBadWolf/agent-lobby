@@ -147,15 +147,16 @@ onBeforeUnmount(() => {
         ref="remoteAudioRef"
         autoplay
         playsinline
-      />
-
+        controls
+        :muted="false"
+        style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
+      >></audio>
       <!-- Remote Video (main feed) -->
       <video
         ref="remoteVideoRef"
         class="remote-video"
         autoplay
         playsinline
-        muted
       />
 
       <!-- Local Video (PiP bottom-right) -->
@@ -165,7 +166,6 @@ onBeforeUnmount(() => {
           class="local-video"
           autoplay
           playsinline
-          muted
         />
         <div class="pip-border"></div>
       </div>
@@ -427,6 +427,7 @@ onBeforeUnmount(() => {
 
 /* Ensure video fills container */
 video {
+  appearance: none;
   -webkit-appearance: none;
   -webkit-user-select: none;
   user-select: none;

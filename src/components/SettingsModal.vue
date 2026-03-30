@@ -22,7 +22,17 @@ const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
 const { playAnimation } = useMessageAnimations();
 
-const { audioInputDevices, audioOutputDevices, videoInputDevices } = useMediaDevices();
+const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
+
+watch(
+  () => props.showModal,
+  async (isOpen) => {
+    if (isOpen) {
+      // Request media permission and enumerate devices when settings modal opens
+      await requestMediaPermission();
+    }
+  }
+);
 
 watch(
   () => props.config,

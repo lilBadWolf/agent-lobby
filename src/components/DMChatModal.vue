@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { DMChat, DMRequest } from '../composables/useDirectMessage';
+import type { DMChat, DMRequest, DMNotice } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 
 const props = defineProps<{
   showModal: boolean;
   activeChats: Map<string, DMChat>;
   pendingRequests: DMRequest[];
+  outgoingRequests: string[];
+  notices: DMNotice[];
   username: string;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  acceptDM: [user: string];
-  rejectDM: [user: string];
+  acceptDm: [user: string];
+  rejectDm: [user: string];
+  cancelRequest: [user: string];
   sendMessage: [user: string, message: string];
-  closeDM: [user: string];
+  closeDm: [user: string];
 }>();
 
 const { getUserColor } = useTheme();
@@ -57,7 +60,7 @@ function handleClose() {
 }
 
 function closeTab(user: string) {
-  emit('closeDM', user);
+  emit('closeDm', user);
   // Close the DM connection via parent and switch tab
   const tabs = allTabs.value.filter(t => t !== user);
   if (tabs.length > 0) {
@@ -68,12 +71,16 @@ function closeTab(user: string) {
 }
 
 function handleAccept(user: string) {
-  emit('acceptDM', user);
+  emit('acceptDm', user);
   currentTab.value = user;
 }
 
 function handleReject(user: string) {
-  emit('rejectDM', user);
+  emit('rejectDm', user);
+}
+
+function handleCancelRequest(user: string) {
+  emit('cancelRequest', user);
 }
 
 function sendMessage() {
@@ -85,6 +92,10 @@ function sendMessage() {
 function getCurrentChat(): DMChat | undefined {
   return props.activeChats.get(currentTab.value);
 }
+
+function isTabConnected(tab: string): boolean {
+  return props.activeChats.get(tab)?.isConnected ?? false;
+}
 </script>
 
 <template>
@@ -94,6 +105,19 @@ function getCurrentChat(): DMChat | undefined {
       <div class="modal-header">
         <h3 style="margin: 0">DIRECT MESSAGE</h3>
         <button class="close-btn" @click="handleClose">✕</button>
+      </div>
+
+      <div v-if="notices.length > 0" class="notice-stack" role="status" aria-live="polite">
+        <div v-for="notice in notices" :key="notice.id" class="notice-item">
+          {{ notice.message }}
+        </div>
+      </div>
+
+      <div v-if="outgoingRequests.length > 0" class="notice-stack" role="status" aria-live="polite">
+        <div v-for="requestUser in outgoingRequests" :key="requestUser" class="notice-item info outgoing-item">
+          <span>Awaiting approval from {{ requestUser }}...</span>
+          <button class="btn-cancel-request" @click="handleCancelRequest(requestUser)">CANCEL</button>
+        </div>
       </div>
 
       <!-- Tab Bar -->
@@ -110,7 +134,7 @@ function getCurrentChat(): DMChat | undefined {
           </span>
           <span v-else class="tab-label" :style="{ color: getUserColor(tab) }">
             {{ tab }}
-            <span v-if="getCurrentChat()?.isConnected && getCurrentChat()?.user === tab" class="status-indicator">●</span>
+            <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
             <span v-else class="status-indicator disconnected">●</span>
           </span>
           <button
@@ -217,6 +241,53 @@ function getCurrentChat(): DMChat | undefined {
   font-size: 16px;
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+.notice-stack {
+  padding: 10px 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notice-item {
+  border: 1px solid var(--alert-red);
+  background: rgba(255, 0, 0, 0.08);
+  color: #ff8d8d;
+  padding: 8px 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.notice-item.info {
+  border-color: var(--dim-green);
+  background: rgba(57, 255, 20, 0.08);
+  color: var(--neon-green);
+}
+
+.outgoing-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-cancel-request {
+  border: 1px solid var(--alert-red);
+  background: transparent;
+  color: var(--alert-red);
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-cancel-request:hover {
+  background: var(--alert-red);
+  color: #000;
 }
 
 .close-btn {

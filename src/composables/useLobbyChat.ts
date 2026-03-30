@@ -16,7 +16,9 @@ export interface NetworkConfig {
   mqttServer: string;
   defaultLobby: string;
 }
+
 const users = reactive<Record<string, UserPresence>>({});
+
 export function useLobbyChat() {
   // Config defaults
   const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
@@ -42,7 +44,7 @@ export function useLobbyChat() {
 
   let CHAT_TOPIC = '';
   let PRESENCE_TOPIC = '';
-  let PRESENCE_OPTIONS: {};
+  let PRESENCE_OPTIONS: UserPresence | null = null;
 
   const config = ref({
     dmEnabled: true,
@@ -53,6 +55,22 @@ export function useLobbyChat() {
   });
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
+
+  function buildPresencePayload(): UserPresence {
+    return {
+      username: username.value,
+      dmAvailable: config.value.dmEnabled,
+    };
+  }
+
+  function publishPresence() {
+    if (!client || !client.connected || !username.value || !PRESENCE_TOPIC) return;
+    client.publish(
+      PRESENCE_TOPIC + username.value,
+      JSON.stringify(buildPresencePayload()),
+      { retain: true }
+    );
+  }
 
   // Initialize audio
   function initAudio() {
@@ -88,18 +106,7 @@ export function useLobbyChat() {
   function updateSettings() {
     localStorage.setItem('agent_settings', JSON.stringify(config.value));
     applyAudioSettings();
-     if (client && client.connected &&username.value) {
-      const payload = {
-        username: username.value,
-        dmAvailable: config.value.dmEnabled,
-      };
-
-      client.publish(
-        PRESENCE_TOPIC + username.value, 
-        JSON.stringify(payload), 
-        { retain: true }
-      );
-    }
+    publishPresence();
   }
 
   // Play alert sound
@@ -145,10 +152,7 @@ export function useLobbyChat() {
 
     CHAT_TOPIC = `${roomId.value}_lobby/chat_global`;
     PRESENCE_TOPIC = `${roomId.value}_lobby/presence/`;
-    PRESENCE_OPTIONS = {
-      username: username.value,
-      dmAvailable: config.value.dmEnabled,
-    };
+    PRESENCE_OPTIONS = buildPresencePayload();
 
     const options = {
       will: { topic: PRESENCE_TOPIC + username.value, payload: '', retain: true, qos: 1 as const }

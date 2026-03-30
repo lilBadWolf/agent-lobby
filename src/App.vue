@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
@@ -17,26 +17,40 @@ const { availableThemes, applyTheme } = useTheme();
 // DM system
 const showDM = ref(false);
 type DMType = ReturnType<typeof useDirectMessage>;
-let dm: DMType | null = null;
+const dm = shallowRef<DMType | null>(null);
+
+const dmActiveChats = computed(() => dm.value?.activeChats.value || new Map());
+const dmPendingRequests = computed(() => dm.value?.pendingRequests.value || []);
+const dmOutgoingRequests = computed(() => dm.value?.outgoingRequests.value || []);
+const dmNotices = computed(() => dm.value?.notices.value || []);
+
+watch(
+  () => dmPendingRequests.value.length,
+  (pendingCount) => {
+    if (pendingCount > 0) {
+      showDM.value = true;
+    }
+  }
+);
 
 // Initialize DM when connected
 watch(isConnected, (connected) => {
-  if (connected && !dm) {
+  if (connected && !dm.value) {
     const mqttClient = getMqttClient();
     const roomId = getRoomId();
     const connectedCallback = (callback: () => void) => {
       callback(); // Already connected, call immediately
     };
 
-    dm = useDirectMessage(
+    dm.value = useDirectMessage(
       { value: username.value },
       roomId,
       mqttClient,
       connectedCallback
     );
-  } else if (!connected && dm) {
-    dm.cleanup();
-    dm = null;
+  } else if (!connected && dm.value) {
+    dm.value.cleanup();
+    dm.value = null;
   }
 });
 
@@ -51,7 +65,7 @@ const pageTitle = computed(() => {
   if (isConnected.value && !showDM.value) {
     return `${username.value} // LISTENING`;
   } else if (isConnected.value && showDM.value) {
-    const activeDMs = Array.from((dm as any).activeChats.value.keys());
+    const activeDMs = Array.from(dmActiveChats.value.keys());
     if (activeDMs.length > 0) {
       return `${username.value} // DM with ${activeDMs.join(', ')}`;
     }
@@ -113,34 +127,41 @@ function handleAmbience() {
   tryPlayAmbience();
 }
 
-function handleDMRequest(user: string) {
-  if (dm) {
-    dm.requestDM(user);
+async function handleDMRequest(user: string) {
+  if (dm.value) {
+    await dm.value.requestDM(user);
     showDM.value = true;
   }
 }
 
 function handleAcceptDM(user: string) {
-  if (dm) {
-    dm.acceptDM(user);
+  if (dm.value) {
+    dm.value.acceptDM(user);
+    showDM.value = true;
   }
 }
 
 function handleRejectDM(user: string) {
-  if (dm) {
-    dm.rejectDM(user);
+  if (dm.value) {
+    dm.value.rejectDM(user);
+  }
+}
+
+function handleCancelDMRequest(user: string) {
+  if (dm.value) {
+    dm.value.cancelDMRequest(user);
   }
 }
 
 function handleSendDMMessage(user: string, message: string) {
-  if (dm) {
-    dm.sendDMMessage(user, message);
+  if (dm.value) {
+    dm.value.sendDMMessage(user, message);
   }
 }
 
 function handleCloseDM(user: string) {
-  if (dm) {
-    dm.closeDM(user);
+  if (dm.value) {
+    dm.value.closeDM(user);
   }
 }
 </script>
@@ -190,12 +211,15 @@ function handleCloseDM(user: string) {
 
     <DMChatModal
       :show-modal="showDM"
-      :active-chats="(dm as any)?.activeChats?.value || new Map()"
-      :pending-requests="(dm as any)?.pendingRequests?.value || []"
+      :active-chats="dmActiveChats"
+      :pending-requests="dmPendingRequests"
+      :outgoing-requests="dmOutgoingRequests"
+      :notices="dmNotices"
       :username="username"
       @close="toggleDM"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
+      @cancel-request="handleCancelDMRequest"
       @send-message="handleSendDMMessage"
       @close-dm="handleCloseDM"
     />

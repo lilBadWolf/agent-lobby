@@ -14,6 +14,11 @@ export interface DMChat {
   isConnected: boolean;
 }
 
+export interface DMNotice {
+  id: number;
+  message: string;
+}
+
 interface RTCConnection {
   peerConnection: RTCPeerConnection;
   dataChannel: RTCDataChannel | null;
@@ -29,9 +34,21 @@ export function useDirectMessage(
   // State
   const pendingRequests = ref<DMRequest[]>([]);
   const activeChats = ref<Map<string, DMChat>>(new Map());
+  const outgoingRequests = ref<string[]>([]);
+  const notices = ref<DMNotice[]>([]);
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
   let messageHandlerRegistered = false;
+  let noticeIdCounter = 0;
+
+  function pushNotice(message: string) {
+    const id = ++noticeIdCounter;
+    notices.value = [...notices.value, { id, message }];
+
+    setTimeout(() => {
+      notices.value = notices.value.filter((n) => n.id !== id);
+    }, 4000);
+  }
 
   // RTCConfiguration with STUN servers
   const rtcConfig: RTCConfiguration = {
@@ -91,6 +108,22 @@ export function useDirectMessage(
   function handleSignalingMessage(fromUser: string, data: any) {
     if (data.type === 'request') {
       handleDMRequest(fromUser);
+    } else if (data.type === 'accept') {
+      outgoingRequests.value = outgoingRequests.value.filter((user) => user !== fromUser);
+      void startDMAsInitiator(fromUser);
+    } else if (data.type === 'reject') {
+      outgoingRequests.value = outgoingRequests.value.filter((user) => user !== fromUser);
+      pushNotice(`${fromUser} denied your DM request.`);
+      closeDM(fromUser, false);
+    } else if (data.type === 'cancel') {
+      const hadPending = pendingRequests.value.some((r) => r.from === fromUser);
+      pendingRequests.value = pendingRequests.value.filter((r) => r.from !== fromUser);
+      if (hadPending) {
+        pushNotice(`${fromUser} cancelled the DM request.`);
+      }
+    } else if (data.type === 'close') {
+      // Remote peer explicitly closed this DM thread.
+      closeDM(fromUser, false);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -169,6 +202,10 @@ export function useDirectMessage(
       if (chat) {
         chat.isConnected = peerConnection.connectionState === 'connected';
       }
+
+      if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+        closeDM(otherUser, false);
+      }
     };
 
     return {
@@ -215,10 +252,7 @@ export function useDirectMessage(
     };
 
     dataChannel.onclose = () => {
-      const chat = activeChats.value.get(otherUser);
-      if (chat) {
-        chat.isConnected = false;
-      }
+      closeDM(otherUser, false);
     };
   }
 
@@ -233,8 +267,38 @@ export function useDirectMessage(
     }
   }
 
+  function setOrUpdateChat(user: string, chat: DMChat) {
+    const nextChats = new Map(activeChats.value);
+    nextChats.set(user, chat);
+    activeChats.value = nextChats;
+  }
+
+  function removeChat(user: string) {
+    if (!activeChats.value.has(user)) return;
+    const nextChats = new Map(activeChats.value);
+    nextChats.delete(user);
+    activeChats.value = nextChats;
+  }
+
   // Request DM from another user - create initiator peer
   async function requestDM(targetUser: string) {
+    if (!mqttClient) return;
+
+    // Clear stale state, then send a DM request notice.
+    closeDM(targetUser, false);
+    if (!outgoingRequests.value.includes(targetUser)) {
+      outgoingRequests.value = [...outgoingRequests.value, targetUser];
+    }
+    mqttClient.publish(
+      getSignalTopic(targetUser),
+      JSON.stringify({ type: 'request' })
+    );
+  }
+
+  async function startDMAsInitiator(targetUser: string) {
+    // Reset stale state before creating a fresh peer.
+    closeDM(targetUser, false);
+
     const rtcConn = createRTCConnection(targetUser, true);
     rtcConnections.set(targetUser, rtcConn);
 
@@ -252,7 +316,7 @@ export function useDirectMessage(
 
       // Store in active chats
       if (!activeChats.value.has(targetUser)) {
-        activeChats.value.set(targetUser, {
+        setOrUpdateChat(targetUser, {
           user: targetUser,
           messages: [],
           dataChannel: null,
@@ -266,8 +330,15 @@ export function useDirectMessage(
 
   // Accept incoming DM request - create non-initiator peer to respond to offer
   function acceptDM(fromUser: string) {
-    // Remove from pending
-    pendingRequests.value = pendingRequests.value.filter(r => r.from !== fromUser);
+    if (!mqttClient) return;
+
+    mqttClient.publish(
+      getSignalTopic(fromUser),
+      JSON.stringify({ type: 'accept' })
+    );
+
+    // Reset stale state but keep the pending request until chat is re-created.
+    closeDM(fromUser, false, false);
 
     const rtcConn = createRTCConnection(fromUser, false);
     rtcConnections.set(fromUser, rtcConn);
@@ -276,19 +347,41 @@ export function useDirectMessage(
     flushSignalQueue(fromUser, rtcConn.peerConnection);
 
     // Store in active chats
-    if (!activeChats.value.has(fromUser)) {
-      activeChats.value.set(fromUser, {
-        user: fromUser,
-        messages: [],
-        dataChannel: null,
-        isConnected: false
-      });
-    }
+    setOrUpdateChat(fromUser, {
+      user: fromUser,
+      messages: [],
+      dataChannel: null,
+      isConnected: false
+    });
+
+    // Remove pending only after the chat tab exists.
+    pendingRequests.value = pendingRequests.value.filter(r => r.from !== fromUser);
   }
 
   // Reject incoming DM request
   function rejectDM(fromUser: string) {
     pendingRequests.value = pendingRequests.value.filter(r => r.from !== fromUser);
+
+    if (!mqttClient) return;
+
+    mqttClient.publish(
+      getSignalTopic(fromUser),
+      JSON.stringify({ type: 'reject' })
+    );
+
+    closeDM(fromUser, false);
+  }
+
+  function cancelDMRequest(targetUser: string) {
+    const wasWaiting = outgoingRequests.value.includes(targetUser);
+    outgoingRequests.value = outgoingRequests.value.filter((user) => user !== targetUser);
+
+    if (!wasWaiting || !mqttClient) return;
+
+    mqttClient.publish(
+      getSignalTopic(targetUser),
+      JSON.stringify({ type: 'cancel' })
+    );
   }
 
   // Send a DM message
@@ -315,16 +408,46 @@ export function useDirectMessage(
   }
 
   // Close a DM connection
-  function closeDM(otherUser: string) {
+  function closeDM(otherUser: string, notifyPeer = true, clearPendingRequest = true) {
+    try {
+      if (notifyPeer && mqttClient) {
+        mqttClient.publish(getSignalTopic(otherUser), JSON.stringify({ type: 'close' }));
+      }
+    } catch (e) {
+      console.debug('Failed to notify peer of DM close:', e);
+    }
+
     const rtcConn = rtcConnections.get(otherUser);
     if (rtcConn) {
-      if (rtcConn.dataChannel) {
-        rtcConn.dataChannel.close();
+      try {
+        if (rtcConn.dataChannel) {
+          rtcConn.dataChannel.onopen = null;
+          rtcConn.dataChannel.onmessage = null;
+          rtcConn.dataChannel.onerror = null;
+          rtcConn.dataChannel.onclose = null;
+          rtcConn.dataChannel.close();
+        }
+      } catch (e) {
+        console.debug(`Failed closing data channel with ${otherUser}:`, e);
       }
-      rtcConn.peerConnection.close();
-      rtcConnections.delete(otherUser);
+
+      try {
+        rtcConn.peerConnection.ondatachannel = null;
+        rtcConn.peerConnection.onicecandidate = null;
+        rtcConn.peerConnection.onconnectionstatechange = null;
+        rtcConn.peerConnection.close();
+      } catch (e) {
+        console.debug(`Failed closing peer connection with ${otherUser}:`, e);
+      }
     }
-    activeChats.value.delete(otherUser);
+
+    rtcConnections.delete(otherUser);
+    signalQueue.delete(otherUser);
+    outgoingRequests.value = outgoingRequests.value.filter((user) => user !== otherUser);
+    removeChat(otherUser);
+    if (clearPendingRequest) {
+      pendingRequests.value = pendingRequests.value.filter(r => r.from !== otherUser);
+    }
   }
 
   // Handle incoming DM request
@@ -352,6 +475,7 @@ export function useDirectMessage(
     rtcConnections.clear();
     signalQueue.clear();
     activeChats.value.clear();
+    outgoingRequests.value = [];
     pendingRequests.value = [];
     messageHandlerRegistered = false;
   }
@@ -364,7 +488,10 @@ export function useDirectMessage(
   return {
     pendingRequests: computed(() => pendingRequests.value),
     activeChats: computed(() => activeChats.value),
+    outgoingRequests: computed(() => outgoingRequests.value),
+    notices: computed(() => notices.value),
     requestDM,
+    cancelDMRequest,
     acceptDM,
     rejectDM,
     sendDMMessage,

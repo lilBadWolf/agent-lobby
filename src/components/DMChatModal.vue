@@ -411,14 +411,14 @@ watch(
 
     // Add text container for animation (no sender label)
     const textContainer = document.createElement('span');
-    textContainer.className = 'text';
+    textContainer.className = 'animation-text';
     textContainer.style.color = 'var(--neon-green, #39ff14)';
     textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
     textContainer.style.fontWeight = 'bold';
     textContainer.style.textAlign = 'center';
-    textContainer.style.wordWrap = 'break-word';
-    textContainer.style.wordBreak = 'break-word';
     textContainer.style.whiteSpace = 'pre-wrap';
+    textContainer.style.overflowWrap = 'normal';
+    textContainer.style.wordBreak = 'normal';
     textContainer.style.textShadow = '0 0 20px rgba(57, 255, 20, 0.8)';
     textContainer.style.overflow = 'hidden';
     animContainer.appendChild(textContainer);

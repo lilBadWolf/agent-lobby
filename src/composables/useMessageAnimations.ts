@@ -2,6 +2,10 @@ import { ref } from 'vue';
 
 type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
 
+interface WordAppendState {
+  currentWordContainer: HTMLSpanElement | null;
+}
+
 // Generate style tag for animation keyframes if not already present
 function ensureAnimationStyles() {
   const styleId = 'message-animations-styles';
@@ -128,6 +132,12 @@ function ensureAnimationStyles() {
       display: inline-block;
     }
 
+    .anim-word {
+      display: inline-block;
+      white-space: nowrap;
+      vertical-align: baseline;
+    }
+
     .typewriter-char {
       display: inline;
       font-family: inherit;
@@ -178,6 +188,34 @@ function ensureAnimationStyles() {
   document.head.appendChild(style);
 }
 
+function createWordAppendState(): WordAppendState {
+  return {
+    currentWordContainer: null
+  };
+}
+
+function appendCharacterPreservingWords(
+  container: HTMLElement,
+  char: string,
+  state: WordAppendState,
+  createCharElement: (value: string) => HTMLElement
+) {
+  if (/\s/.test(char)) {
+    container.appendChild(document.createTextNode(char));
+    state.currentWordContainer = null;
+    return;
+  }
+
+  if (!state.currentWordContainer) {
+    const wordContainer = document.createElement('span');
+    wordContainer.className = 'anim-word';
+    container.appendChild(wordContainer);
+    state.currentWordContainer = wordContainer;
+  }
+
+  state.currentWordContainer.appendChild(createCharElement(char));
+}
+
 // Helper to calculate animation duration
 export function getAnimationDuration(effect: AnimationEffect, textLength: number): number {
   const baseLength = Math.max(1, textLength);
@@ -204,15 +242,19 @@ async function playTypewriterAnimation(text: string, element: HTMLElement): Prom
     ensureAnimationStyles();
     element.innerHTML = '';
 
+    const chars = Array.from(text);
     const charDelay = 50;
     let currentIndex = 0;
+    const appendState = createWordAppendState();
 
     function addNextChar() {
-      if (currentIndex < text.length) {
-        const span = document.createElement('span');
-        span.className = 'typewriter-char';
-        span.textContent = text[currentIndex];
-        element.appendChild(span);
+      if (currentIndex < chars.length) {
+        appendCharacterPreservingWords(element, chars[currentIndex], appendState, (value) => {
+          const span = document.createElement('span');
+          span.className = 'typewriter-char';
+          span.textContent = value;
+          return span;
+        });
         currentIndex++;
         setTimeout(addNextChar, charDelay);
       } else {
@@ -257,22 +299,36 @@ async function playMatrixAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
+    const chars = Array.from(text);
     const charDelay = 40;
     let addedChars = 0;
-    const totalChars = text.length;
+    const totalChars = chars.filter((char) => !/\s/.test(char)).length;
+    const appendState = createWordAppendState();
 
-    for (let i = 0; i < text.length; i++) {
+    for (let i = 0; i < chars.length; i++) {
       setTimeout(() => {
-        const span = document.createElement('span');
-        span.className = 'matrix-char';
-        span.textContent = text[i];
-        span.style.animationDelay = `0ms`;
-        element.appendChild(span);
+        const currentChar = chars[i];
+        if (/\s/.test(currentChar)) {
+          appendCharacterPreservingWords(element, currentChar, appendState, () => {
+            const noop = document.createElement('span');
+            noop.textContent = '';
+            return noop;
+          });
+          return;
+        }
+
+        appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
+          const span = document.createElement('span');
+          span.className = 'matrix-char';
+          span.textContent = value;
+          span.style.animationDelay = '0ms';
+          return span;
+        });
 
         addedChars++;
 
         // After all chars are added, add settling animation
-        if (addedChars === totalChars) {
+        if (totalChars > 0 && addedChars === totalChars) {
           setTimeout(() => {
             Array.from(element.querySelectorAll('.matrix-char')).forEach((char) => {
               (char as HTMLElement).classList.add('settle');
@@ -296,16 +352,29 @@ async function playGlitchAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
+    const chars = Array.from(text);
     const charDelay = 30;
     let charIndex = 0;
+    const appendState = createWordAppendState();
 
     function addGlitchChar() {
-      if (charIndex < text.length) {
-        const span = document.createElement('span');
-        span.className = 'glitch-char';
-        span.textContent = text[charIndex];
-        span.style.animationDelay = `${charIndex * charDelay}ms`;
-        element.appendChild(span);
+      if (charIndex < chars.length) {
+        const currentChar = chars[charIndex];
+        if (/\s/.test(currentChar)) {
+          appendCharacterPreservingWords(element, currentChar, appendState, () => {
+            const noop = document.createElement('span');
+            noop.textContent = '';
+            return noop;
+          });
+        } else {
+          appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
+            const span = document.createElement('span');
+            span.className = 'glitch-char';
+            span.textContent = value;
+            span.style.animationDelay = `${charIndex * charDelay}ms`;
+            return span;
+          });
+        }
         charIndex++;
         setTimeout(addGlitchChar, charDelay);
       } else {
@@ -326,16 +395,29 @@ async function playFlamesAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
+    const chars = Array.from(text);
     const baseDelay = 60;
     let charIndex = 0;
+    const appendState = createWordAppendState();
 
     function addFlamesChar() {
-      if (charIndex < text.length) {
-        const span = document.createElement('span');
-        span.className = 'flames-char';
-        span.textContent = text[charIndex];
-        span.style.animationDelay = `${charIndex * baseDelay}ms`;
-        element.appendChild(span);
+      if (charIndex < chars.length) {
+        const currentChar = chars[charIndex];
+        if (/\s/.test(currentChar)) {
+          appendCharacterPreservingWords(element, currentChar, appendState, () => {
+            const noop = document.createElement('span');
+            noop.textContent = '';
+            return noop;
+          });
+        } else {
+          appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
+            const span = document.createElement('span');
+            span.className = 'flames-char';
+            span.textContent = value;
+            span.style.animationDelay = `${charIndex * baseDelay}ms`;
+            return span;
+          });
+        }
         charIndex++;
         setTimeout(addFlamesChar, baseDelay);
       } else {

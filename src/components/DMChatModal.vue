@@ -56,6 +56,24 @@ const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing si
 const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state per user
 const dragOverZone = ref(false); // Track drag-over state for file drop zone
 const activeVideoCallUser = ref<string | null>(null); // Track active video call user
+const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per tab
+
+function toggleFilesPanel() {
+  filesCollapsed.value[currentTab.value] = !filesCollapsed.value[currentTab.value];
+}
+
+function isFilesPanelCollapsed(): boolean {
+  return filesCollapsed.value[currentTab.value] ?? false;
+}
+
+function hasVisibleTransfers(): boolean {
+  const chat = getCurrentChat();
+  if (!chat) return false;
+  for (const t of chat.fileTransfers.values()) {
+    if (t.status !== 'rejected' && t.status !== 'failed') return true;
+  }
+  return false;
+}
 
 // Computed list of all tabs (requests + active chats)
 const allTabs = computed(() => {
@@ -620,9 +638,12 @@ watch(
           </div>
 
           <!-- File Downloads -->
-          <div v-if="getCurrentChat()?.fileTransfers.size" class="files-section">
-            <div class="files-header">📁 FILES</div>
-            <div class="files-list">
+          <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
+            <div class="files-header" @click="toggleFilesPanel">
+              <span>📁 FILES ({{ getCurrentChat()?.fileTransfers.size }})</span>
+              <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
+            </div>
+            <div v-if="!isFilesPanelCollapsed()" class="files-list">
               <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
                 <div class="file-info">
                   <div class="file-name">{{ transfer.filename }}</div>
@@ -1371,7 +1392,24 @@ watch(
   text-shadow: 0 0 5px var(--neon-green);
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.files-header:hover {
+  opacity: 0.8;
+}
+
+.files-collapse-icon {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.files-section.collapsed {
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 4px;
 }
 
 .files-list {

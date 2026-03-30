@@ -143,7 +143,9 @@ watch(
     textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
     textContainer.style.fontWeight = 'bold';
     textContainer.style.textAlign = 'center';
-    textContainer.style.whiteSpace = 'nowrap';
+    textContainer.style.wordWrap = 'break-word';
+    textContainer.style.wordBreak = 'break-word';
+    textContainer.style.whiteSpace = 'pre-wrap';
     textContainer.style.textShadow = '0 0 20px rgba(57, 255, 20, 0.8)';
     textContainer.style.overflow = 'hidden';
     animContainer.appendChild(textContainer);

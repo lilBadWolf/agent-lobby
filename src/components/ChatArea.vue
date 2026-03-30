@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import type { ChatMessage } from '../composables/useLobbyChat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
+import * as nodeEmoji from 'node-emoji';
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -16,9 +17,34 @@ const emit = defineEmits<{
 
 const { getUserColor } = useTheme();
 const { extractImageUris, initializeImage, markImageLoaded, markImageError, getImageState } = useImageDetection();
+
+// --- YouTube URL detection ---
+function extractYouTubeUrls(text: string): string[] {
+  // Match YouTube URLs with optional query params
+  const regex = /(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:[\?&][^\s]*)?)/g;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.push(match[0]);
+  }
+  return matches;
+}
+
+function getYouTubeVideoId(url: string): string | null {
+  // Remove query params for ID extraction
+  const cleanUrl = url.split(/[?&]/)[0];
+  const ytMatch = cleanUrl.match(/youtube\.com\/watch\?v=([\w-]{11})/);
+  if (ytMatch) return ytMatch[1];
+  const ybMatch = cleanUrl.match(/youtu\.be\/([\w-]{11})/);
+  if (ybMatch) return ybMatch[1];
+  return null;
+}
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
+const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
+const emojiSelectedIndex = ref(0);
+const chatInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
 
 // Process images when messages change
@@ -79,8 +105,23 @@ function getDisplayedText(messageIndex: number): string {
     }
   });
 
+  // Remove full YouTube URLs from display text
+  const ytUris = extractYouTubeUrls(message.message);
+  ytUris.forEach(uri => {
+    text = text.replace(uri, '').trim();
+  });
+
+  // Remove CSS-like blocks from display text
+  text = text.replace(/\.[\w-]+\s*\{[^}]+\}/g, '').trim();
+  // Convert :emojiName: to emoji characters
+  text = nodeEmoji.replace(text, (emoji) => emoji.emoji);
   const progress = typingProgress.value[messageIndex] ?? text.length;
   return text.substring(0, progress);
+}
+function getMessageYouTubeUrls(messageIndex: number): string[] {
+  const message = props.messages[messageIndex];
+  if (!message) return [];
+  return extractYouTubeUrls(message.message);
 }
 
 function getMessageImages(messageIndex: number): string[] {
@@ -97,6 +138,18 @@ function isTyping(messageIndex: number): boolean {
   return progress !== undefined && progress < message.message.length;
 }
 
+function isEmojiOnlyMessage(messageIndex: number): boolean {
+  const text = getDisplayedText(messageIndex).trim();
+  if (!text) return false;
+  // Strip all emoji and whitespace — if nothing remains, it's emoji-only
+  const withoutEmoji = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u20E3]/gu, '').replace(/\s/g, '');
+  if (withoutEmoji.length > 0) return false;
+  // Count grapheme clusters that are emoji
+  const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+  const count = [...segmenter.segment(text)].filter(s => /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(s.segment)).length;
+  return count >= 1 && count <= 10;
+}
+
 function handleImageLoad(uri: string) {
   markImageLoaded(uri);
 }
@@ -109,6 +162,63 @@ function sendMessage() {
   if (chatInput.value.trim() && props.isConnected) {
     emit('send', chatInput.value.trim());
     chatInput.value = '';
+  }
+}
+
+function convertEmojisInInput() {
+  const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
+  if (converted !== chatInput.value) {
+    chatInput.value = converted;
+  }
+  updateEmojiSuggestions();
+}
+
+function updateEmojiSuggestions() {
+  // Find the last :word fragment before the cursor
+  const val = chatInput.value;
+  const cursorPos = chatInputEl.value?.selectionStart ?? val.length;
+  const textUpToCursor = val.slice(0, cursorPos);
+  const match = textUpToCursor.match(/:([\w+-]*)$/);
+  if (match && match[1].length > 0) {
+    const results = nodeEmoji.search(match[1]).slice(0, 12);
+    emojiSuggestions.value = results.map(r => ({ name: r.name, emoji: r.emoji }));
+    emojiSelectedIndex.value = 0;
+  } else if (match && match[1].length === 0) {
+    // Just typed ':', show first 12 popular emojis
+    emojiSuggestions.value = nodeEmoji.search('smile').concat(nodeEmoji.search('heart')).slice(0, 12).map(r => ({ name: r.name, emoji: r.emoji }));
+    emojiSelectedIndex.value = 0;
+  } else {
+    emojiSuggestions.value = [];
+  }
+}
+
+function selectEmojiSuggestion(item: { name: string; emoji: string }) {
+  const val = chatInput.value;
+  const cursorPos = chatInputEl.value?.selectionStart ?? val.length;
+  const textUpToCursor = val.slice(0, cursorPos);
+  const replaced = textUpToCursor.replace(/:([\w+-]*)$/, item.emoji);
+  chatInput.value = replaced + val.slice(cursorPos);
+  emojiSuggestions.value = [];
+  // Restore focus
+  chatInputEl.value?.focus();
+}
+
+function handleInputKeydown(e: KeyboardEvent) {
+  if (emojiSuggestions.value.length === 0) {
+    if (e.key === 'Enter') sendMessage();
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    emojiSelectedIndex.value = (emojiSelectedIndex.value + 1) % emojiSuggestions.value.length;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    emojiSelectedIndex.value = (emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) % emojiSuggestions.value.length;
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    selectEmojiSuggestion(emojiSuggestions.value[emojiSelectedIndex.value]);
+  } else if (e.key === 'Escape') {
+    emojiSuggestions.value = [];
   }
 }
 </script>
@@ -124,6 +234,7 @@ function sendMessage() {
           <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
           <span
             class="text"
+            :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
             :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
           >
             {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
@@ -140,17 +251,44 @@ function sendMessage() {
               <span v-if="getImageState(imageUri)?.error" class="image-fallback">{{ imageUri }}</span>
             </div>
           </div>
+          <div v-if="getMessageYouTubeUrls(index).length > 0" class="message-videos">
+            <div v-for="ytUrl in getMessageYouTubeUrls(index)" :key="ytUrl" class="video-container">
+              <iframe
+                v-if="getYouTubeVideoId(ytUrl)"
+                :src="`https://www.youtube.com/embed/${getYouTubeVideoId(ytUrl)}`"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen
+                class="embedded-video"
+              ></iframe>
+              <span v-else class="video-fallback">{{ ytUrl }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-    <div class="input-bar">
+    <div class="input-bar" style="position: relative;">
+      <div v-if="emojiSuggestions.length > 0" class="emoji-picker">
+        <div
+          v-for="(item, i) in emojiSuggestions"
+          :key="item.name"
+          class="emoji-item"
+          :class="{ active: i === emojiSelectedIndex }"
+          @mousedown.prevent="selectEmojiSuggestion(item)"
+        >
+          <span class="emoji-char">{{ item.emoji }}</span>
+          <span class="emoji-name">:{{ item.name }}:</span>
+        </div>
+      </div>
       <input
+        ref="chatInputEl"
         v-model="chatInput"
         type="text"
         id="chat-msg"
         placeholder="READY TO TRANSMIT..."
         :disabled="!isConnected"
-        @keydown.enter="sendMessage"
+        @input="convertEmojisInInput"
+        @keydown="handleInputKeydown"
       />
       <button class="send-btn" :disabled="!isConnected" @click="sendMessage">SEND</button>
     </div>
@@ -250,6 +388,13 @@ function sendMessage() {
   white-space: pre-wrap;
 }
 
+.large-emoji {
+  font-size: 2.5em;
+  line-height: 1.3;
+  display: block;
+  margin-top: 2px;
+}
+
 .cursor {
   animation: blink 1s step-end infinite;
   margin-left: 2px;
@@ -257,11 +402,89 @@ function sendMessage() {
   font-size: 0.8em;
 }
 
+.emoji-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: #0a0a0a;
+  border: 1px solid var(--neon-green);
+  border-bottom: none;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 100;
+  scrollbar-width: thin;
+}
+
+.emoji-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-white);
+  transition: background 0.1s;
+}
+
+.emoji-item:hover,
+.emoji-item.active {
+  background: rgba(57, 255, 20, 0.12);
+  color: var(--neon-green);
+}
+
+.emoji-char {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.emoji-name {
+  font-family: monospace;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
 .message-images {
   margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.message-videos {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.video-container {
+  position: relative;
+  max-width: 400px;
+  width: 100%;
+}
+
+.embedded-video {
+  width: 100%;
+  min-width: 250px;
+  max-width: 400px;
+  height: 225px;
+  border: 1px solid var(--dim-green);
+  border-radius: 4px;
+  background: #000;
+}
+
+.video-fallback {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--system-dim);
+  font-size: 12px;
+  font-family: monospace;
+  word-break: break-all;
+  padding: 4px;
+  border: 1px dashed var(--dim-green);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .image-container {

@@ -1102,6 +1102,12 @@ export function useDirectMessage(
     }
 
     try {
+      const audioConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined
+          }
+        : {};
+
       const videoConstraints: MediaTrackConstraints = audioConfig
         ? {
             deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
@@ -1109,7 +1115,7 @@ export function useDirectMessage(
         : {};
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
+        audio: audioConstraints,
         video: videoConstraints
       });
 
@@ -1120,8 +1126,8 @@ export function useDirectMessage(
       // Add video tracks to peer connection and renegotiate
       const rtcConn = rtcConnections.get(targetUser);
       if (rtcConn) {
-        console.log('Initiator adding video tracks to peer connection');
-        stream.getVideoTracks().forEach(track => {
+        console.log('Initiator adding audio/video tracks to peer connection');
+        stream.getTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
 
@@ -1163,6 +1169,12 @@ export function useDirectMessage(
     pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
 
     try {
+      const audioConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined
+          }
+        : {};
+
       const videoConstraints: MediaTrackConstraints = audioConfig
         ? {
             deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
@@ -1170,7 +1182,7 @@ export function useDirectMessage(
         : {};
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
+        audio: audioConstraints,
         video: videoConstraints
       });
 
@@ -1183,9 +1195,9 @@ export function useDirectMessage(
 
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && chat && chat.localMediaStream) {
-        // Add video track to peer connection
-        console.log('Adding video tracks to peer connection');
-        stream.getVideoTracks().forEach(track => {
+        // Add audio/video tracks to peer connection
+        console.log('Adding audio/video tracks to peer connection');
+        stream.getTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
 

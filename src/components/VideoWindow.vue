@@ -75,6 +75,9 @@ watch(() => props.remoteStream, async (stream) => {
   // Attach audio tracks to audio element
   if (remoteAudioRef.value) {
     console.log('VideoWindow: Setting remoteAudioRef.value.srcObject');
+    remoteAudioRef.value.defaultMuted = false;
+    remoteAudioRef.value.muted = false;
+    remoteAudioRef.value.volume = 1;
     remoteAudioRef.value.srcObject = stream;
     remoteAudioRef.value.play().then(() => {
       console.log('VideoWindow: Remote audio playing successfully');
@@ -150,7 +153,7 @@ onBeforeUnmount(() => {
         controls
         :muted="false"
         style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
-      >></audio>
+      ></audio>
       <!-- Remote Video (main feed) -->
       <video
         ref="remoteVideoRef"

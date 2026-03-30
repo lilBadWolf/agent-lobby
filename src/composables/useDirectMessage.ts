@@ -408,6 +408,12 @@ export function useDirectMessage(
           return;
         }
 
+        // Check if peer is ending the call
+        if (data.type === 'end-call') {
+          endVideoCall(otherUser);
+          return;
+        }
+
         // Check if this is a typing indicator
         if (data.typing) {
           chat.isTyping = true;
@@ -1224,30 +1230,45 @@ export function useDirectMessage(
     const chat = activeChats.value.get(user);
     if (!chat) return;
 
-    // Stop all local tracks
-    if (chat.localMediaStream) {
-      chat.localMediaStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('Stopped local track:', track.kind);
-      });
-      chat.localMediaStream = null;
+    // Notify peer that call is ending
+    try {
+      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
+        chat.dataChannel.send(JSON.stringify({
+          type: 'end-call'
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to send end-call message:', e);
     }
 
-    // Stop all remote tracks
-    if (chat.remoteMediaStream) {
-      chat.remoteMediaStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('Stopped remote track:', track.kind);
-      });
-      chat.remoteMediaStream = null;
-    }
-
-    // Clear video call state
+    // Clear video call state first (unmounts VideoWindow)
     chat.videoCallActive = false;
     chat.audioEnabled = false;
     chat.videoEnabled = false;
     chat.callStartTime = null;
     chat.callDuration = 0;
+
+    // Set streams to null (allows video elements to detach)
+    const localStream = chat.localMediaStream;
+    const remoteStream = chat.remoteMediaStream;
+    chat.localMediaStream = null;
+    chat.remoteMediaStream = null;
+
+    // Stop all local tracks
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped local track:', track.kind);
+      });
+    }
+
+    // Stop all remote tracks
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped remote track:', track.kind);
+      });
+    }
 
     // Clear call timer
     if (callTimers.has(user)) {

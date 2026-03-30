@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onBeforeUnmount } from 'vue';
 
 interface Props {
   peerName: string;
@@ -88,6 +88,16 @@ function toggleVideo() {
 function closeWindow() {
   emit('close');
 }
+
+onBeforeUnmount(() => {
+  // Clear video element sources to release streams
+  if (localVideoRef.value) {
+    localVideoRef.value.srcObject = null;
+  }
+  if (remoteVideoRef.value) {
+    remoteVideoRef.value.srcObject = null;
+  }
+});
 </script>
 
 <template>

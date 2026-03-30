@@ -141,12 +141,12 @@ function isTyping(messageIndex: number): boolean {
 function isEmojiOnlyMessage(messageIndex: number): boolean {
   const text = getDisplayedText(messageIndex).trim();
   if (!text) return false;
-  // Strip all emoji and whitespace — if nothing remains, it's emoji-only
+  // Strip all emoji, ZWJ sequences, variation selectors, and whitespace
   const withoutEmoji = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D\u20E3]/gu, '').replace(/\s/g, '');
   if (withoutEmoji.length > 0) return false;
-  // Count grapheme clusters that are emoji
-  const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
-  const count = [...segmenter.segment(text)].filter(s => /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/u.test(s.segment)).length;
+  // Count emoji by matching full emoji sequences (including ZWJ and skin tones)
+  const emojiMatches = text.match(/\p{Emoji_Presentation}[\uFE0F\u200D\u20E3\p{Emoji_Modifier}]*/gu);
+  const count = emojiMatches?.length ?? 0;
   return count >= 1 && count <= 10;
 }
 

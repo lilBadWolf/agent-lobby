@@ -1107,7 +1107,11 @@ export function useDirectMessage(
         try {
           const offer = await rtcConn.peerConnection.createOffer();
           await rtcConn.peerConnection.setLocalDescription(offer);
-          console.log('Initiator created renegotiation offer with video');
+          mqttClient.publish(
+            getSignalTopic(targetUser),
+            JSON.stringify(offer)
+          );
+          console.log('Initiator created and sent renegotiation offer with video');
         } catch (e) {
           console.error('Failed to renegotiate video:', e);
         }
@@ -1167,7 +1171,11 @@ export function useDirectMessage(
         try {
           const offer = await rtcConn.peerConnection.createOffer();
           await rtcConn.peerConnection.setLocalDescription(offer);
-          console.log('Acceptor created renegotiation offer with video');
+          mqttClient.publish(
+            getSignalTopic(fromUser),
+            JSON.stringify(offer)
+          );
+          console.log('Acceptor created and sent renegotiation offer with video');
         } catch (e) {
           console.error('Failed to renegotiate video on accept:', e);
         }

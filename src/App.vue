@@ -201,6 +201,36 @@ function handleCancelPendingMessages(user: string) {
     dm.value.cancelPendingMessages(user);
   }
 }
+
+function handleRequestAudio(user: string) {
+  if (dm.value) {
+    dm.value.requestAudioCall(user);
+  }
+}
+
+function handleToggleAudio(user: string, enabled: boolean) {
+  if (dm.value) {
+    dm.value.toggleAudioStream(user, enabled);
+  }
+}
+
+function handleRequestVideo(user: string) {
+  if (dm.value) {
+    dm.value.requestVideoCall(user);
+  }
+}
+
+function handleToggleVideo(user: string, enabled: boolean) {
+  if (dm.value) {
+    dm.value.toggleVideoStream(user, enabled);
+  }
+}
+
+function handleSendFile(user: string, file: File) {
+  if (dm.value) {
+    dm.value.sendFile(user, file);
+  }
+}
 </script>
 
 <template>
@@ -265,6 +295,11 @@ function handleCancelPendingMessages(user: string) {
       @stop-typing="handleStopTyping"
       @cancel-pending-messages="handleCancelPendingMessages"
       @close-dm="handleCloseDM"
+      @request-audio="handleRequestAudio"
+      @toggle-audio="handleToggleAudio"
+      @request-video="handleRequestVideo"
+      @toggle-video="handleToggleVideo"
+      @send-file="handleSendFile"
     />
 
     <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />

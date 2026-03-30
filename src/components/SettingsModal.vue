@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onMounted } from 'vue';
 import type { AudioConfig } from '../composables/useLobbyChat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
+import { useMediaDevices } from '../composables/useMediaDevices';
 
 const props = defineProps<{
   showModal: boolean;
@@ -20,6 +21,8 @@ const localConfig = ref<AudioConfig>({ ...props.config });
 const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
 const { playAnimation } = useMessageAnimations();
+
+const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
 
 watch(
   () => props.config,
@@ -63,6 +66,11 @@ async function previewEffect() {
     }, 300);
   }
 }
+
+onMounted(async () => {
+  await requestMediaPermission();
+});
+
 </script>
 
 <template>
@@ -137,6 +145,45 @@ async function previewEffect() {
           >
             <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
               {{ themeName }}
+            </option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>AUDIO INPUT</label>
+          <select
+            v-model="localConfig.audioInputDeviceId"
+            id="set-audio-input"
+            @change="handleChange"
+          >
+            <option value="">DEFAULT</option>
+            <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label }}
+            </option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>AUDIO OUTPUT</label>
+          <select
+            v-model="localConfig.audioOutputDeviceId"
+            id="set-audio-output"
+            @change="handleChange"
+          >
+            <option value="">DEFAULT</option>
+            <option v-for="device in audioOutputDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label }}
+            </option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>VIDEO INPUT</label>
+          <select
+            v-model="localConfig.videoInputDeviceId"
+            id="set-video-input"
+            @change="handleChange"
+          >
+            <option value="">DEFAULT</option>
+            <option v-for="device in videoInputDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label }}
             </option>
           </select>
         </div>

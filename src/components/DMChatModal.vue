@@ -25,6 +25,13 @@ const emit = defineEmits<{
   cancelPendingMessages: [user: string];
   typing: [user: string];
   stopTyping: [user: string];
+  requestAudio: [user: string];
+  acceptAudio: [user: string];
+  toggleAudio: [user: string, enabled: boolean];
+  requestVideo: [user: string];
+  acceptVideo: [user: string];
+  toggleVideo: [user: string, enabled: boolean];
+  sendFile: [user: string, file: File];
 }>();
 
 const { getUserColor } = useTheme();
@@ -35,6 +42,8 @@ const messagesContainer = ref<HTMLElement>();
 const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
 const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
 const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
+const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state per user
+const dragOverZone = ref(false); // Track drag-over state for file drop zone
 
 // Computed list of all tabs (requests + active chats)
 const allTabs = computed(() => {
@@ -141,6 +150,51 @@ function getCurrentChat(): DMChat | undefined {
 
 function isTabConnected(tab: string): boolean {
   return props.activeChats.get(tab)?.isConnected ?? false;
+}
+
+function handleRequestAudio() {
+  if (currentTab.value === 'requests') return;
+  emit('requestAudio', currentTab.value);
+}
+
+function handleToggleAudio() {
+  const enabled = !audioEnabledMap.get(currentTab.value);
+  audioEnabledMap.set(currentTab.value, enabled);
+  emit('toggleAudio', currentTab.value, enabled);
+}
+
+function handleRequestVideo() {
+  if (currentTab.value === 'requests') return;
+  emit('requestVideo', currentTab.value);
+}
+
+function handleDragOver(e: DragEvent) {
+  e.preventDefault();
+  dragOverZone.value = true;
+}
+
+function handleDragLeave(e: DragEvent) {
+  if (e.target === messagesContainer.value) {
+    dragOverZone.value = false;
+  }
+}
+
+function handleDrop(e: DragEvent) {
+  e.preventDefault();
+  dragOverZone.value = false;
+
+  if (currentTab.value === 'requests' || !e.dataTransfer?.files.length) return;
+
+  const files = e.dataTransfer.files;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    // Validate file size (500MB max)
+    if (file.size > 500 * 1024 * 1024) {
+      console.warn(`File ${file.name} exceeds 500MB limit`);
+      continue;
+    }
+    emit('sendFile', currentTab.value, file);
+  }
 }
 
 // Watch for new messages and play animations
@@ -277,6 +331,7 @@ watch(
           </span>
           <span v-else class="tab-label" :style="{ color: getUserColor(tab) }">
             {{ tab }}
+            <span v-if="audioEnabledMap.get(tab)" class="audio-indicator">☎</span>
             <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
             <span v-else class="status-indicator disconnected">●</span>
             <span v-if="props.activeChats.get(tab)?.isTyping" class="typing-indicator">
@@ -291,6 +346,32 @@ watch(
             ✕
           </button>
         </div>
+      </div>
+
+      <!-- Controls Bar (Audio/Video) -->
+      <div v-if="currentTab !== 'requests' && isTabConnected(currentTab)" class="controls-bar">
+        <button
+          class="control-btn audio-btn"
+          @click="handleRequestAudio"
+          title="Request Audio Call"
+        >
+          ☎ AUDIO
+        </button>
+        <button
+          v-if="audioEnabledMap.get(currentTab)"
+          :class="['control-btn', 'mic-btn', { active: audioEnabledMap.get(currentTab) }]"
+          @click="handleToggleAudio"
+          title="Toggle Microphone"
+        >
+          🎤
+        </button>
+        <button
+          class="control-btn video-btn"
+          @click="handleRequestVideo"
+          title="Request Video Call"
+        >
+          📹 VIDEO
+        </button>
       </div>
 
       <!-- Content Area -->
@@ -314,7 +395,18 @@ watch(
         <!-- Chat Tab -->
         <div v-else-if="currentTab !== 'requests'" class="chat-section">
           <!-- Messages: Displayed via animations only (ephemeral) -->
-          <div ref="messagesContainer" class="messages"></div>
+          <div
+            ref="messagesContainer"
+            class="messages"
+            @dragover="handleDragOver"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop"
+            :class="{ 'drag-over': dragOverZone }"
+          >
+            <div v-if="dragOverZone" class="drop-overlay">
+              Drop files to send
+            </div>
+          </div>
 
           <!-- Input -->
           <div class="input-bar">
@@ -621,12 +713,79 @@ watch(
   animation: none;
 }
 
+.audio-indicator {
+  color: var(--neon-green);
+  font-size: 12px;
+  margin-left: 4px;
+  text-shadow: 0 0 8px var(--neon-green);
+}
+
+/* Controls Bar */
+.controls-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 15px;
+  border-top: 1px solid var(--dim-green);
+  border-bottom: 1px solid var(--dim-green);
+  background: rgba(0, 20, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.control-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--neon-green);
+  background: transparent;
+  color: var(--neon-green);
+  cursor: pointer;
+  font-size: 11px;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  font-weight: bold;
+  font-family: inherit;
+}
+
+.control-btn:hover {
+  background: var(--neon-green);
+  color: #000;
+  box-shadow: 0 0 10px var(--neon-green);
+}
+
+.mic-btn {
+  padding: 6px 8px;
+  min-width: auto;
+}
+
+.mic-btn.active {
+  background: var(--neon-green);
+  color: #000;
+  box-shadow: 0 0 10px var(--neon-green);
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
   padding: 15px 20px;
   font-size: 13px;
   position: relative;
+  transition: background-color 0.2s;
+}
+
+.messages.drag-over {
+  background-color: rgba(57, 255, 20, 0.1);
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(57, 255, 20, 0.15);
+  color: var(--neon-green);
+  font-size: 16px;
+  font-weight: bold;
+  text-transform: uppercase;
+  pointer-events: none;
 }
 
 .msg {

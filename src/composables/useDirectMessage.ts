@@ -1,10 +1,21 @@
 import { ref, computed } from 'vue';
-import type { ChatMessage } from './useLobbyChat';
+import type { ChatMessage, AudioConfig } from './useLobbyChat';
 import mqtt from 'mqtt';
 
 export interface DMRequest {
   from: string;
   timestamp: number;
+}
+
+export interface FileTransferState {
+  id: string;
+  filename: string;
+  mimeType: string;
+  totalSize: number;
+  receivedSize: number;
+  chunks: Map<number, Uint8Array>;
+  progress: number;
+  status: 'pending' | 'in-progress' | 'completed' | 'failed';
 }
 
 export interface DMChat {
@@ -14,6 +25,11 @@ export interface DMChat {
   isConnected: boolean;
   pendingDisplayMessages: Array<{ id: string; text: string }>;  // Messages waiting for peer to animate
   isTyping: boolean;  // Whether the peer is currently typing
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+  localMediaStream: MediaStream | null;
+  remoteMediaStream: MediaStream | null;
+  fileTransfers: Map<string, FileTransferState>;
 }
 
 export interface DMNotice {
@@ -25,13 +41,18 @@ interface RTCConnection {
   peerConnection: RTCPeerConnection;
   dataChannel: RTCDataChannel | null;
   isInitiator: boolean;
+  audioSenders: RTCRtpSender[];
+  videoSenders: RTCRtpSender[];
+  audioReceivers: RTCRtpReceiver[];
+  videoReceivers: RTCRtpReceiver[];
 }
 
 export function useDirectMessage(
   username: { value: string },
   roomId: string,
   mqttClient: mqtt.MqttClient | null,
-  onConnect: (callback: () => void) => void
+  onConnect: (callback: () => void) => void,
+  audioConfig: AudioConfig | null = null
 ) {
   // State
   const pendingRequests = ref<DMRequest[]>([]);
@@ -126,6 +147,14 @@ export function useDirectMessage(
     } else if (data.type === 'close') {
       // Remote peer explicitly closed this DM thread.
       closeDM(fromUser, false);
+    } else if (data.type === 'video-request') {
+      // Notify about incoming video call request
+      const chat = activeChats.value.get(fromUser);
+      if (chat) {
+        pushNotice(`${fromUser} is requesting a video call`);
+      }
+    } else if (data.type === 'video-accept') {
+      pushNotice(`${fromUser} accepted your video call request`);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -189,6 +218,9 @@ export function useDirectMessage(
       setupDataChannel(dataChannel, otherUser);
     };
 
+    // Setup remote media streams
+    setupRemoteMediaStreams(otherUser, peerConnection);
+
     // Handle ICE candidates
     peerConnection.onicecandidate = (event) => {
       if (event.candidate && mqttClient) {
@@ -213,7 +245,11 @@ export function useDirectMessage(
     return {
       peerConnection,
       dataChannel: null,
-      isInitiator
+      isInitiator,
+      audioSenders: [],
+      videoSenders: [],
+      audioReceivers: [],
+      videoReceivers: []
     };
   }
 
@@ -235,9 +271,35 @@ export function useDirectMessage(
 
     dataChannel.onmessage = (event) => {
       try {
+        // Handle binary data (file chunks)
+        if (event.data instanceof ArrayBuffer) {
+          const view = new Uint8Array(event.data);
+          // First 36 bytes are the file ID, next 4 bytes are chunk index
+          const fileId = new TextDecoder().decode(view.slice(0, 36));
+          const chunkIndex = new DataView(event.data).getUint32(36);
+          const chunkData = view.slice(40);
+
+          const chat = activeChats.value.get(otherUser);
+          if (chat) {
+            const transfer = chat.fileTransfers.get(fileId);
+            if (transfer) {
+              transfer.chunks.set(chunkIndex, chunkData);
+              transfer.receivedSize += chunkData.length;
+              transfer.progress = (transfer.receivedSize / transfer.totalSize) * 100;
+            }
+          }
+          return;
+        }
+
+        // Handle text messages (JSON)
         const data = JSON.parse(event.data);
         const chat = activeChats.value.get(otherUser);
         if (!chat) return;
+
+        // Check if this is a file transfer message
+        if (handleFileTransferMessage(data, otherUser)) {
+          return;
+        }
 
         // Check if this is a typing indicator
         if (data.typing) {
@@ -281,6 +343,131 @@ export function useDirectMessage(
     dataChannel.onclose = () => {
       closeDM(otherUser, false);
     };
+  }
+
+  // Handle file transfer via data channel messages
+  function handleFileTransferMessage(data: any, otherUser: string): boolean {
+    const chat = activeChats.value.get(otherUser);
+    if (!chat) return false;
+
+    if (data.type === 'file-start') {
+      const fileTransfer: FileTransferState = {
+        id: data.id,
+        filename: data.filename,
+        mimeType: data.mimeType,
+        totalSize: data.totalSize,
+        receivedSize: 0,
+        chunks: new Map(),
+        progress: 0,
+        status: 'in-progress'
+      };
+      chat.fileTransfers.set(data.id, fileTransfer);
+      return true;
+    } else if (data.type === 'file-complete') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        // Reconstruct file from chunks
+        const chunks = Array.from(transfer.chunks.values()) as BlobPart[];
+        const blob = new Blob(chunks, { type: transfer.mimeType });
+
+        // Create download link
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = transfer.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        transfer.status = 'completed';
+      }
+      return true;
+    } else if (data.type === 'file-error') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.status = 'failed';
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Send a file to another user
+  async function sendFile(toUser: string, file: File) {
+    const chat = activeChats.value.get(toUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
+      pushNotice('File transfer requires active connection');
+      return;
+    }
+
+    const fileId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const chunkSize = 16384; // 16KB chunks
+    const buffer = await file.arrayBuffer();
+    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+
+    // Create file transfer state
+    const fileTransfer: FileTransferState = {
+      id: fileId,
+      filename: file.name,
+      mimeType: file.type,
+      totalSize: file.size,
+      receivedSize: file.size, // For sender, we consider all data "received"
+      chunks: new Map(),
+      progress: 0,
+      status: 'in-progress'
+    };
+    chat.fileTransfers.set(fileId, fileTransfer);
+
+    try {
+      // Send file start message
+      chat.dataChannel.send(JSON.stringify({
+        type: 'file-start',
+        id: fileId,
+        filename: file.name,
+        mimeType: file.type,
+        totalSize: file.size,
+        totalChunks
+      }));
+
+      // Send file chunks
+      const fileBuffer = new Uint8Array(buffer);
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, buffer.byteLength);
+        const chunk = fileBuffer.slice(start, end);
+
+        // Prepend file ID and chunk index for identification
+        const chunkMessage = new ArrayBuffer(40 + chunk.byteLength);
+        const view = new Uint8Array(chunkMessage);
+
+        // Copy file ID (first 36 bytes)
+        const idBytes = new TextEncoder().encode(fileId);
+        view.set(idBytes, 0);
+
+        // Copy chunk index (bytes 36-40)
+        new DataView(chunkMessage).setUint32(36, i);
+
+        // Copy chunk data (bytes 40+)
+        view.set(chunk, 40);
+
+        chat.dataChannel.send(chunkMessage);
+        fileTransfer.progress = ((i + 1) / totalChunks) * 100;
+      }
+
+      // Send completion message
+      chat.dataChannel.send(JSON.stringify({
+        type: 'file-complete',
+        id: fileId
+      }));
+
+      fileTransfer.status = 'completed';
+      pushNotice(`File "${file.name}" sent to ${toUser}`);
+    } catch (error) {
+      console.error('File transfer error:', error);
+      fileTransfer.status = 'failed';
+      pushNotice(`Failed to send file to ${toUser}`);
+    }
   }
 
   // Flush queued signals for a user
@@ -349,7 +536,12 @@ export function useDirectMessage(
           dataChannel: null,
           isConnected: false,
           pendingDisplayMessages: [],
-          isTyping: false
+          isTyping: false,
+          audioEnabled: false,
+          videoEnabled: false,
+          localMediaStream: null,
+          remoteMediaStream: null,
+          fileTransfers: new Map()
         });
       }
     } catch (e) {
@@ -382,7 +574,12 @@ export function useDirectMessage(
       dataChannel: null,
       isConnected: false,
       pendingDisplayMessages: [],
-      isTyping: false
+      isTyping: false,
+      audioEnabled: false,
+      videoEnabled: false,
+      localMediaStream: null,
+      remoteMediaStream: null,
+      fileTransfers: new Map()
     });
 
     // Remove pending only after the chat tab exists.
@@ -556,6 +753,232 @@ export function useDirectMessage(
     }
   }
 
+  // Setup remote media streams handler
+  function setupRemoteMediaStreams(user: string, peerConnection: RTCPeerConnection) {
+    peerConnection.ontrack = (event) => {
+      console.log(`Received ${event.track.kind} track from ${user}`);
+      const chat = activeChats.value.get(user);
+      if (!chat) return;
+
+      // Create a new MediaStream to hold the remote tracks
+      if (!chat.remoteMediaStream) {
+        chat.remoteMediaStream = new MediaStream();
+      }
+
+      chat.remoteMediaStream.addTrack(event.track);
+
+      // Update flags based on track kind
+      if (event.track.kind === 'audio') {
+        chat.audioEnabled = true;
+      } else if (event.track.kind === 'video') {
+        chat.videoEnabled = true;
+      }
+    };
+  }
+
+  // Request audio call from another user
+  async function requestAudioCall(targetUser: string) {
+    if (!mqttClient) return;
+
+    const chat = activeChats.value.get(targetUser);
+    if (!chat) {
+      pushNotice(`No active DM with ${targetUser}`);
+      return;
+    }
+
+    try {
+      // Get audio track from default or selected device
+      const audioConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined
+          }
+        : {};
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false
+      });
+
+      chat.localMediaStream = stream;
+
+      // Send audio request signal
+      mqttClient.publish(
+        getSignalTopic(targetUser),
+        JSON.stringify({ type: 'audio-request' })
+      );
+
+      pushNotice(`Audio call requested to ${targetUser}`);
+    } catch (error) {
+      console.error('Failed to get audio:', error);
+      pushNotice('Failed to access microphone. Check permissions.');
+    }
+  }
+
+  // Accept incoming audio call
+  async function acceptAudioCall(fromUser: string) {
+    if (!mqttClient) return;
+
+    try {
+      const audioConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined
+          }
+        : {};
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false
+      });
+
+      const chat = activeChats.value.get(fromUser);
+      if (chat) {
+        chat.localMediaStream = stream;
+      }
+
+      const rtcConn = rtcConnections.get(fromUser);
+      if (rtcConn && chat && chat.localMediaStream) {
+        // Add audio track to peer connection
+        stream.getAudioTracks().forEach(track => {
+          rtcConn.peerConnection.addTrack(track, stream);
+        });
+      }
+
+      // Send accept signal with offer
+      mqttClient.publish(
+        getSignalTopic(fromUser),
+        JSON.stringify({ type: 'accept-audio' })
+      );
+
+      pushNotice(`Audio call accepted with ${fromUser}`);
+    } catch (error) {
+      console.error('Failed to accept audio call:', error);
+      pushNotice('Failed to access microphone for audio call.');
+    }
+  }
+
+  // Toggle audio stream on/off during call
+  async function toggleAudioStream(user: string, enabled: boolean) {
+    const chat = activeChats.value.get(user);
+    if (!chat || !chat.localMediaStream) return;
+
+    chat.localMediaStream.getAudioTracks().forEach(track => {
+      track.enabled = enabled;
+    });
+
+    // Notify peer
+    try {
+      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
+        chat.dataChannel.send(JSON.stringify({
+          type: 'audio-toggle',
+          enabled
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to send audio toggle:', e);
+    }
+  }
+
+  // Request video call
+  async function requestVideoCall(targetUser: string) {
+    if (!mqttClient) return;
+
+    const chat = activeChats.value.get(targetUser);
+    if (!chat) {
+      pushNotice(`No active DM with ${targetUser}`);
+      return;
+    }
+
+    try {
+      const videoConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
+          }
+        : {};
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: videoConstraints
+      });
+
+      chat.localMediaStream = stream;
+
+      // Send video request signal
+      mqttClient.publish(
+        getSignalTopic(targetUser),
+        JSON.stringify({ type: 'video-request' })
+      );
+
+      pushNotice(`Video call requested to ${targetUser}`);
+    } catch (error) {
+      console.error('Failed to get video:', error);
+      pushNotice('Failed to access camera. Check permissions.');
+    }
+  }
+
+  // Accept incoming video call
+  async function acceptVideoCall(fromUser: string) {
+    if (!mqttClient) return;
+
+    try {
+      const videoConstraints: MediaTrackConstraints = audioConfig
+        ? {
+            deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
+          }
+        : {};
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: videoConstraints
+      });
+
+      const chat = activeChats.value.get(fromUser);
+      if (chat) {
+        chat.localMediaStream = stream;
+      }
+
+      const rtcConn = rtcConnections.get(fromUser);
+      if (rtcConn && chat && chat.localMediaStream) {
+        // Add video track to peer connection
+        stream.getVideoTracks().forEach(track => {
+          rtcConn.peerConnection.addTrack(track, stream);
+        });
+      }
+
+      // Send accept signal
+      mqttClient.publish(
+        getSignalTopic(fromUser),
+        JSON.stringify({ type: 'accept-video' })
+      );
+
+      pushNotice(`Video call accepted with ${fromUser}`);
+    } catch (error) {
+      console.error('Failed to accept video call:', error);
+      pushNotice('Failed to access camera for video call.');
+    }
+  }
+
+  // Toggle video stream
+  async function toggleVideoStream(user: string, enabled: boolean) {
+    const chat = activeChats.value.get(user);
+    if (!chat || !chat.localMediaStream) return;
+
+    chat.localMediaStream.getVideoTracks().forEach(track => {
+      track.enabled = enabled;
+    });
+
+    // Notify peer
+    try {
+      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
+        chat.dataChannel.send(JSON.stringify({
+          type: 'video-toggle',
+          enabled
+        }));
+      }
+    } catch (e) {
+      console.error('Failed to send video toggle:', e);
+    }
+  }
+
   // Cleanup on disconnect
   function cleanup() {
     rtcConnections.forEach(rtcConn => {
@@ -591,6 +1014,13 @@ export function useDirectMessage(
     sendStopTyping,
     cancelPendingMessages,
     closeDM,
+    requestAudioCall,
+    acceptAudioCall,
+    toggleAudioStream,
+    requestVideoCall,
+    acceptVideoCall,
+    toggleVideoStream,
+    sendFile,
     cleanup
   };
 }

@@ -22,6 +22,9 @@ export interface AudioConfig {
   soundpack: string;
   theme: string;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
+  audioInputDeviceId: string;
+  audioOutputDeviceId: string;
+  videoInputDeviceId: string;
 }
 
 export interface NetworkConfig {
@@ -64,7 +67,10 @@ export function useLobbyChat() {
     volume: 0.5,
     soundpack: 'default',
     theme: 'retro-terminal',
-    dmChatEffect: 'matrix'
+    dmChatEffect: 'matrix',
+    audioInputDeviceId: '',
+    audioOutputDeviceId: '',
+    videoInputDeviceId: ''
   });
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});

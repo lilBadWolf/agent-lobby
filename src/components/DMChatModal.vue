@@ -115,8 +115,18 @@ watch(messageInput, (newVal) => {
 watch([currentTab, () => props.activeChats], () => {
   if (!audioElement.value) return;
 
+  // VideoWindow owns remote audio playback while a video call overlay is active.
+  if (activeVideoCallUser.value) {
+    audioElement.value.pause();
+    audioElement.value.srcObject = null;
+    return;
+  }
+
   const chat = props.activeChats.get(currentTab.value);
   if (chat && chat.remoteMediaStream) {
+    audioElement.value.muted = false;
+    audioElement.value.defaultMuted = false;
+    audioElement.value.volume = 1;
     audioElement.value.srcObject = chat.remoteMediaStream;
   } else {
     audioElement.value.srcObject = null;

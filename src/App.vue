@@ -22,11 +22,31 @@ const dm = shallowRef<DMType | null>(null);
 
 const dmActiveChats = computed(() => dm.value?.activeChats.value || new Map());
 const dmPendingRequests = computed(() => dm.value?.pendingRequests.value || []);
+const dmPendingAudioCalls = computed(() => dm.value?.pendingAudioCalls.value || []);
+const dmPendingVideoCalls = computed(() => dm.value?.pendingVideoCalls.value || []);
 const dmOutgoingRequests = computed(() => dm.value?.outgoingRequests.value || []);
 const dmNotices = computed(() => dm.value?.notices.value || []);
 
 watch(
   () => dmPendingRequests.value.length,
+  (pendingCount) => {
+    if (pendingCount > 0) {
+      showDM.value = true;
+    }
+  }
+);
+
+watch(
+  () => dmPendingAudioCalls.value.length,
+  (pendingCount) => {
+    if (pendingCount > 0) {
+      showDM.value = true;
+    }
+  }
+);
+
+watch(
+  () => dmPendingVideoCalls.value.length,
   (pendingCount) => {
     if (pendingCount > 0) {
       showDM.value = true;
@@ -166,6 +186,30 @@ function handleRejectDM(user: string) {
   }
 }
 
+function handleAcceptAudio(user: string) {
+  if (dm.value) {
+    dm.value.acceptAudioCall(user);
+  }
+}
+
+function handleRejectAudio(user: string) {
+  if (dm.value) {
+    dm.value.rejectAudioCall(user);
+  }
+}
+
+function handleAcceptVideo(user: string) {
+  if (dm.value) {
+    dm.value.acceptVideoCall(user);
+  }
+}
+
+function handleRejectVideo(user: string) {
+  if (dm.value) {
+    dm.value.rejectVideoCall(user);
+  }
+}
+
 function handleCancelDMRequest(user: string) {
   if (dm.value) {
     dm.value.cancelDMRequest(user);
@@ -281,6 +325,8 @@ function handleSendFile(user: string, file: File) {
       :show-modal="showDM"
       :active-chats="dmActiveChats"
       :pending-requests="dmPendingRequests"
+      :pending-audio-calls="dmPendingAudioCalls"
+      :pending-video-calls="dmPendingVideoCalls"
       :outgoing-requests="dmOutgoingRequests"
       :notices="dmNotices"
       :username="username"
@@ -289,6 +335,10 @@ function handleSendFile(user: string, file: File) {
       @close="toggleDM"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
+      @accept-audio="handleAcceptAudio"
+      @reject-audio="handleRejectAudio"
+      @accept-video="handleAcceptVideo"
+      @reject-video="handleRejectVideo"
       @cancel-request="handleCancelDMRequest"
       @send-message="handleSendDMMessage"
       @typing="handleTyping"

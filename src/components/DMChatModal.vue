@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { DMChat, DMRequest, DMNotice } from '../composables/useDirectMessage';
+import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 
@@ -8,6 +8,8 @@ const props = defineProps<{
   showModal: boolean;
   activeChats: Map<string, DMChat>;
   pendingRequests: DMRequest[];
+  pendingAudioCalls: AudioCallRequest[];
+  pendingVideoCalls: VideoCallRequest[];
   outgoingRequests: string[];
   notices: DMNotice[];
   username: string;
@@ -19,6 +21,10 @@ const emit = defineEmits<{
   close: [];
   acceptDm: [user: string];
   rejectDm: [user: string];
+  acceptAudio: [user: string];
+  rejectAudio: [user: string];
+  acceptVideo: [user: string];
+  rejectVideo: [user: string];
   cancelRequest: [user: string];
   sendMessage: [user: string, message: string, effect: string];
   closeDm: [user: string];
@@ -26,10 +32,8 @@ const emit = defineEmits<{
   typing: [user: string];
   stopTyping: [user: string];
   requestAudio: [user: string];
-  acceptAudio: [user: string];
   toggleAudio: [user: string, enabled: boolean];
   requestVideo: [user: string];
-  acceptVideo: [user: string];
   toggleVideo: [user: string, enabled: boolean];
   sendFile: [user: string, file: File];
 }>();
@@ -39,6 +43,7 @@ const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('requests'); // 'requests' or username
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement>();
+const audioElement = ref<HTMLAudioElement>();
 const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
 const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
 const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
@@ -104,6 +109,18 @@ watch(messageInput, (newVal) => {
   }
 });
 
+// Sync audio element with active chat's remote media stream
+watch([currentTab, () => props.activeChats], () => {
+  if (!audioElement.value) return;
+
+  const chat = props.activeChats.get(currentTab.value);
+  if (chat && chat.remoteMediaStream) {
+    audioElement.value.srcObject = chat.remoteMediaStream;
+  } else {
+    audioElement.value.srcObject = null;
+  }
+});
+
 function handleClose() {
   emit('close');
 }
@@ -126,6 +143,22 @@ function handleAccept(user: string) {
 
 function handleReject(user: string) {
   emit('rejectDm', user);
+}
+
+function handleAcceptAudio(user: string) {
+  emit('acceptAudio', user);
+}
+
+function handleRejectAudio(user: string) {
+  emit('rejectAudio', user);
+}
+
+function handleAcceptVideo(user: string) {
+  emit('acceptVideo', user);
+}
+
+function handleRejectVideo(user: string) {
+  emit('rejectVideo', user);
 }
 
 function handleCancelRequest(user: string) {
@@ -157,15 +190,24 @@ function handleRequestAudio() {
   emit('requestAudio', currentTab.value);
 }
 
-function handleToggleAudio() {
-  const enabled = !audioEnabledMap.get(currentTab.value);
-  audioEnabledMap.set(currentTab.value, enabled);
-  emit('toggleAudio', currentTab.value, enabled);
-}
-
 function handleRequestVideo() {
   if (currentTab.value === 'requests') return;
   emit('requestVideo', currentTab.value);
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function handleEndCall(user: string) {
+  emit('closeDm', user);
 }
 
 function handleDragOver(e: DragEvent) {
@@ -195,6 +237,38 @@ function handleDrop(e: DragEvent) {
     }
     emit('sendFile', currentTab.value, file);
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+function downloadFile(transfer: any) {
+  if (!transfer || !transfer.chunks) return;
+
+  // Reconstruct file from chunks
+  const chunks: Uint8Array[] = [];
+  for (let i = 0; i < transfer.totalChunks; i++) {
+    const chunk = transfer.chunks.get(i);
+    if (chunk) {
+      chunks.push(chunk);
+    }
+  }
+
+  // Create blob and download
+  const blob = new Blob(chunks as any, { type: transfer.mimeType || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = transfer.filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // Watch for new messages and play animations
@@ -297,6 +371,7 @@ watch(
 
 <template>
   <div v-if="showModal" id="dm-modal" @click="(e) => e.target === $el && handleClose()">
+    <audio ref="audioElement" autoplay playsinline></audio>
     <div class="modal-box">
       <!-- Header -->
       <div class="modal-header">
@@ -305,8 +380,16 @@ watch(
       </div>
 
       <div v-if="notices.length > 0" class="notice-stack" role="status" aria-live="polite">
-        <div v-for="notice in notices" :key="notice.id" class="notice-item">
+        <div v-for="notice in notices" :key="notice.id" :class="['notice-item', notice.type]">
           {{ notice.message }}
+          <div v-if="notice.type === 'audio-call' && notice.from" class="notice-buttons">
+            <button class="btn-accept" @click="handleAcceptAudio(notice.from)">ACCEPT</button>
+            <button class="btn-reject" @click="handleRejectAudio(notice.from)">DENY</button>
+          </div>
+          <div v-if="notice.type === 'video-call' && notice.from" class="notice-buttons">
+            <button class="btn-accept" @click="handleAcceptVideo(notice.from)">ACCEPT</button>
+            <button class="btn-reject" @click="handleRejectVideo(notice.from)">DENY</button>
+          </div>
         </div>
       </div>
 
@@ -334,6 +417,33 @@ watch(
             <span v-if="audioEnabledMap.get(tab)" class="audio-indicator">☎</span>
             <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
             <span v-else class="status-indicator disconnected">●</span>
+            <span v-if="props.activeChats.get(tab)?.callStartTime" class="call-duration-tab">
+              ⏱ {{ formatDuration(props.activeChats.get(tab)?.callDuration || 0) }}
+            </span>
+            <button
+              v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
+              class="tab-action-btn phone-btn"
+              @click.stop="handleRequestAudio"
+              title="Request Audio Call"
+            >
+              ☎
+            </button>
+            <button
+              v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
+              class="tab-action-btn camera-btn"
+              @click.stop="handleRequestVideo"
+              title="Request Video Call"
+            >
+              📹
+            </button>
+            <button
+              v-if="tab !== 'requests' && props.activeChats.get(tab)?.callStartTime"
+              class="tab-action-btn end-call-btn"
+              @click.stop="handleEndCall(tab)"
+              title="End Call"
+            >
+              ⊗
+            </button>
             <span v-if="props.activeChats.get(tab)?.isTyping" class="typing-indicator">
               <span class="dot"></span><span class="dot"></span><span class="dot"></span>
             </span>
@@ -348,46 +458,55 @@ watch(
         </div>
       </div>
 
-      <!-- Controls Bar (Audio/Video) -->
-      <div v-if="currentTab !== 'requests' && isTabConnected(currentTab)" class="controls-bar">
-        <button
-          class="control-btn audio-btn"
-          @click="handleRequestAudio"
-          title="Request Audio Call"
-        >
-          ☎ AUDIO
-        </button>
-        <button
-          v-if="audioEnabledMap.get(currentTab)"
-          :class="['control-btn', 'mic-btn', { active: audioEnabledMap.get(currentTab) }]"
-          @click="handleToggleAudio"
-          title="Toggle Microphone"
-        >
-          🎤
-        </button>
-        <button
-          class="control-btn video-btn"
-          @click="handleRequestVideo"
-          title="Request Video Call"
-        >
-          📹 VIDEO
-        </button>
-      </div>
 
       <!-- Content Area -->
       <div class="modal-content">
         <!-- Pending Requests Tab -->
         <div v-if="currentTab === 'requests'" class="requests-section">
-          <div v-if="pendingRequests.length === 0" class="empty-state">
-            No pending DM requests
+          <!-- DM Requests -->
+          <div v-if="pendingRequests.length === 0 && pendingAudioCalls.length === 0 && pendingVideoCalls.length === 0" class="empty-state">
+            No pending requests
           </div>
-          <div v-for="request in pendingRequests" :key="request.from" class="request-item">
-            <div class="request-user" :style="{ color: getUserColor(request.from) }">
-              {{ request.from }}
+
+          <!-- DM Requests -->
+          <div v-if="pendingRequests.length > 0">
+            <div class="request-header">DM REQUESTS</div>
+            <div v-for="request in pendingRequests" :key="`dm-${request.from}`" class="request-item">
+              <div class="request-user" :style="{ color: getUserColor(request.from) }">
+                {{ request.from }}
+              </div>
+              <div class="request-actions">
+                <button class="btn-accept" @click="handleAccept(request.from)">ACCEPT</button>
+                <button class="btn-reject" @click="handleReject(request.from)">DENY</button>
+              </div>
             </div>
-            <div class="request-actions">
-              <button class="btn-accept" @click="handleAccept(request.from)">ACCEPT</button>
-              <button class="btn-reject" @click="handleReject(request.from)">DENY</button>
+          </div>
+
+          <!-- Audio Call Requests -->
+          <div v-if="pendingAudioCalls.length > 0">
+            <div class="request-header">AUDIO CALLS ☎</div>
+            <div v-for="request in pendingAudioCalls" :key="`audio-${request.from}`" class="request-item">
+              <div class="request-user" :style="{ color: getUserColor(request.from) }">
+                {{ request.from }}
+              </div>
+              <div class="request-actions">
+                <button class="btn-accept" @click="handleAcceptAudio(request.from)">ACCEPT</button>
+                <button class="btn-reject" @click="handleRejectAudio(request.from)">DENY</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Call Requests -->
+          <div v-if="pendingVideoCalls.length > 0">
+            <div class="request-header">VIDEO CALLS 📹</div>
+            <div v-for="request in pendingVideoCalls" :key="`video-${request.from}`" class="request-item">
+              <div class="request-user" :style="{ color: getUserColor(request.from) }">
+                {{ request.from }}
+              </div>
+              <div class="request-actions">
+                <button class="btn-accept" @click="handleAcceptVideo(request.from)">ACCEPT</button>
+                <button class="btn-reject" @click="handleRejectVideo(request.from)">DENY</button>
+              </div>
             </div>
           </div>
         </div>
@@ -405,6 +524,35 @@ watch(
           >
             <div v-if="dragOverZone" class="drop-overlay">
               Drop files to send
+            </div>
+          </div>
+
+          <!-- File Downloads -->
+          <div v-if="getCurrentChat()?.fileTransfers.size" class="files-section">
+            <div class="files-header">📁 FILES</div>
+            <div class="files-list">
+              <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
+                <div class="file-info">
+                  <div class="file-name">{{ transfer.filename }}</div>
+                  <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
+                  <div v-if="transfer.status === 'in-progress'" class="file-progress">
+                    <div class="progress-bar">
+                      <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
+                    </div>
+                    <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
+                  </div>
+                  <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ RECEIVED</div>
+                  <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
+                </div>
+                <button
+                  v-if="transfer.status === 'completed'"
+                  class="file-download-btn"
+                  @click="downloadFile(transfer)"
+                  title="Download file"
+                >
+                  ↓ DOWNLOAD
+                </button>
+              </div>
             </div>
           </div>
 
@@ -496,12 +644,53 @@ watch(
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.notice-item.audio-call,
+.notice-item.video-call {
+  border-color: var(--neon-green);
+  background: rgba(57, 255, 20, 0.08);
+  color: var(--neon-green);
 }
 
 .notice-item.info {
   border-color: var(--dim-green);
   background: rgba(57, 255, 20, 0.08);
   color: var(--neon-green);
+}
+
+.notice-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.notice-item.audio-call .btn-accept,
+.notice-item.video-call .btn-accept {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+}
+
+.notice-item.audio-call .btn-accept:hover,
+.notice-item.video-call .btn-accept:hover {
+  background: var(--neon-green);
+  color: #000;
+}
+
+.notice-item.audio-call .btn-reject,
+.notice-item.video-call .btn-reject {
+  border-color: var(--alert-red);
+  color: var(--alert-red);
+}
+
+.notice-item.audio-call .btn-reject:hover,
+.notice-item.video-call .btn-reject:hover {
+  background: var(--alert-red);
+  color: #fff;
 }
 
 .outgoing-item {
@@ -587,6 +776,39 @@ watch(
   flex: 1;
 }
 
+.tab-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  transition: all 0.2s;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.tab-action-btn:hover {
+  opacity: 1;
+  text-shadow: 0 0 8px currentColor;
+}
+
+.phone-btn,
+.camera-btn {
+  color: var(--neon-green);
+}
+
+.end-call-btn {
+  color: var(--alert-red);
+}
+
+.call-duration-tab {
+  font-size: 10px;
+  color: var(--neon-green);
+  font-family: 'Courier New', monospace;
+  text-shadow: 0 0 4px var(--neon-green);
+  margin: 0 4px;
+}
+
 .badge {
   background: var(--alert-red);
   color: #fff;
@@ -629,6 +851,17 @@ watch(
   text-align: center;
   color: var(--system-dim);
   padding-top: 40px;
+}
+
+.request-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--neon-green);
+  text-transform: uppercase;
+  padding: 12px 0 8px 0;
+  border-bottom: 1px solid var(--dim-green);
+  margin-bottom: 12px;
+  text-shadow: 0 0 5px var(--neon-green);
 }
 
 .request-item {
@@ -759,6 +992,18 @@ watch(
   background: var(--neon-green);
   color: #000;
   box-shadow: 0 0 10px var(--neon-green);
+}
+
+.call-duration {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--neon-green);
+  text-shadow: 0 0 8px var(--neon-green);
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
 }
 
 .messages {
@@ -938,6 +1183,130 @@ watch(
 
 .typing-indicator .dot:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+/* Files Section */
+.files-section {
+  padding: 12px 15px;
+  background: rgba(57, 255, 20, 0.02);
+  border-top: 1px solid var(--dim-green);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.files-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--neon-green);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  text-shadow: 0 0 5px var(--neon-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--dim-green);
+  padding: 8px 10px;
+  border-radius: 2px;
+  gap: 8px;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--text-white);
+  word-break: break-word;
+  margin-bottom: 2px;
+}
+
+.file-size {
+  font-size: 10px;
+  color: var(--system-dim);
+}
+
+.file-progress {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(57, 255, 20, 0.1);
+  border: 1px solid var(--dim-green);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--neon-green);
+  transition: width 0.3s;
+  box-shadow: 0 0 10px var(--neon-green);
+}
+
+.progress-text {
+  font-size: 9px;
+  color: var(--system-dim);
+  min-width: 25px;
+  text-align: right;
+}
+
+.file-status {
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.file-status.completed {
+  color: var(--neon-green);
+  text-shadow: 0 0 5px var(--neon-green);
+}
+
+.file-status.failed {
+  color: var(--alert-red);
+  text-shadow: 0 0 5px var(--alert-red);
+}
+
+.file-download-btn {
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--neon-green);
+  color: var(--neon-green);
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 2px;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.file-download-btn:hover {
+  background: var(--neon-green);
+  color: var(--dark-bg);
+  box-shadow: 0 0 10px var(--neon-green);
 }
 
 @media (max-width: 600px) {

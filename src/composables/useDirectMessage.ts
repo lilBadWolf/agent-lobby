@@ -7,12 +7,23 @@ export interface DMRequest {
   timestamp: number;
 }
 
+export interface AudioCallRequest {
+  from: string;
+  timestamp: number;
+}
+
+export interface VideoCallRequest {
+  from: string;
+  timestamp: number;
+}
+
 export interface FileTransferState {
   id: string;
   filename: string;
   mimeType: string;
   totalSize: number;
   receivedSize: number;
+  totalChunks: number;
   chunks: Map<number, Uint8Array>;
   progress: number;
   status: 'pending' | 'in-progress' | 'completed' | 'failed';
@@ -30,11 +41,15 @@ export interface DMChat {
   localMediaStream: MediaStream | null;
   remoteMediaStream: MediaStream | null;
   fileTransfers: Map<string, FileTransferState>;
+  callStartTime: number | null;
+  callDuration: number;
 }
 
 export interface DMNotice {
   id: number;
   message: string;
+  type?: 'audio-call' | 'video-call' | 'info';
+  from?: string;
 }
 
 interface RTCConnection {
@@ -56,21 +71,72 @@ export function useDirectMessage(
 ) {
   // State
   const pendingRequests = ref<DMRequest[]>([]);
+  const pendingAudioCalls = ref<AudioCallRequest[]>([]);
+  const pendingVideoCalls = ref<VideoCallRequest[]>([]);
   const activeChats = ref<Map<string, DMChat>>(new Map());
   const outgoingRequests = ref<string[]>([]);
   const notices = ref<DMNotice[]>([]);
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
+  const callTimers = new Map<string, NodeJS.Timeout>();
   let messageHandlerRegistered = false;
   let noticeIdCounter = 0;
 
-  function pushNotice(message: string) {
+  function pushNotice(message: string, type?: 'audio-call' | 'video-call' | 'info', from?: string) {
     const id = ++noticeIdCounter;
-    notices.value = [...notices.value, { id, message }];
+    notices.value = [...notices.value, { id, message, type, from }];
 
     setTimeout(() => {
       notices.value = notices.value.filter((n) => n.id !== id);
     }, 4000);
+  }
+
+  // Start call duration timer
+  function startCallTimer(user: string) {
+    const chat = activeChats.value.get(user);
+    if (!chat) return;
+
+    // Clear any existing timer
+    if (callTimers.has(user)) {
+      clearInterval(callTimers.get(user)!);
+    }
+
+    chat.callStartTime = Date.now();
+    chat.callDuration = 0;
+
+    const timer = setInterval(() => {
+      if (chat.callStartTime) {
+        chat.callDuration = Math.floor((Date.now() - chat.callStartTime) / 1000);
+      }
+    }, 1000);
+
+    callTimers.set(user, timer);
+  }
+
+  // Stop call duration timer
+  function stopCallTimer(user: string) {
+    const chat = activeChats.value.get(user);
+    if (chat) {
+      chat.callStartTime = null;
+      chat.callDuration = 0;
+    }
+
+    if (callTimers.has(user)) {
+      clearInterval(callTimers.get(user)!);
+      callTimers.delete(user);
+    }
+  }
+
+  // Format call duration
+  function formatCallDuration(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
   }
 
   // RTCConfiguration with STUN servers
@@ -147,14 +213,28 @@ export function useDirectMessage(
     } else if (data.type === 'close') {
       // Remote peer explicitly closed this DM thread.
       closeDM(fromUser, false);
-    } else if (data.type === 'video-request') {
-      // Notify about incoming video call request
+    } else if (data.type === 'audio-request') {
+      // Add to pending audio calls
       const chat = activeChats.value.get(fromUser);
       if (chat) {
-        pushNotice(`${fromUser} is requesting a video call`);
+        // Remove if already pending
+        pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+        pendingAudioCalls.value.push({ from: fromUser, timestamp: Date.now() });
+        pushNotice(`${fromUser} is requesting an audio call`, 'audio-call', fromUser);
       }
-    } else if (data.type === 'video-accept') {
-      pushNotice(`${fromUser} accepted your video call request`);
+    } else if (data.type === 'audio-reject') {
+      pushNotice(`${fromUser} declined your audio call request.`);
+    } else if (data.type === 'video-request') {
+      // Add to pending video calls
+      const chat = activeChats.value.get(fromUser);
+      if (chat) {
+        // Remove if already pending
+        pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+        pendingVideoCalls.value.push({ from: fromUser, timestamp: Date.now() });
+        pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser);
+      }
+    } else if (data.type === 'video-reject') {
+      pushNotice(`${fromUser} declined your video call request.`);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -357,30 +437,34 @@ export function useDirectMessage(
         mimeType: data.mimeType,
         totalSize: data.totalSize,
         receivedSize: 0,
+        totalChunks: data.totalChunks,
         chunks: new Map(),
         progress: 0,
         status: 'in-progress'
       };
       chat.fileTransfers.set(data.id, fileTransfer);
       return true;
+    } else if (data.type === 'file-chunk') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.chunks.set(data.chunkIndex, new Uint8Array(data.data));
+        transfer.receivedSize += data.data.length;
+        transfer.progress = Math.round((transfer.chunks.size / transfer.totalChunks) * 100);
+
+        // Check if transfer complete
+        if (transfer.chunks.size === transfer.totalChunks) {
+          transfer.status = 'completed';
+          transfer.progress = 100;
+          pushNotice(`File received: ${transfer.filename}`);
+        }
+      }
+      return true;
     } else if (data.type === 'file-complete') {
       const transfer = chat.fileTransfers.get(data.id);
       if (transfer) {
-        // Reconstruct file from chunks
-        const chunks = Array.from(transfer.chunks.values()) as BlobPart[];
-        const blob = new Blob(chunks, { type: transfer.mimeType });
-
-        // Create download link
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = transfer.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
         transfer.status = 'completed';
+        transfer.progress = 100;
+        pushNotice(`File transfer complete: ${transfer.filename}`);
       }
       return true;
     } else if (data.type === 'file-error') {
@@ -413,6 +497,7 @@ export function useDirectMessage(
       mimeType: file.type,
       totalSize: file.size,
       receivedSize: file.size, // For sender, we consider all data "received"
+      totalChunks,
       chunks: new Map(),
       progress: 0,
       status: 'in-progress'
@@ -541,7 +626,9 @@ export function useDirectMessage(
           videoEnabled: false,
           localMediaStream: null,
           remoteMediaStream: null,
-          fileTransfers: new Map()
+          fileTransfers: new Map(),
+          callStartTime: null,
+          callDuration: 0
         });
       }
     } catch (e) {
@@ -579,7 +666,9 @@ export function useDirectMessage(
       videoEnabled: false,
       localMediaStream: null,
       remoteMediaStream: null,
-      fileTransfers: new Map()
+      fileTransfers: new Map(),
+      callStartTime: null,
+      callDuration: 0
     });
 
     // Remove pending only after the chat tab exists.
@@ -609,6 +698,30 @@ export function useDirectMessage(
     mqttClient.publish(
       getSignalTopic(targetUser),
       JSON.stringify({ type: 'cancel' })
+    );
+  }
+
+  // Reject incoming audio call
+  function rejectAudioCall(fromUser: string) {
+    pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+
+    if (!mqttClient) return;
+
+    mqttClient.publish(
+      getSignalTopic(fromUser),
+      JSON.stringify({ type: 'audio-reject' })
+    );
+  }
+
+  // Reject incoming video call
+  function rejectVideoCall(fromUser: string) {
+    pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+
+    if (!mqttClient) return;
+
+    mqttClient.publish(
+      getSignalTopic(fromUser),
+      JSON.stringify({ type: 'video-reject' })
     );
   }
 
@@ -724,6 +837,7 @@ export function useDirectMessage(
 
     rtcConnections.delete(otherUser);
     signalQueue.delete(otherUser);
+    stopCallTimer(otherUser);
     outgoingRequests.value = outgoingRequests.value.filter((user) => user !== otherUser);
     removeChat(otherUser);
     if (clearPendingRequest) {
@@ -801,11 +915,22 @@ export function useDirectMessage(
 
       chat.localMediaStream = stream;
 
+      // Add audio tracks to peer connection
+      const rtcConn = rtcConnections.get(targetUser);
+      if (rtcConn) {
+        stream.getAudioTracks().forEach(track => {
+          rtcConn.peerConnection.addTrack(track, stream);
+        });
+      }
+
       // Send audio request signal
       mqttClient.publish(
         getSignalTopic(targetUser),
         JSON.stringify({ type: 'audio-request' })
       );
+
+      // Start call timer for initiator
+      startCallTimer(targetUser);
 
       pushNotice(`Audio call requested to ${targetUser}`);
     } catch (error) {
@@ -817,6 +942,9 @@ export function useDirectMessage(
   // Accept incoming audio call
   async function acceptAudioCall(fromUser: string) {
     if (!mqttClient) return;
+
+    // Clear from pending requests
+    pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
 
     try {
       const audioConstraints: MediaTrackConstraints = audioConfig
@@ -849,7 +977,10 @@ export function useDirectMessage(
         JSON.stringify({ type: 'accept-audio' })
       );
 
-      pushNotice(`Audio call accepted with ${fromUser}`);
+      // Start call duration timer
+      startCallTimer(fromUser);
+
+      pushNotice(`Audio call accepted with ${fromUser}`, 'info');
     } catch (error) {
       console.error('Failed to accept audio call:', error);
       pushNotice('Failed to access microphone for audio call.');
@@ -902,11 +1033,22 @@ export function useDirectMessage(
 
       chat.localMediaStream = stream;
 
+      // Add video tracks to peer connection
+      const rtcConn = rtcConnections.get(targetUser);
+      if (rtcConn) {
+        stream.getVideoTracks().forEach(track => {
+          rtcConn.peerConnection.addTrack(track, stream);
+        });
+      }
+
       // Send video request signal
       mqttClient.publish(
         getSignalTopic(targetUser),
         JSON.stringify({ type: 'video-request' })
       );
+
+      // Start call timer for initiator
+      startCallTimer(targetUser);
 
       pushNotice(`Video call requested to ${targetUser}`);
     } catch (error) {
@@ -918,6 +1060,9 @@ export function useDirectMessage(
   // Accept incoming video call
   async function acceptVideoCall(fromUser: string) {
     if (!mqttClient) return;
+
+    // Clear from pending requests
+    pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
 
     try {
       const videoConstraints: MediaTrackConstraints = audioConfig
@@ -950,7 +1095,10 @@ export function useDirectMessage(
         JSON.stringify({ type: 'accept-video' })
       );
 
-      pushNotice(`Video call accepted with ${fromUser}`);
+      // Start call duration timer
+      startCallTimer(fromUser);
+
+      pushNotice(`Video call accepted with ${fromUser}`, 'info');
     } catch (error) {
       console.error('Failed to accept video call:', error);
       pushNotice('Failed to access camera for video call.');
@@ -1002,6 +1150,8 @@ export function useDirectMessage(
 
   return {
     pendingRequests: computed(() => pendingRequests.value),
+    pendingAudioCalls: computed(() => pendingAudioCalls.value),
+    pendingVideoCalls: computed(() => pendingVideoCalls.value),
     activeChats: computed(() => activeChats.value),
     outgoingRequests: computed(() => outgoingRequests.value),
     notices: computed(() => notices.value),
@@ -1009,6 +1159,8 @@ export function useDirectMessage(
     cancelDMRequest,
     acceptDM,
     rejectDM,
+    rejectAudioCall,
+    rejectVideoCall,
     sendDMMessage,
     sendTyping,
     sendStopTyping,
@@ -1020,6 +1172,7 @@ export function useDirectMessage(
     requestVideoCall,
     acceptVideoCall,
     toggleVideoStream,
+    formatCallDuration,
     sendFile,
     cleanup
   };

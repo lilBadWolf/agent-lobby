@@ -270,12 +270,6 @@ function handleToggleVideo(user: string, enabled: boolean) {
   }
 }
 
-function handleEndVideoCall(user: string) {
-  if (dm.value) {
-    dm.value.endVideoCall(user);
-  }
-}
-
 function handleSendFile(user: string, file: File) {
   if (dm.value) {
     dm.value.sendFile(user, file);
@@ -355,7 +349,6 @@ function handleSendFile(user: string, file: File) {
       @toggle-audio="handleToggleAudio"
       @request-video="handleRequestVideo"
       @toggle-video="handleToggleVideo"
-      @end-video-call="handleEndVideoCall"
       @send-file="handleSendFile"
     />
 

@@ -262,9 +262,6 @@ export function useDirectMessage(
       }
     } else if (data.type === 'video-reject') {
       pushNotice(`${fromUser} declined your video call request.`);
-    } else if (data.type === 'end-call') {
-      // Peer ended the call
-      endVideoCall(fromUser);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -1222,77 +1219,6 @@ export function useDirectMessage(
     }
   }
 
-  // End video call and release resources
-  function endVideoCall(user: string) {
-    const chat = activeChats.value.get(user);
-    if (!chat) return;
-
-    // Get RTCConnection to remove video senders
-    const rtcConn = rtcConnections.get(user);
-    if (rtcConn) {
-      // Remove all video/audio senders
-      rtcConn.videoSenders.forEach(sender => {
-        try {
-          rtcConn.peerConnection.removeTrack(sender);
-        } catch (e) {
-          console.debug('Error removing video sender:', e);
-        }
-      });
-      rtcConn.videoSenders = [];
-      rtcConn.audioSenders = [];
-    }
-
-    // Notify peer via MQTT that call is ending
-    try {
-      if (mqttClient) {
-        mqttClient.publish(
-          getSignalTopic(user),
-          JSON.stringify({ type: 'end-call' })
-        );
-        console.log('Sent end-call signal to', user);
-      }
-    } catch (e) {
-      console.error('Failed to send end-call signal:', e);
-    }
-
-    // Clear video call state first (unmounts VideoWindow)
-    chat.videoCallActive = false;
-    chat.audioEnabled = false;
-    chat.videoEnabled = false;
-    chat.callStartTime = null;
-    chat.callDuration = 0;
-
-    // Set streams to null (allows video elements to detach)
-    const localStream = chat.localMediaStream;
-    const remoteStream = chat.remoteMediaStream;
-    chat.localMediaStream = null;
-    chat.remoteMediaStream = null;
-
-    // Stop all local tracks
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('Stopped local track:', track.kind);
-      });
-    }
-
-    // Stop all remote tracks
-    if (remoteStream) {
-      remoteStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('Stopped remote track:', track.kind);
-      });
-    }
-
-    // Clear call timer
-    if (callTimers.has(user)) {
-      clearInterval(callTimers.get(user));
-      callTimers.delete(user);
-    }
-
-    console.log('Ended video call with', user);
-  }
-
   // Cleanup on disconnect
   function cleanup() {
     rtcConnections.forEach(rtcConn => {
@@ -1338,7 +1264,6 @@ export function useDirectMessage(
     requestVideoCall,
     acceptVideoCall,
     toggleVideoStream,
-    endVideoCall,
     formatCallDuration,
     sendFile,
     cleanup

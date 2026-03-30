@@ -36,7 +36,6 @@ const emit = defineEmits<{
   toggleAudio: [user: string, enabled: boolean];
   requestVideo: [user: string];
   toggleVideo: [user: string, enabled: boolean];
-  endVideoCall: [user: string];
   sendFile: [user: string, file: File];
 }>();
 
@@ -181,9 +180,8 @@ function handleRejectVideo(user: string) {
 }
 
 function handleCloseVideoCall() {
-  const currentChat = getCurrentChat();
-  if (currentChat) {
-    currentChat.videoCallActive = false;
+  if (currentTab.value !== 'requests') {
+    emit('closeDm', currentTab.value);
   }
 }
 
@@ -251,7 +249,8 @@ function handleEndCall(user: string) {
 
 function handleVideoWindowClose() {
   if (currentTab.value !== 'requests') {
-    emit('endVideoCall', currentTab.value);
+    // Close the entire DM, which will clean up all resources
+    emit('closeDm', currentTab.value);
   }
   activeVideoCallUser.value = null;
 }

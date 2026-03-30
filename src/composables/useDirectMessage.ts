@@ -916,6 +916,10 @@ export function useDirectMessage(
       chat.remoteMediaStream.addTrack(event.track);
       console.log('Remote stream now has', chat.remoteMediaStream.getTracks().length, 'tracks');
 
+      // Force Vue reactivity by re-setting the Map entry (triggers watcher)
+      activeChats.value.set(user, chat);
+      console.log('Triggered remoteMediaStream reactivity for', user);
+
       // Update flags based on track kind
       if (event.track.kind === 'audio') {
         chat.audioEnabled = true;
@@ -1091,13 +1095,22 @@ export function useDirectMessage(
       chat.localMediaStream = stream;
       chat.videoCallActive = true;
 
-      // Add video tracks to peer connection
+      // Add video tracks to peer connection and renegotiate
       const rtcConn = rtcConnections.get(targetUser);
       if (rtcConn) {
         console.log('Initiator adding video tracks to peer connection');
         stream.getVideoTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
+
+        // Renegotiate the connection to include video
+        try {
+          const offer = await rtcConn.peerConnection.createOffer();
+          await rtcConn.peerConnection.setLocalDescription(offer);
+          console.log('Initiator created renegotiation offer with video');
+        } catch (e) {
+          console.error('Failed to renegotiate video:', e);
+        }
       }
 
       // Send video request signal
@@ -1149,6 +1162,15 @@ export function useDirectMessage(
         stream.getVideoTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
+
+        // Renegotiate the connection to include video
+        try {
+          const offer = await rtcConn.peerConnection.createOffer();
+          await rtcConn.peerConnection.setLocalDescription(offer);
+          console.log('Acceptor created renegotiation offer with video');
+        } catch (e) {
+          console.error('Failed to renegotiate video on accept:', e);
+        }
       }
 
       // Send accept signal

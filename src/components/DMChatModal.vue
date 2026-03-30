@@ -287,7 +287,6 @@ watch(
             v-if="tab !== 'requests'"
             class="tab-close"
             @click.stop="closeTab(tab)"
-            title="Close DM"
           >
             ✕
           </button>
@@ -333,7 +332,6 @@ watch(
               v-if="getCurrentChat()?.pendingDisplayMessages.length"
               class="cancel-btn"
               @click="emit('cancelPendingMessages', currentTab)"
-              title="Cancel pending messages"
             >
               CANCEL
             </button>

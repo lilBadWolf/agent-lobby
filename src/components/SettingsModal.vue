@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import type { AudioConfig } from '../composables/useLobbyChat';
+import { useMessageAnimations } from '../composables/useMessageAnimations';
 
 const props = defineProps<{
   showModal: boolean;
@@ -16,6 +17,9 @@ const emit = defineEmits<{
 }>();
 
 const localConfig = ref<AudioConfig>({ ...props.config });
+const showEffectPreview = ref(false);
+const previewElement = ref<HTMLElement>();
+const { playAnimation } = useMessageAnimations();
 
 watch(
   () => props.config,
@@ -45,6 +49,19 @@ function handleChange() {
 
 function handleClearLog() {
   emit('clearLog');
+}
+
+async function previewEffect() {
+  showEffectPreview.value = true;
+  await nextTick(); // Wait for DOM to render
+  if (previewElement.value) {
+    previewElement.value.innerHTML = '';
+    const effectName = localConfig.value.dmChatEffect.toUpperCase();
+    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
+    setTimeout(() => {
+      showEffectPreview.value = false;
+    }, 300);
+  }
 }
 </script>
 
@@ -84,7 +101,10 @@ function handleClearLog() {
           />
         </div>
         <div class="setting-row">
-          <label>DM CHAT EFFECT</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label>DM CHAT EFFECT</label>
+            <button class="preview-btn" @click="previewEffect" title="Preview Effect">🔭</button>
+          </div>
           <select
             v-model="localConfig.dmChatEffect"
             id="set-dm-effect"
@@ -121,8 +141,11 @@ function handleClearLog() {
           </select>
         </div>
       </div>
-      <button class="clear-btn" @click="handleClearLog">CLEAR LOG</button>
+      <button class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
+    </div>
+    <div v-if="showEffectPreview" class="effect-preview">
+      <div ref="previewElement" class="preview-text"></div>
     </div>
   </div>
 </template>
@@ -153,6 +176,8 @@ function handleClearLog() {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding-right: 10px;
+  margin-bottom: 10px;
 }
 
 .setting-row {
@@ -242,5 +267,45 @@ label {
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 1px;
+}
+
+.preview-btn {
+  background: none;
+  border: none;
+  color: var(--neon-green);
+  cursor: pointer;
+  font-size: 16px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  padding: 2px;
+}
+
+.preview-btn:hover {
+  opacity: 1;
+}
+
+.effect-preview {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 401;
+  pointer-events: none;
+}
+
+.preview-text {
+  font-size: 48px;
+  font-weight: bold;
+  text-transform: uppercase;
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: 3px;
+  text-align: center;
+  color: var(--neon-green);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

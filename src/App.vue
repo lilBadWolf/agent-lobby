@@ -104,6 +104,16 @@ function handleLogin(handle: string) {
   boot(handle, rawId || undefined);
 }
 
+function quit() {
+  showShutdownAnim.value = true;
+  setTimeout(async () => {
+    disconnect();
+    showShutdownAnim.value = false;
+    const window = getCurrentWindow();
+    await window.close();
+  }, 600);
+}
+
 function handleDisconnect() {
   showShutdownAnim.value = true;
   setTimeout(() => {
@@ -200,7 +210,7 @@ function handleCancelPendingMessages(user: string) {
     <button class="maximize-btn" @click="toggleMaximize">
       {{ isMaximized ? '◻' : '◻' }}
     </button>
-    <button class="titlebar-close-btn" @click="handleDisconnect">✕</button>
+    <button class="titlebar-close-btn" @click="quit">✕</button>
   </div>
   <div id="app" :class="{ 'shutdown-anim': showShutdownAnim }">
     <button class="gear-btn" @click="toggleSettings">⚙</button>
@@ -210,7 +220,6 @@ function handleCancelPendingMessages(user: string) {
       :config="config"
       :available-soundpacks="availableSoundpacks"
       :available-themes="availableThemes"
-      title="Client Settings"
       @update="
         (newConfig) => {
           config.dmEnabled = newConfig.dmEnabled;

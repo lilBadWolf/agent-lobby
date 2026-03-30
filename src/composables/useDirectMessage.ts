@@ -17,6 +17,8 @@ export interface VideoCallRequest {
   timestamp: number;
 }
 
+export type FileTransferDirection = 'incoming' | 'outgoing';
+
 export interface FileTransferState {
   id: string;
   filename: string;
@@ -26,7 +28,9 @@ export interface FileTransferState {
   totalChunks: number;
   chunks: Map<number, Uint8Array>;
   progress: number;
-  status: 'pending' | 'in-progress' | 'completed' | 'failed';
+  direction: FileTransferDirection;
+  status: 'pending' | 'awaiting-accept' | 'in-progress' | 'completed' | 'rejected' | 'failed';
+  savedToDisk: boolean;
 }
 
 export interface DMChat {
@@ -49,8 +53,9 @@ export interface DMChat {
 export interface DMNotice {
   id: number;
   message: string;
-  type?: 'audio-call' | 'video-call' | 'info';
+  type?: 'audio-call' | 'video-call' | 'info' | 'file-offer';
   from?: string;
+  fileId?: string;
 }
 
 interface RTCConnection {
@@ -80,16 +85,23 @@ export function useDirectMessage(
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
   const callTimers = new Map<string, NodeJS.Timeout>();
+  const pendingOutgoingFiles = new Map<string, { user: string; file: File }>();
   let messageHandlerRegistered = false;
   let noticeIdCounter = 0;
 
-  function pushNotice(message: string, type?: 'audio-call' | 'video-call' | 'info', from?: string) {
+  function pushNotice(
+    message: string,
+    type?: 'audio-call' | 'video-call' | 'info' | 'file-offer',
+    from?: string,
+    fileId?: string,
+    timeout = 4000
+  ) {
     const id = ++noticeIdCounter;
-    notices.value = [...notices.value, { id, message, type, from }];
+    notices.value = [...notices.value, { id, message, type, from, fileId }];
 
     setTimeout(() => {
       notices.value = notices.value.filter((n) => n.id !== id);
-    }, 4000);
+    }, timeout);
   }
 
   // Start call duration timer
@@ -383,21 +395,14 @@ export function useDirectMessage(
       try {
         // Handle binary data (file chunks)
         if (event.data instanceof ArrayBuffer) {
-          const view = new Uint8Array(event.data);
-          // First 36 bytes are the file ID, next 4 bytes are chunk index
-          const fileId = new TextDecoder().decode(view.slice(0, 36));
-          const chunkIndex = new DataView(event.data).getUint32(36);
-          const chunkData = view.slice(40);
+          handleIncomingBinaryChunk(otherUser, event.data);
+          return;
+        }
 
-          const chat = activeChats.value.get(otherUser);
-          if (chat) {
-            const transfer = chat.fileTransfers.get(fileId);
-            if (transfer) {
-              transfer.chunks.set(chunkIndex, chunkData);
-              transfer.receivedSize += chunkData.length;
-              transfer.progress = (transfer.receivedSize / transfer.totalSize) * 100;
-            }
-          }
+        if (event.data instanceof Blob) {
+          void event.data.arrayBuffer().then((buffer) => {
+            handleIncomingBinaryChunk(otherUser, buffer);
+          });
           return;
         }
 
@@ -455,87 +460,68 @@ export function useDirectMessage(
     };
   }
 
-  // Handle file transfer via data channel messages
-  function handleFileTransferMessage(data: any, otherUser: string): boolean {
-    const chat = activeChats.value.get(otherUser);
-    if (!chat) return false;
-
-    if (data.type === 'file-start') {
-      const fileTransfer: FileTransferState = {
-        id: data.id,
-        filename: data.filename,
-        mimeType: data.mimeType,
-        totalSize: data.totalSize,
-        receivedSize: 0,
-        totalChunks: data.totalChunks,
-        chunks: new Map(),
-        progress: 0,
-        status: 'in-progress'
-      };
-      chat.fileTransfers.set(data.id, fileTransfer);
-      return true;
-    } else if (data.type === 'file-chunk') {
-      const transfer = chat.fileTransfers.get(data.id);
-      if (transfer) {
-        transfer.chunks.set(data.chunkIndex, new Uint8Array(data.data));
-        transfer.receivedSize += data.data.length;
-        transfer.progress = Math.round((transfer.chunks.size / transfer.totalChunks) * 100);
-
-        // Check if transfer complete
-        if (transfer.chunks.size === transfer.totalChunks) {
-          transfer.status = 'completed';
-          transfer.progress = 100;
-          pushNotice(`File received: ${transfer.filename}`);
-        }
-      }
-      return true;
-    } else if (data.type === 'file-complete') {
-      const transfer = chat.fileTransfers.get(data.id);
-      if (transfer) {
-        transfer.status = 'completed';
-        transfer.progress = 100;
-        pushNotice(`File transfer complete: ${transfer.filename}`);
-      }
-      return true;
-    } else if (data.type === 'file-error') {
-      const transfer = chat.fileTransfers.get(data.id);
-      if (transfer) {
-        transfer.status = 'failed';
-      }
-      return true;
-    }
-    return false;
+  function normalizeFileId(rawId: string): string {
+    return rawId.replace(/\0/g, '').trim();
   }
 
-  // Send a file to another user
-  async function sendFile(toUser: string, file: File) {
-    const chat = activeChats.value.get(toUser);
+  function createFileId(): string {
+    const uuid = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(16).padStart(12, '0')}-${Math.random().toString(16).slice(2, 26).padEnd(23, '0')}`;
+    return uuid.slice(0, 36).padEnd(36, '0');
+  }
+
+  function markFileSaved(user: string, fileId: string) {
+    const chat = activeChats.value.get(user);
+    if (!chat) return;
+
+    const transfer = chat.fileTransfers.get(fileId);
+    if (!transfer) return;
+
+    transfer.savedToDisk = true;
+    setOrUpdateChat(user, chat);
+  }
+
+  function handleIncomingBinaryChunk(otherUser: string, data: ArrayBuffer) {
+    const view = new Uint8Array(data);
+    const fileId = normalizeFileId(new TextDecoder().decode(view.slice(0, 36)));
+    const chunkIndex = new DataView(data).getUint32(36);
+    const chunkData = view.slice(40);
+
+    const chat = activeChats.value.get(otherUser);
+    if (!chat) return;
+
+    const transfer = chat.fileTransfers.get(fileId);
+    if (!transfer || transfer.direction !== 'incoming') return;
+
+    transfer.chunks.set(chunkIndex, chunkData);
+    transfer.receivedSize += chunkData.length;
+    transfer.progress = Math.min(100, (transfer.receivedSize / transfer.totalSize) * 100);
+    transfer.status = 'in-progress';
+    setOrUpdateChat(otherUser, chat);
+  }
+
+  async function streamFileToPeer(otherUser: string, fileId: string, file: File) {
+    const chat = activeChats.value.get(otherUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
       pushNotice('File transfer requires active connection');
       return;
     }
 
-    const fileId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const chunkSize = 16384; // 16KB chunks
+    const transfer = chat.fileTransfers.get(fileId);
+    if (!transfer) return;
+
+    const chunkSize = 16384;
     const buffer = await file.arrayBuffer();
     const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
 
-    // Create file transfer state
-    const fileTransfer: FileTransferState = {
-      id: fileId,
-      filename: file.name,
-      mimeType: file.type,
-      totalSize: file.size,
-      receivedSize: file.size, // For sender, we consider all data "received"
-      totalChunks,
-      chunks: new Map(),
-      progress: 0,
-      status: 'in-progress'
-    };
-    chat.fileTransfers.set(fileId, fileTransfer);
+    transfer.totalChunks = totalChunks;
+    transfer.totalSize = file.size;
+    transfer.status = 'in-progress';
+    transfer.progress = 0;
+    setOrUpdateChat(otherUser, chat);
 
     try {
-      // Send file start message
       chat.dataChannel.send(JSON.stringify({
         type: 'file-start',
         id: fileId,
@@ -545,43 +531,224 @@ export function useDirectMessage(
         totalChunks
       }));
 
-      // Send file chunks
       const fileBuffer = new Uint8Array(buffer);
+      const idBytes = new TextEncoder().encode(fileId);
+
       for (let i = 0; i < totalChunks; i++) {
         const start = i * chunkSize;
         const end = Math.min(start + chunkSize, buffer.byteLength);
         const chunk = fileBuffer.slice(start, end);
 
-        // Prepend file ID and chunk index for identification
         const chunkMessage = new ArrayBuffer(40 + chunk.byteLength);
-        const view = new Uint8Array(chunkMessage);
-
-        // Copy file ID (first 36 bytes)
-        const idBytes = new TextEncoder().encode(fileId);
-        view.set(idBytes, 0);
-
-        // Copy chunk index (bytes 36-40)
+        const chunkView = new Uint8Array(chunkMessage);
+        chunkView.set(idBytes, 0);
         new DataView(chunkMessage).setUint32(36, i);
-
-        // Copy chunk data (bytes 40+)
-        view.set(chunk, 40);
+        chunkView.set(chunk, 40);
 
         chat.dataChannel.send(chunkMessage);
-        fileTransfer.progress = ((i + 1) / totalChunks) * 100;
+
+        transfer.receivedSize = end;
+        transfer.progress = ((i + 1) / totalChunks) * 100;
+        setOrUpdateChat(otherUser, chat);
       }
 
-      // Send completion message
       chat.dataChannel.send(JSON.stringify({
         type: 'file-complete',
         id: fileId
       }));
 
-      fileTransfer.status = 'completed';
-      pushNotice(`File "${file.name}" sent to ${toUser}`);
+      transfer.status = 'completed';
+      transfer.progress = 100;
+      setOrUpdateChat(otherUser, chat);
+      pushNotice(`File "${file.name}" sent to ${otherUser}`);
     } catch (error) {
       console.error('File transfer error:', error);
+      transfer.status = 'failed';
+      setOrUpdateChat(otherUser, chat);
+
+      try {
+        chat.dataChannel.send(JSON.stringify({
+          type: 'file-error',
+          id: fileId
+        }));
+      } catch {
+        // Ignore follow-up send errors on broken channels.
+      }
+
+      pushNotice(`Failed to send file to ${otherUser}`);
+    } finally {
+      pendingOutgoingFiles.delete(fileId);
+    }
+  }
+
+  // Handle file transfer via data channel messages
+  function handleFileTransferMessage(data: any, otherUser: string): boolean {
+    const chat = activeChats.value.get(otherUser);
+    if (!chat) return false;
+
+    if (data.type === 'file-offer') {
+      const incomingOffer: FileTransferState = {
+        id: data.id,
+        filename: data.filename,
+        mimeType: data.mimeType,
+        totalSize: data.totalSize,
+        receivedSize: 0,
+        totalChunks: data.totalChunks,
+        chunks: new Map(),
+        progress: 0,
+        direction: 'incoming',
+        status: 'pending',
+        savedToDisk: false
+      };
+      chat.fileTransfers.set(data.id, incomingOffer);
+      setOrUpdateChat(otherUser, chat);
+      pushNotice(`${otherUser} wants to send "${data.filename}"`, 'file-offer', otherUser, data.id, 10000);
+      return true;
+    }
+
+    if (data.type === 'file-accept') {
+      const pending = pendingOutgoingFiles.get(data.id);
+      if (!pending || pending.user !== otherUser) return true;
+
+      void streamFileToPeer(otherUser, data.id, pending.file);
+      return true;
+    }
+
+    if (data.type === 'file-reject') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.status = 'rejected';
+        setOrUpdateChat(otherUser, chat);
+      }
+      pendingOutgoingFiles.delete(data.id);
+      pushNotice(`${otherUser} declined file "${transfer?.filename || 'transfer'}"`);
+      return true;
+    }
+
+    if (data.type === 'file-start') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.totalChunks = data.totalChunks;
+        transfer.totalSize = data.totalSize;
+        transfer.mimeType = data.mimeType;
+        transfer.status = 'in-progress';
+        transfer.progress = 0;
+        setOrUpdateChat(otherUser, chat);
+      }
+      return true;
+    }
+
+    if (data.type === 'file-complete') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.status = 'completed';
+        transfer.progress = 100;
+        setOrUpdateChat(otherUser, chat);
+        pushNotice(`File transfer complete: ${transfer.filename}`);
+      }
+      return true;
+    }
+
+    if (data.type === 'file-error') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer) {
+        transfer.status = 'failed';
+        setOrUpdateChat(otherUser, chat);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  function acceptFileTransfer(fromUser: string, fileId: string) {
+    const chat = activeChats.value.get(fromUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+
+    const transfer = chat.fileTransfers.get(fileId);
+    if (!transfer || transfer.direction !== 'incoming') return;
+
+    transfer.status = 'in-progress';
+    setOrUpdateChat(fromUser, chat);
+
+    try {
+      chat.dataChannel.send(JSON.stringify({
+        type: 'file-accept',
+        id: fileId
+      }));
+    } catch (e) {
+      console.error('Failed to accept file transfer:', e);
+      transfer.status = 'failed';
+      setOrUpdateChat(fromUser, chat);
+    }
+  }
+
+  function rejectFileTransfer(fromUser: string, fileId: string) {
+    const chat = activeChats.value.get(fromUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+
+    const transfer = chat.fileTransfers.get(fileId);
+    if (!transfer || transfer.direction !== 'incoming') return;
+
+    transfer.status = 'rejected';
+    setOrUpdateChat(fromUser, chat);
+
+    try {
+      chat.dataChannel.send(JSON.stringify({
+        type: 'file-reject',
+        id: fileId
+      }));
+    } catch (e) {
+      console.error('Failed to reject file transfer:', e);
+    }
+  }
+
+  // Send a file offer to another user
+  async function sendFile(toUser: string, file: File) {
+    const chat = activeChats.value.get(toUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
+      pushNotice('File transfer requires active connection');
+      return;
+    }
+
+    const fileId = createFileId();
+    const chunkSize = 16384;
+    const totalChunks = Math.ceil(file.size / chunkSize);
+
+    const fileTransfer: FileTransferState = {
+      id: fileId,
+      filename: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      totalSize: file.size,
+      receivedSize: 0,
+      totalChunks,
+      chunks: new Map(),
+      progress: 0,
+      direction: 'outgoing',
+      status: 'awaiting-accept',
+      savedToDisk: false
+    };
+
+    chat.fileTransfers.set(fileId, fileTransfer);
+    setOrUpdateChat(toUser, chat);
+    pendingOutgoingFiles.set(fileId, { user: toUser, file });
+
+    try {
+      chat.dataChannel.send(JSON.stringify({
+        type: 'file-offer',
+        id: fileId,
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        totalSize: file.size,
+        totalChunks
+      }));
+      pushNotice(`Waiting for ${toUser} to accept "${file.name}"`);
+    } catch (error) {
+      console.error('File transfer offer error:', error);
       fileTransfer.status = 'failed';
-      pushNotice(`Failed to send file to ${toUser}`);
+      setOrUpdateChat(toUser, chat);
+      pendingOutgoingFiles.delete(fileId);
+      pushNotice(`Failed to offer file to ${toUser}`);
     }
   }
 
@@ -893,6 +1060,14 @@ export function useDirectMessage(
     signalQueue.delete(otherUser);
     stopCallTimer(otherUser);
     outgoingRequests.value = outgoingRequests.value.filter((user) => user !== otherUser);
+
+    // Drop queued outgoing file offers for this peer.
+    pendingOutgoingFiles.forEach((pending, fileId) => {
+      if (pending.user === otherUser) {
+        pendingOutgoingFiles.delete(fileId);
+      }
+    });
+
     removeChat(otherUser);
     if (clearPendingRequest) {
       pendingRequests.value = pendingRequests.value.filter(r => r.from !== otherUser);
@@ -1253,6 +1428,7 @@ export function useDirectMessage(
     });
     rtcConnections.clear();
     signalQueue.clear();
+    pendingOutgoingFiles.clear();
     activeChats.value.clear();
     outgoingRequests.value = [];
     pendingRequests.value = [];
@@ -1290,6 +1466,9 @@ export function useDirectMessage(
     toggleVideoStream,
     formatCallDuration,
     sendFile,
+    acceptFileTransfer,
+    rejectFileTransfer,
+    markFileSaved,
     cleanup
   };
 }

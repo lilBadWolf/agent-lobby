@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice } from '../composables/useDirectMessage';
+import { downloadDir } from '@tauri-apps/api/path';
+import { openPath } from '@tauri-apps/plugin-opener';
+import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import VideoWindow from './VideoWindow.vue';
@@ -37,6 +39,9 @@ const emit = defineEmits<{
   requestVideo: [user: string];
   toggleVideo: [user: string, enabled: boolean];
   sendFile: [user: string, file: File];
+  acceptFile: [user: string, fileId: string];
+  rejectFile: [user: string, fileId: string];
+  fileSaved: [user: string, fileId: string];
 }>();
 
 const { getUserColor } = useTheme();
@@ -295,10 +300,39 @@ function formatBytes(bytes: number): string {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
-function downloadFile(transfer: any) {
+async function showDownloadsFolder() {
+  try {
+    const downloadsPath = await downloadDir();
+    await openPath(downloadsPath);
+  } catch (error) {
+    console.error('Failed to open downloads folder:', error);
+  }
+}
+
+function acceptFileTransfer(fileId: string) {
+  if (currentTab.value === 'requests') return;
+  emit('acceptFile', currentTab.value, fileId);
+}
+
+function rejectFileTransfer(fileId: string) {
+  if (currentTab.value === 'requests') return;
+  emit('rejectFile', currentTab.value, fileId);
+}
+
+function acceptFileTransferFromNotice(user: string | undefined, fileId: string | undefined) {
+  if (!user || !fileId) return;
+  emit('acceptFile', user, fileId);
+  currentTab.value = user;
+}
+
+function rejectFileTransferFromNotice(user: string | undefined, fileId: string | undefined) {
+  if (!user || !fileId) return;
+  emit('rejectFile', user, fileId);
+}
+
+function downloadFile(transfer: FileTransferState) {
   if (!transfer || !transfer.chunks) return;
 
-  // Reconstruct file from chunks
   const chunks: Uint8Array[] = [];
   for (let i = 0; i < transfer.totalChunks; i++) {
     const chunk = transfer.chunks.get(i);
@@ -307,8 +341,8 @@ function downloadFile(transfer: any) {
     }
   }
 
-  // Create blob and download
-  const blob = new Blob(chunks as any, { type: transfer.mimeType || 'application/octet-stream' });
+  const blobParts = chunks.map((chunk) => Uint8Array.from(chunk));
+  const blob = new Blob(blobParts, { type: transfer.mimeType || 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -317,6 +351,10 @@ function downloadFile(transfer: any) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+
+  if (currentTab.value !== 'requests') {
+    emit('fileSaved', currentTab.value, transfer.id);
+  }
 }
 
 // Watch for new messages and play animations
@@ -437,6 +475,10 @@ watch(
           <div v-if="notice.type === 'video-call' && notice.from" class="notice-buttons">
             <button class="btn-accept" @click="handleAcceptVideo(notice.from)">ACCEPT</button>
             <button class="btn-reject" @click="handleRejectVideo(notice.from)">DENY</button>
+          </div>
+          <div v-if="notice.type === 'file-offer' && notice.from && notice.fileId" class="notice-buttons">
+            <button class="btn-accept" @click="acceptFileTransferFromNotice(notice.from, notice.fileId)">ACCEPT</button>
+            <button class="btn-reject" @click="rejectFileTransferFromNotice(notice.from, notice.fileId)">DENY</button>
           </div>
         </div>
       </div>
@@ -583,23 +625,52 @@ watch(
                 <div class="file-info">
                   <div class="file-name">{{ transfer.filename }}</div>
                   <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
-                  <div v-if="transfer.status === 'in-progress'" class="file-progress">
+                  <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
+                  <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
+                  <div v-else-if="transfer.status === 'in-progress'" class="file-progress">
                     <div class="progress-bar">
                       <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
                     </div>
                     <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
                   </div>
-                  <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ RECEIVED</div>
+                  <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
+                  <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
                   <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
                 </div>
-                <button
-                  v-if="transfer.status === 'completed'"
-                  class="file-download-btn"
-                  @click="downloadFile(transfer)"
-                  title="Download file"
-                >
-                  ↓ DOWNLOAD
-                </button>
+                <div class="file-actions">
+                  <button
+                    v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                    class="file-action-btn accept"
+                    @click="acceptFileTransfer(fileId)"
+                    title="Accept transfer"
+                  >
+                    ACCEPT
+                  </button>
+                  <button
+                    v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                    class="file-action-btn reject"
+                    @click="rejectFileTransfer(fileId)"
+                    title="Reject transfer"
+                  >
+                    REJECT
+                  </button>
+                  <button
+                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming'"
+                    class="file-action-btn"
+                    @click="downloadFile(transfer)"
+                    title="Save file"
+                  >
+                    SAVE
+                  </button>
+                  <button
+                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && transfer.savedToDisk"
+                    class="file-action-btn"
+                    @click="showDownloadsFolder"
+                    title="Show in downloads folder"
+                  >
+                    SHOW IN FOLDER
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -727,6 +798,12 @@ watch(
   color: var(--neon-green);
 }
 
+.notice-item.file-offer {
+  border-color: #ffce6b;
+  background: rgba(255, 206, 107, 0.08);
+  color: #ffce6b;
+}
+
 .notice-item.info {
   border-color: var(--dim-green);
   background: rgba(57, 255, 20, 0.08);
@@ -759,6 +836,26 @@ watch(
 
 .notice-item.audio-call .btn-reject:hover,
 .notice-item.video-call .btn-reject:hover {
+  background: var(--alert-red);
+  color: #fff;
+}
+
+.notice-item.file-offer .btn-accept {
+  border-color: var(--neon-green);
+  color: var(--neon-green);
+}
+
+.notice-item.file-offer .btn-accept:hover {
+  background: var(--neon-green);
+  color: #000;
+}
+
+.notice-item.file-offer .btn-reject {
+  border-color: var(--alert-red);
+  color: var(--alert-red);
+}
+
+.notice-item.file-offer .btn-reject:hover {
   background: var(--alert-red);
   color: #fff;
 }
@@ -1347,17 +1444,31 @@ watch(
   margin-top: 4px;
 }
 
+.file-status.pending {
+  color: #ffce6b;
+  text-shadow: 0 0 5px #ffce6b;
+}
+
 .file-status.completed {
   color: var(--neon-green);
   text-shadow: 0 0 5px var(--neon-green);
 }
 
+.file-status.rejected,
 .file-status.failed {
   color: var(--alert-red);
   text-shadow: 0 0 5px var(--alert-red);
 }
 
-.file-download-btn {
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.file-action-btn {
   padding: 4px 8px;
   background: transparent;
   border: 1px solid var(--neon-green);
@@ -1372,10 +1483,25 @@ watch(
   font-family: inherit;
 }
 
-.file-download-btn:hover {
+.file-action-btn:hover {
   background: var(--neon-green);
   color: var(--dark-bg);
   box-shadow: 0 0 10px var(--neon-green);
+}
+
+.file-action-btn.reject {
+  border-color: var(--alert-red);
+  color: var(--alert-red);
+}
+
+.file-action-btn.reject:hover {
+  background: var(--alert-red);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.4);
+}
+
+.file-action-btn.accept {
+  border-color: var(--neon-green);
 }
 
 @media (max-width: 600px) {

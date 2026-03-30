@@ -276,6 +276,24 @@ function handleSendFile(user: string, file: File) {
     dm.value.sendFile(user, file);
   }
 }
+
+function handleAcceptFile(user: string, fileId: string) {
+  if (dm.value) {
+    dm.value.acceptFileTransfer(user, fileId);
+  }
+}
+
+function handleRejectFile(user: string, fileId: string) {
+  if (dm.value) {
+    dm.value.rejectFileTransfer(user, fileId);
+  }
+}
+
+function handleFileSaved(user: string, fileId: string) {
+  if (dm.value) {
+    dm.value.markFileSaved(user, fileId);
+  }
+}
 </script>
 
 <template>
@@ -351,6 +369,9 @@ function handleSendFile(user: string, file: File) {
       @request-video="handleRequestVideo"
       @toggle-video="handleToggleVideo"
       @send-file="handleSendFile"
+      @accept-file="handleAcceptFile"
+      @reject-file="handleRejectFile"
+      @file-saved="handleFileSaved"
     />
 
     <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />

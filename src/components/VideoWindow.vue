@@ -21,7 +21,6 @@ const remoteVideoRef = ref<HTMLVideoElement>();
 const remoteAudioRef = ref<HTMLAudioElement>();
 const audioEnabled = ref(true);
 const videoEnabled = ref(true);
-const isMaximized = ref(false);
 
 // Attach streams to video elements
 watch(() => props.localStream, async (stream) => {
@@ -95,10 +94,6 @@ watch(() => props.remoteStream, async (stream) => {
     console.log('VideoWindow: remoteAudioRef.value not ready even after nextTick');
   }
 });
-
-function toggleMaximize() {
-  isMaximized.value = !isMaximized.value;
-}
 
 function toggleAudio() {
   audioEnabled.value = !audioEnabled.value;

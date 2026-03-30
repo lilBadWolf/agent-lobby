@@ -43,6 +43,7 @@ export interface DMChat {
   fileTransfers: Map<string, FileTransferState>;
   callStartTime: number | null;
   callDuration: number;
+  videoCallActive: boolean;
 }
 
 export interface DMNotice {
@@ -194,7 +195,7 @@ export function useDirectMessage(
   }
 
   // Handle signaling messages (request, offer, answer, ice candidates)
-  function handleSignalingMessage(fromUser: string, data: any) {
+  async function handleSignalingMessage(fromUser: string, data: any) {
     if (data.type === 'request') {
       handleDMRequest(fromUser);
     } else if (data.type === 'accept') {
@@ -214,6 +215,21 @@ export function useDirectMessage(
       // Remote peer explicitly closed this DM thread.
       closeDM(fromUser, false);
     } else if (data.type === 'audio-request') {
+      // Create peer connection and handle offer from audio request
+      let rtcConn = rtcConnections.get(fromUser);
+      if (!rtcConn) {
+        rtcConn = createRTCConnection(fromUser, false);
+        rtcConnections.set(fromUser, rtcConn);
+      }
+
+      if (data.offer) {
+        try {
+          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        } catch (e) {
+          console.error('Failed to set remote description for audio request:', e);
+        }
+      }
+
       // Add to pending audio calls
       const chat = activeChats.value.get(fromUser);
       if (chat) {
@@ -222,6 +238,17 @@ export function useDirectMessage(
         pendingAudioCalls.value.push({ from: fromUser, timestamp: Date.now() });
         pushNotice(`${fromUser} is requesting an audio call`, 'audio-call', fromUser);
       }
+    } else if (data.type === 'accept-audio') {
+      // Acceptor accepted our audio call, handle their answer if present
+      const rtcConn = rtcConnections.get(fromUser);
+      if (rtcConn && data.answer) {
+        try {
+          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } catch (e) {
+          console.error('Failed to set remote description for accept-audio:', e);
+        }
+      }
+      pushNotice(`${fromUser} accepted your audio call`, 'info');
     } else if (data.type === 'audio-reject') {
       pushNotice(`${fromUser} declined your audio call request.`);
     } else if (data.type === 'video-request') {
@@ -628,7 +655,8 @@ export function useDirectMessage(
           remoteMediaStream: null,
           fileTransfers: new Map(),
           callStartTime: null,
-          callDuration: 0
+          callDuration: 0,
+          videoCallActive: false
         });
       }
     } catch (e) {
@@ -668,7 +696,8 @@ export function useDirectMessage(
       remoteMediaStream: null,
       fileTransfers: new Map(),
       callStartTime: null,
-      callDuration: 0
+      callDuration: 0,
+      videoCallActive: false
     });
 
     // Remove pending only after the chat tab exists.
@@ -870,16 +899,22 @@ export function useDirectMessage(
   // Setup remote media streams handler
   function setupRemoteMediaStreams(user: string, peerConnection: RTCPeerConnection) {
     peerConnection.ontrack = (event) => {
-      console.log(`Received ${event.track.kind} track from ${user}`);
+      console.log(`Received ${event.track.kind} track from ${user}`, event.track);
       const chat = activeChats.value.get(user);
-      if (!chat) return;
+      if (!chat) {
+        console.log('Chat not found for user:', user);
+        return;
+      }
 
       // Create a new MediaStream to hold the remote tracks
       if (!chat.remoteMediaStream) {
+        console.log('Creating new remoteMediaStream for', user);
         chat.remoteMediaStream = new MediaStream();
       }
 
+      console.log('Adding track to remoteMediaStream:', event.track.kind);
       chat.remoteMediaStream.addTrack(event.track);
+      console.log('Remote stream now has', chat.remoteMediaStream.getTracks().length, 'tracks');
 
       // Update flags based on track kind
       if (event.track.kind === 'audio') {
@@ -915,19 +950,29 @@ export function useDirectMessage(
 
       chat.localMediaStream = stream;
 
-      // Add audio tracks to peer connection
-      const rtcConn = rtcConnections.get(targetUser);
-      if (rtcConn) {
-        stream.getAudioTracks().forEach(track => {
-          rtcConn.peerConnection.addTrack(track, stream);
-        });
+      // Create or get peer connection and add audio tracks
+      let rtcConn = rtcConnections.get(targetUser);
+      if (!rtcConn) {
+        rtcConn = createRTCConnection(targetUser, true);
+        rtcConnections.set(targetUser, rtcConn);
       }
 
-      // Send audio request signal
-      mqttClient.publish(
-        getSignalTopic(targetUser),
-        JSON.stringify({ type: 'audio-request' })
-      );
+      stream.getAudioTracks().forEach(track => {
+        rtcConn!.peerConnection.addTrack(track, stream);
+      });
+
+      // Create offer
+      try {
+        const offer = await rtcConn.peerConnection.createOffer();
+        await rtcConn.peerConnection.setLocalDescription(offer);
+
+        mqttClient!.publish(
+          getSignalTopic(targetUser),
+          JSON.stringify({ type: 'audio-request', offer })
+        );
+      } catch (e) {
+        console.error('Failed to create audio offer:', e);
+      }
 
       // Start call timer for initiator
       startCallTimer(targetUser);
@@ -963,19 +1008,30 @@ export function useDirectMessage(
         chat.localMediaStream = stream;
       }
 
+      // Get or create peer connection and add audio tracks
       const rtcConn = rtcConnections.get(fromUser);
-      if (rtcConn && chat && chat.localMediaStream) {
-        // Add audio track to peer connection
-        stream.getAudioTracks().forEach(track => {
-          rtcConn.peerConnection.addTrack(track, stream);
-        });
+      if (!rtcConn) {
+        console.error('No RTCConnection found when accepting audio call');
+        return;
       }
 
-      // Send accept signal with offer
-      mqttClient.publish(
-        getSignalTopic(fromUser),
-        JSON.stringify({ type: 'accept-audio' })
-      );
+      stream.getAudioTracks().forEach(track => {
+        rtcConn.peerConnection.addTrack(track, stream);
+      });
+
+      // Create answer
+      try {
+        const answer = await rtcConn.peerConnection.createAnswer();
+        await rtcConn.peerConnection.setLocalDescription(answer);
+
+        // Send accept signal with answer
+        mqttClient.publish(
+          getSignalTopic(fromUser),
+          JSON.stringify({ type: 'accept-audio', answer })
+        );
+      } catch (e) {
+        console.error('Failed to create audio answer:', e);
+      }
 
       // Start call duration timer
       startCallTimer(fromUser);
@@ -1078,12 +1134,15 @@ export function useDirectMessage(
 
       const chat = activeChats.value.get(fromUser);
       if (chat) {
+        console.log('Setting local stream for video call, tracks:', stream.getTracks());
         chat.localMediaStream = stream;
+        chat.videoCallActive = true;
       }
 
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && chat && chat.localMediaStream) {
         // Add video track to peer connection
+        console.log('Adding video tracks to peer connection');
         stream.getVideoTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });

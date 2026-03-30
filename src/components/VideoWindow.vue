@@ -1,76 +1,70 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ref, watch } from 'vue';
 
-const peerName = ref('PEER');
+interface Props {
+  peerName: string;
+  localStream?: MediaStream | null;
+  remoteStream?: MediaStream | null;
+}
+
+interface Emits {
+  close: [];
+  toggleAudio: [enabled: boolean];
+  toggleVideo: [enabled: boolean];
+}
+
+const props = defineProps<Props>();
+const emit = defineEmits<Emits>();
+
 const localVideoRef = ref<HTMLVideoElement>();
+const remoteVideoRef = ref<HTMLVideoElement>();
 const audioEnabled = ref(true);
 const videoEnabled = ref(true);
 const isMaximized = ref(false);
 
-onMounted(async () => {
-  const window = getCurrentWindow();
-
-  // Get peer name from URL params
-  const params = new URLSearchParams(window.label.split('?')[1] || '');
-  const peer = params.get('peer');
-  if (peer) {
-    peerName.value = peer.toUpperCase();
+// Attach streams to video elements
+watch(() => props.localStream, (stream) => {
+  if (localVideoRef.value && stream) {
+    console.log('Setting local stream with tracks:', stream.getTracks());
+    localVideoRef.value.srcObject = stream;
+    localVideoRef.value.play().catch(e => console.error('Local video play error:', e));
   }
+}, { immediate: true });
 
-  // Listen for streams from parent window
-  window.listen('streams', (event: any) => {
-    console.log('Received streams:', event.payload);
-  });
-
-  // Check if window is maximized
-  isMaximized.value = await window.isMaximized();
-});
-
-async function toggleMaximize() {
-  const window = getCurrentWindow();
-  if (isMaximized.value) {
-    await window.unmaximize();
-  } else {
-    await window.maximize();
+watch(() => props.remoteStream, (stream) => {
+  if (remoteVideoRef.value && stream) {
+    console.log('Setting remote stream with tracks:', stream.getTracks());
+    remoteVideoRef.value.srcObject = stream;
+    remoteVideoRef.value.play().catch(e => console.error('Remote video play error:', e));
   }
+}, { immediate: true });
+
+function toggleMaximize() {
   isMaximized.value = !isMaximized.value;
-}
-
-async function minimize() {
-  const window = getCurrentWindow();
-  await window.minimize();
-}
-
-async function closeWindow() {
-  const window = getCurrentWindow();
-  await window.close();
 }
 
 function toggleAudio() {
   audioEnabled.value = !audioEnabled.value;
-  if (localVideoRef.value) {
-    // Emit audio toggle event to parent
-    window.dispatchEvent(new CustomEvent('toggle-audio', { detail: { enabled: audioEnabled.value } }));
-  }
+  emit('toggleAudio', audioEnabled.value);
 }
 
 function toggleVideo() {
   videoEnabled.value = !videoEnabled.value;
-  if (localVideoRef.value) {
-    // Emit video toggle event to parent
-    window.dispatchEvent(new CustomEvent('toggle-video', { detail: { enabled: videoEnabled.value } }));
-  }
+  emit('toggleVideo', videoEnabled.value);
+}
+
+function closeWindow() {
+  emit('close');
 }
 </script>
 
 <template>
-  <div class="video-window" data-tauri-drag-region>
+  <div class="video-window">
     <!-- Custom Titlebar -->
     <div class="titlebar">
       <div class="titlebar-title">
         <span class="glyph">█</span>
-        VIDEO CALL // {{ peerName }}
+        VIDEO CALL // {{ peerName.toUpperCase() }}
       </div>
       <div class="titlebar-controls">
         <button class="titlebar-btn" @click="toggleAudio" :class="{ active: audioEnabled }" title="Toggle Audio">
@@ -79,7 +73,6 @@ function toggleVideo() {
         <button class="titlebar-btn" @click="toggleVideo" :class="{ active: videoEnabled }" title="Toggle Video">
           📹
         </button>
-        <button class="titlebar-btn" @click="minimize" title="Minimize">—</button>
         <button class="titlebar-btn" @click="toggleMaximize" title="Maximize">
           {{ isMaximized ? '◻' : '◻' }}
         </button>

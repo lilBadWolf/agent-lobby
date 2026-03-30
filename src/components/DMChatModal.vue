@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
+import VideoWindow from './VideoWindow.vue';
 
 const props = defineProps<{
   showModal: boolean;
@@ -49,6 +50,7 @@ const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Trac
 const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
 const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state per user
 const dragOverZone = ref(false); // Track drag-over state for file drop zone
+const activeVideoCallUser = ref<string | null>(null); // Track active video call user
 
 // Computed list of all tabs (requests + active chats)
 const allTabs = computed(() => {
@@ -121,6 +123,22 @@ watch([currentTab, () => props.activeChats], () => {
   }
 });
 
+// Watch for video call state (when remote media stream has video tracks)
+watch([currentTab, () => props.activeChats], () => {
+  const chat = props.activeChats.get(currentTab.value);
+  if (!chat || !chat.remoteMediaStream) {
+    activeVideoCallUser.value = null;
+    return;
+  }
+
+  const hasVideoTracks = chat.remoteMediaStream.getVideoTracks().length > 0;
+  if (hasVideoTracks) {
+    activeVideoCallUser.value = currentTab.value;
+  } else {
+    activeVideoCallUser.value = null;
+  }
+});
+
 function handleClose() {
   emit('close');
 }
@@ -159,6 +177,25 @@ function handleAcceptVideo(user: string) {
 
 function handleRejectVideo(user: string) {
   emit('rejectVideo', user);
+}
+
+function handleCloseVideoCall() {
+  const currentChat = getCurrentChat();
+  if (currentChat) {
+    currentChat.videoCallActive = false;
+  }
+}
+
+function handleToggleVideoAudio(enabled: boolean) {
+  if (currentTab.value !== 'requests') {
+    emit('toggleAudio', currentTab.value, enabled);
+  }
+}
+
+function handleToggleVideoVideo(enabled: boolean) {
+  if (currentTab.value !== 'requests') {
+    emit('toggleVideo', currentTab.value, enabled);
+  }
 }
 
 function handleCancelRequest(user: string) {
@@ -207,7 +244,24 @@ function formatDuration(seconds: number): string {
 }
 
 function handleEndCall(user: string) {
+  activeVideoCallUser.value = null;
   emit('closeDm', user);
+}
+
+function handleVideoWindowClose() {
+  activeVideoCallUser.value = null;
+}
+
+function handleVideoWindowToggleAudio(enabled: boolean) {
+  if (activeVideoCallUser.value) {
+    emit('toggleAudio', activeVideoCallUser.value, enabled);
+  }
+}
+
+function handleVideoWindowToggleVideo(enabled: boolean) {
+  if (activeVideoCallUser.value) {
+    emit('toggleVideo', activeVideoCallUser.value, enabled);
+  }
 }
 
 function handleDragOver(e: DragEvent) {
@@ -378,6 +432,17 @@ watch(
         <h3 style="margin: 0">DIRECT MESSAGE</h3>
         <button class="close-btn" @click="handleClose">✕</button>
       </div>
+
+      <!-- Video Window Overlay -->
+      <VideoWindow
+        v-if="getCurrentChat()?.videoCallActive"
+        :peer-name="currentTab"
+        :local-stream="getCurrentChat()?.localMediaStream"
+        :remote-stream="getCurrentChat()?.remoteMediaStream"
+        @close="handleCloseVideoCall"
+        @toggle-audio="handleToggleVideoAudio"
+        @toggle-video="handleToggleVideoVideo"
+      />
 
       <div v-if="notices.length > 0" class="notice-stack" role="status" aria-live="polite">
         <div v-for="notice in notices" :key="notice.id" :class="['notice-item', notice.type]">
@@ -585,6 +650,18 @@ watch(
           </div>
         </div>
       </div>
+
+      <!-- Video Window Overlay -->
+      <VideoWindow
+        v-if="activeVideoCallUser"
+        :key="activeVideoCallUser"
+        :peer-name="activeVideoCallUser"
+        :local-stream="getCurrentChat()?.localMediaStream"
+        :remote-stream="getCurrentChat()?.remoteMediaStream"
+        @close="handleVideoWindowClose"
+        @toggle-audio="handleVideoWindowToggleAudio"
+        @toggle-video="handleVideoWindowToggleVideo"
+      />
     </div>
   </div>
 </template>
@@ -611,6 +688,16 @@ watch(
   display: flex;
   flex-direction: column;
   box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
+  position: relative;
+}
+
+:deep(.video-window) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
 }
 
 .modal-header {

@@ -781,10 +781,9 @@ watch(
   border: none;
   cursor: pointer;
   font-size: 13px;
-  padding: 2px 6px;
+  padding: 2px 3px;
   transition: all 0.2s;
   opacity: 0.7;
-  margin-left: 2px;
 }
 
 .tab-action-btn:hover {
@@ -794,7 +793,7 @@ watch(
 
 .phone-btn,
 .camera-btn {
-  color: var(--neon-green);
+  color: var(--text-white);
 }
 
 .end-call-btn {

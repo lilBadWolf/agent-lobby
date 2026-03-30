@@ -96,7 +96,7 @@ const pageTitle = computed(() => {
 onMounted(async () => {
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
-  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  //window.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
 watch(pageTitle, (newTitle) => {

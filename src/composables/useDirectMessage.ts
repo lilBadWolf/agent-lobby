@@ -1087,11 +1087,14 @@ export function useDirectMessage(
         video: videoConstraints
       });
 
+      console.log('Initiator setting local stream for video call, tracks:', stream.getTracks());
       chat.localMediaStream = stream;
+      chat.videoCallActive = true;
 
       // Add video tracks to peer connection
       const rtcConn = rtcConnections.get(targetUser);
       if (rtcConn) {
+        console.log('Initiator adding video tracks to peer connection');
         stream.getVideoTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });

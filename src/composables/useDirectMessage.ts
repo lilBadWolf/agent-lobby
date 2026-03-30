@@ -840,6 +840,28 @@ export function useDirectMessage(
       console.debug('Failed to notify peer of DM close:', e);
     }
 
+    // Stop all media streams first
+    const chat = activeChats.value.get(otherUser);
+    if (chat) {
+      // Stop local media tracks
+      if (chat.localMediaStream) {
+        chat.localMediaStream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped local track:', track.kind);
+        });
+        chat.localMediaStream = null;
+      }
+
+      // Stop remote media tracks
+      if (chat.remoteMediaStream) {
+        chat.remoteMediaStream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped remote track:', track.kind);
+        });
+        chat.remoteMediaStream = null;
+      }
+    }
+
     const rtcConn = rtcConnections.get(otherUser);
     if (rtcConn) {
       try {

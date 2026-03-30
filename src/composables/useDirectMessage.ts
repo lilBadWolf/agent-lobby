@@ -262,6 +262,9 @@ export function useDirectMessage(
       }
     } else if (data.type === 'video-reject') {
       pushNotice(`${fromUser} declined your video call request.`);
+    } else if (data.type === 'end-call') {
+      // Peer ended the call
+      endVideoCall(fromUser);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -405,12 +408,6 @@ export function useDirectMessage(
 
         // Check if this is a file transfer message
         if (handleFileTransferMessage(data, otherUser)) {
-          return;
-        }
-
-        // Check if peer is ending the call
-        if (data.type === 'end-call') {
-          endVideoCall(otherUser);
           return;
         }
 
@@ -1230,15 +1227,32 @@ export function useDirectMessage(
     const chat = activeChats.value.get(user);
     if (!chat) return;
 
-    // Notify peer that call is ending
+    // Get RTCConnection to remove video senders
+    const rtcConn = rtcConnections.get(user);
+    if (rtcConn) {
+      // Remove all video/audio senders
+      rtcConn.videoSenders.forEach(sender => {
+        try {
+          rtcConn.peerConnection.removeTrack(sender);
+        } catch (e) {
+          console.debug('Error removing video sender:', e);
+        }
+      });
+      rtcConn.videoSenders = [];
+      rtcConn.audioSenders = [];
+    }
+
+    // Notify peer via MQTT that call is ending
     try {
-      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
-        chat.dataChannel.send(JSON.stringify({
-          type: 'end-call'
-        }));
+      if (mqttClient) {
+        mqttClient.publish(
+          getSignalTopic(user),
+          JSON.stringify({ type: 'end-call' })
+        );
+        console.log('Sent end-call signal to', user);
       }
     } catch (e) {
-      console.error('Failed to send end-call message:', e);
+      console.error('Failed to send end-call signal:', e);
     }
 
     // Clear video call state first (unmounts VideoWindow)

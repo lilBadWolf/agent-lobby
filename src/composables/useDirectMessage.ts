@@ -12,6 +12,7 @@ export interface DMChat {
   messages: ChatMessage[];
   dataChannel: RTCDataChannel | null;
   isConnected: boolean;
+  pendingDisplayMessages: Array<{ id: string; text: string }>;  // Messages waiting for peer to animate
 }
 
 export interface DMNotice {
@@ -233,15 +234,28 @@ export function useDirectMessage(
 
     dataChannel.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
         const chat = activeChats.value.get(otherUser);
-        if (chat) {
-          chat.messages.push({
-            user: otherUser,
-            message: message.m || '',
-            isSystem: false
-          });
+        if (!chat) return;
+
+        // Check if this is an ACK message
+        if (data.ack) {
+          // Remove message from pending display queue when peer has animated it
+          chat.pendingDisplayMessages = chat.pendingDisplayMessages.filter(
+            (msg) => msg.id !== data.msgId
+          );
+          return;
         }
+
+        // Regular message - add to chat with effect metadata
+        chat.messages.push({
+          user: otherUser,
+          message: data.m || '',
+          isSystem: false,
+          effect: data.e || 'none',
+          duration: data.t || 0,
+          messageId: data.id
+        });
       } catch (e) {
         console.error('Failed to parse message:', e);
       }
@@ -320,7 +334,8 @@ export function useDirectMessage(
           user: targetUser,
           messages: [],
           dataChannel: null,
-          isConnected: false
+          isConnected: false,
+          pendingDisplayMessages: []
         });
       }
     } catch (e) {
@@ -351,7 +366,8 @@ export function useDirectMessage(
       user: fromUser,
       messages: [],
       dataChannel: null,
-      isConnected: false
+      isConnected: false,
+      pendingDisplayMessages: []
     });
 
     // Remove pending only after the chat tab exists.
@@ -385,22 +401,51 @@ export function useDirectMessage(
   }
 
   // Send a DM message
-  function sendDMMessage(toUser: string, message: string) {
+  function sendDMMessage(toUser: string, message: string, effect: string = 'none') {
     const chat = activeChats.value.get(toUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
+    // Generate unique message ID
+    const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Calculate animation duration based on effect
+    const getAnimationDuration = (eff: string, textLength: number): number => {
+      const len = Math.max(1, textLength);
+      switch (eff) {
+        case 'typewriter': return 1000 + len * 50;
+        case 'scan': return 1000 + len * 20;
+        case 'matrix': return 1500 + len * 30;
+        case 'glitch': return 1200 + len * 20;
+        case 'flames': return 1800 + len * 40;
+        default: return 0;
+      }
+    };
+
+    const duration = getAnimationDuration(effect, message.length);
+
     const payload = JSON.stringify({
       u: username.value,
-      m: message
+      m: message,
+      e: effect,
+      t: duration,
+      id: messageId
     });
 
     try {
       chat.dataChannel.send(payload);
-      // Add to local message history
+      // Add to pending display messages queue
+      chat.pendingDisplayMessages.push({
+        id: messageId,
+        text: message
+      });
+      // Add to local message history with effect info
       chat.messages.push({
         user: username.value,
         message: message,
-        isSystem: false
+        isSystem: false,
+        effect: effect,
+        duration: duration,
+        messageId: messageId
       });
     } catch (e) {
       console.error('Failed to send message:', e);
@@ -464,6 +509,14 @@ export function useDirectMessage(
     }
   }
 
+  // Cancel pending display messages (messages waiting to be animated on peer's side)
+  function cancelPendingMessages(toUser: string) {
+    const chat = activeChats.value.get(toUser);
+    if (chat) {
+      chat.pendingDisplayMessages = [];
+    }
+  }
+
   // Cleanup on disconnect
   function cleanup() {
     rtcConnections.forEach(rtcConn => {
@@ -495,6 +548,7 @@ export function useDirectMessage(
     acceptDM,
     rejectDM,
     sendDMMessage,
+    cancelPendingMessages,
     closeDM,
     cleanup
   };

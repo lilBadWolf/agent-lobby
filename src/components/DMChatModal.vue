@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import type { DMChat, DMRequest, DMNotice } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
+import { useMessageAnimations } from '../composables/useMessageAnimations';
 
 const props = defineProps<{
   showModal: boolean;
@@ -10,6 +11,8 @@ const props = defineProps<{
   outgoingRequests: string[];
   notices: DMNotice[];
   username: string;
+  dmChatEffect: string;
+  focusedDMUser?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -17,14 +20,17 @@ const emit = defineEmits<{
   acceptDm: [user: string];
   rejectDm: [user: string];
   cancelRequest: [user: string];
-  sendMessage: [user: string, message: string];
+  sendMessage: [user: string, message: string, effect: string];
   closeDm: [user: string];
+  cancelPendingMessages: [user: string];
 }>();
 
 const { getUserColor } = useTheme();
+const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('requests'); // 'requests' or username
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement>();
+const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
 
 // Computed list of all tabs (requests + active chats)
 const allTabs = computed(() => {
@@ -43,17 +49,12 @@ watch(allTabs, (newTabs) => {
   }
 });
 
-// Auto-scroll to latest message
-watch(
-  () => props.activeChats.get(currentTab.value)?.messages.length,
-  () => {
-    setTimeout(() => {
-      if (messagesContainer.value) {
-        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-      }
-    }, 0);
+// Switch to focused user when requested
+watch(() => props.focusedDMUser, (focusedUser) => {
+  if (focusedUser && props.activeChats.has(focusedUser)) {
+    currentTab.value = focusedUser;
   }
-);
+});
 
 function handleClose() {
   emit('close');
@@ -85,7 +86,13 @@ function handleCancelRequest(user: string) {
 
 function sendMessage() {
   if (!messageInput.value.trim() || currentTab.value === 'requests') return;
-  emit('sendMessage', currentTab.value, messageInput.value.trim());
+
+  const chat = getCurrentChat();
+  if (!chat) {
+    return;
+  }
+
+  emit('sendMessage', currentTab.value, messageInput.value.trim(), props.dmChatEffect);
   messageInput.value = '';
 }
 
@@ -96,6 +103,101 @@ function getCurrentChat(): DMChat | undefined {
 function isTabConnected(tab: string): boolean {
   return props.activeChats.get(tab)?.isConnected ?? false;
 }
+
+// Watch for new messages and play animations
+watch(
+  () => {
+    const chat = getCurrentChat();
+    return chat?.messages.length ?? 0;
+  },
+  async (newLen) => {
+    if (!newLen || currentTab.value === 'requests') return;
+
+    const chat = getCurrentChat();
+    if (!chat || chat.messages.length === 0) return;
+
+    const lastMsg = chat.messages[chat.messages.length - 1];
+    const msgKey = `${lastMsg.user}_${chat.messages.length - 1}`;
+
+    // Skip if already animated
+    if (animationElements.has(msgKey)) return;
+
+    // Create animation container - full window, centered
+    const animContainer = document.createElement('div');
+    animContainer.className = 'animation-container';
+    animContainer.style.position = 'absolute';
+    animContainer.style.top = '0';
+    animContainer.style.left = '0';
+    animContainer.style.width = '100%';
+    animContainer.style.height = '100%';
+    animContainer.style.display = 'flex';
+    animContainer.style.alignItems = 'center';
+    animContainer.style.justifyContent = 'center';
+    animContainer.style.padding = '20px';
+    animContainer.style.boxSizing = 'border-box';
+
+    // Add text container for animation (no sender label)
+    const textContainer = document.createElement('span');
+    textContainer.className = 'text';
+    textContainer.style.color = 'var(--neon-green, #39ff14)';
+    textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
+    textContainer.style.fontWeight = 'bold';
+    textContainer.style.textAlign = 'center';
+    textContainer.style.whiteSpace = 'nowrap';
+    textContainer.style.textShadow = '0 0 20px rgba(57, 255, 20, 0.8)';
+    textContainer.style.overflow = 'hidden';
+    animContainer.appendChild(textContainer);
+
+    if (messagesContainer.value) {
+      messagesContainer.value.style.position = 'relative';
+      messagesContainer.value.appendChild(animContainer);
+    }
+
+    animationElements.set(msgKey, animContainer);
+
+    // Play animation
+    const effect = (lastMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
+    try {
+      await playAnimation(effect, lastMsg.message, textContainer);
+    } catch (e) {
+      console.error('Animation error:', e);
+      textContainer.textContent = lastMsg.message;
+    }
+
+    // Remove from messages array (ephemeral)
+    chat.messages.pop();
+
+    // Remove animation container
+    if (animContainer.parentNode) {
+      animContainer.parentNode.removeChild(animContainer);
+    }
+
+    animationElements.delete(msgKey);
+
+    // If this was OUR message, remove it from pending display queue
+    if (lastMsg.user === props.username && lastMsg.messageId) {
+      chat.pendingDisplayMessages = chat.pendingDisplayMessages.filter(
+        (msg) => msg.id !== lastMsg.messageId
+      );
+    }
+
+    // Send ACK if message was from peer (not from current user)
+    if (lastMsg.user !== props.username) {
+      // Send ACK to peer
+      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
+        try {
+          chat.dataChannel.send(JSON.stringify({
+            u: props.username,
+            ack: true,
+            msgId: lastMsg.messageId
+          }));
+        } catch (e) {
+          console.error('Failed to send ACK:', e);
+        }
+      }
+    }
+  }
+);
 </script>
 
 <template>
@@ -168,20 +270,14 @@ function isTabConnected(tab: string): boolean {
 
         <!-- Chat Tab -->
         <div v-else-if="currentTab !== 'requests'" class="chat-section">
-          <!-- Messages -->
-          <div ref="messagesContainer" class="messages">
-            <div
-              v-for="(msg, index) in (getCurrentChat()?.messages || [])"
-              :key="index"
-              class="msg"
-            >
-              <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
-              <span class="text">{{ msg.message }}</span>
-            </div>
-          </div>
+          <!-- Messages: Displayed via animations only (ephemeral) -->
+          <div ref="messagesContainer" class="messages"></div>
 
           <!-- Input -->
           <div class="input-bar">
+            <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
+              ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
+            </div>
             <input
               v-model="messageInput"
               type="text"
@@ -189,6 +285,14 @@ function isTabConnected(tab: string): boolean {
               :disabled="!getCurrentChat()?.isConnected"
               @keydown.enter="sendMessage"
             />
+            <button
+              v-if="getCurrentChat()?.pendingDisplayMessages.length"
+              class="cancel-btn"
+              @click="emit('cancelPendingMessages', currentTab)"
+              title="Cancel pending messages"
+            >
+              CANCEL
+            </button>
             <button
               class="send-btn"
               :disabled="!getCurrentChat()?.isConnected"
@@ -480,6 +584,7 @@ function isTabConnected(tab: string): boolean {
   overflow-y: auto;
   padding: 15px 20px;
   font-size: 13px;
+  position: relative;
 }
 
 .msg {
@@ -506,6 +611,19 @@ function isTabConnected(tab: string): boolean {
   height: 50px;
   background: rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
+  align-items: center;
+  position: relative;
+}
+
+.waiting-indicator {
+  position: absolute;
+  left: 15px;
+  font-size: 11px;
+  color: var(--dim-green);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .input-bar input {
@@ -528,6 +646,27 @@ function isTabConnected(tab: string): boolean {
   cursor: not-allowed;
 }
 
+.cancel-btn {
+  background: transparent;
+  color: var(--alert-red);
+  border: 1px solid var(--alert-red);
+  padding: 0 12px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 11px;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  height: 100%;
+  margin-right: 4px;
+}
+
+.cancel-btn:hover {
+  background: var(--alert-red);
+  color: #000;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+}
+
 .send-btn {
   background: var(--neon-green);
   color: #000;
@@ -539,6 +678,7 @@ function isTabConnected(tab: string): boolean {
   font-size: 12px;
   transition: all 0.2s;
   text-transform: uppercase;
+  height: 100%;
 }
 
 .send-btn:hover:not(:disabled) {

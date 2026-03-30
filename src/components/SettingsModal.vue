@@ -1,13 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-
-export interface AudioConfig {
-  audioEnabled: boolean;
-  volume: number;
-  dmEnabled: boolean;
-  soundpack: string;
-  theme: string;
-}
+import type { AudioConfig } from '../composables/useLobbyChat';
 
 const props = defineProps<{
   showModal: boolean;
@@ -111,6 +104,19 @@ function handleClearLog() {
           <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
             {{ themeName }}
           </option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>DM CHAT EFFECT</label>
+        <select
+          v-model="localConfig.dmChatEffect"
+          id="set-dm-effect"
+          @change="handleChange"
+        >
+          <option value="none">NONE</option>
+          <option value="matrix">MATRIX</option>
+          <option value="glitch">GLITCH</option>
+          <option value="flames">FLAMES</option>
         </select>
       </div>
       <button class="clear-btn" @click="handleClearLog">CLEAR LOG</button>

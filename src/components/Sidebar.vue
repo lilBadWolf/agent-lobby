@@ -9,6 +9,7 @@ export interface UserPresence {
 
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
+  currentUsername?: string;
 }>(), {
   users: () => ({}) // Default to an empty object
 });
@@ -19,8 +20,9 @@ const emit = defineEmits<{
 }>();
 
 const { getUserColor } = useTheme();
-const userList = computed(() => Object.values(props.users || {}));
-console.log(userList.value);
+const userList = computed(() =>
+  Object.values(props.users || {}).filter(user => user.username !== props.currentUsername)
+);
 </script>
 
 <template>

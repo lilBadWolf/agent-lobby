@@ -16,6 +16,7 @@ const { availableThemes, applyTheme } = useTheme();
 
 // DM system
 const showDM = ref(false);
+const focusedDMUser = ref<string | null>(null);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
 
@@ -129,8 +130,16 @@ function handleAmbience() {
 
 async function handleDMRequest(user: string) {
   if (dm.value) {
-    await dm.value.requestDM(user);
-    showDM.value = true;
+    // Check if chat already exists
+    if (dm.value.activeChats.value.has(user)) {
+      // Jump to existing chat
+      focusedDMUser.value = user;
+      showDM.value = true;
+    } else {
+      // Start new DM request
+      await dm.value.requestDM(user);
+      showDM.value = true;
+    }
   }
 }
 
@@ -153,15 +162,21 @@ function handleCancelDMRequest(user: string) {
   }
 }
 
-function handleSendDMMessage(user: string, message: string) {
+function handleSendDMMessage(user: string, message: string, effect: string) {
   if (dm.value) {
-    dm.value.sendDMMessage(user, message);
+    dm.value.sendDMMessage(user, message, effect);
   }
 }
 
 function handleCloseDM(user: string) {
   if (dm.value) {
     dm.value.closeDM(user);
+  }
+}
+
+function handleCancelPendingMessages(user: string) {
+  if (dm.value) {
+    dm.value.cancelPendingMessages(user);
   }
 }
 </script>
@@ -188,6 +203,7 @@ function handleCloseDM(user: string) {
           config.dmEnabled = newConfig.dmEnabled;
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
+          config.dmChatEffect = newConfig.dmChatEffect;
           if (config.soundpack !== newConfig.soundpack) {
             setSoundpack(newConfig.soundpack);
           }
@@ -216,11 +232,14 @@ function handleCloseDM(user: string) {
       :outgoing-requests="dmOutgoingRequests"
       :notices="dmNotices"
       :username="username"
+      :dm-chat-effect="config.dmChatEffect"
+      :focused-dm-user="focusedDMUser"
       @close="toggleDM"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
       @cancel-request="handleCancelDMRequest"
       @send-message="handleSendDMMessage"
+      @cancel-pending-messages="handleCancelPendingMessages"
       @close-dm="handleCloseDM"
     />
 
@@ -228,7 +247,7 @@ function handleCloseDM(user: string) {
 
     <div v-if="!showAuth" class="main-view">
       <ChatArea :messages="messages" :username="username" :is-connected="isConnected" @send="sendMessage" />
-      <Sidebar :users="users" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
+      <Sidebar :users="users" :current-username="username" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
     </div>
   </div>
 </template>

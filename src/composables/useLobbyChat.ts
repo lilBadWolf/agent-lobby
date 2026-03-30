@@ -10,6 +10,18 @@ export interface ChatMessage {
   user: string;
   message: string;
   isSystem?: boolean;
+  effect?: string;
+  duration?: number;
+  messageId?: string;
+}
+
+export interface AudioConfig {
+  audioEnabled: boolean;
+  volume: number;
+  dmEnabled: boolean;
+  soundpack: string;
+  theme: string;
+  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
 }
 
 export interface NetworkConfig {
@@ -46,12 +58,13 @@ export function useLobbyChat() {
   let PRESENCE_TOPIC = '';
   let PRESENCE_OPTIONS: UserPresence | null = null;
 
-  const config = ref({
+  const config = ref<AudioConfig>({
     dmEnabled: true,
     audioEnabled: true,
     volume: 0.5,
     soundpack: 'default',
-    theme: 'retro-terminal'
+    theme: 'retro-terminal',
+    dmChatEffect: 'matrix'
   });
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});

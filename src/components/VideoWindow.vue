@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 
 interface Props {
   peerName: string;
@@ -23,19 +23,51 @@ const videoEnabled = ref(true);
 const isMaximized = ref(false);
 
 // Attach streams to video elements
-watch(() => props.localStream, (stream) => {
-  if (localVideoRef.value && stream) {
-    console.log('Setting local stream with tracks:', stream.getTracks());
+watch(() => props.localStream, async (stream) => {
+  console.log('VideoWindow: localStream watcher fired, stream:', stream);
+  if (!stream) {
+    console.log('VideoWindow: localStream is null/undefined');
+    return;
+  }
+  console.log('VideoWindow: localStream has tracks:', stream.getTracks());
+
+  // Wait for DOM to be ready
+  await nextTick();
+
+  if (localVideoRef.value) {
+    console.log('VideoWindow: Setting localVideoRef.value.srcObject');
     localVideoRef.value.srcObject = stream;
-    localVideoRef.value.play().catch(e => console.error('Local video play error:', e));
+    localVideoRef.value.play().then(() => {
+      console.log('VideoWindow: Local video playing successfully');
+    }).catch(e => {
+      console.error('VideoWindow: Local video play error:', e);
+    });
+  } else {
+    console.log('VideoWindow: localVideoRef.value not ready even after nextTick');
   }
 }, { immediate: true });
 
-watch(() => props.remoteStream, (stream) => {
-  if (remoteVideoRef.value && stream) {
-    console.log('Setting remote stream with tracks:', stream.getTracks());
+watch(() => props.remoteStream, async (stream) => {
+  console.log('VideoWindow: remoteStream watcher fired, stream:', stream);
+  if (!stream) {
+    console.log('VideoWindow: remoteStream is null/undefined');
+    return;
+  }
+  console.log('VideoWindow: remoteStream has tracks:', stream.getTracks());
+
+  // Wait for DOM to be ready
+  await nextTick();
+
+  if (remoteVideoRef.value) {
+    console.log('VideoWindow: Setting remoteVideoRef.value.srcObject');
     remoteVideoRef.value.srcObject = stream;
-    remoteVideoRef.value.play().catch(e => console.error('Remote video play error:', e));
+    remoteVideoRef.value.play().then(() => {
+      console.log('VideoWindow: Remote video playing successfully');
+    }).catch(e => {
+      console.error('VideoWindow: Remote video play error:', e);
+    });
+  } else {
+    console.log('VideoWindow: remoteVideoRef.value not ready even after nextTick');
   }
 }, { immediate: true });
 

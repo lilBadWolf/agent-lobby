@@ -67,7 +67,8 @@ watch(isConnected, (connected) => {
       { value: username.value },
       roomId,
       mqttClient,
-      connectedCallback
+      connectedCallback,
+      config.value
     );
   } else if (!connected && dm.value) {
     dm.value.cleanup();

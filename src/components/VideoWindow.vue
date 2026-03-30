@@ -18,6 +18,7 @@ const emit = defineEmits<Emits>();
 
 const localVideoRef = ref<HTMLVideoElement>();
 const remoteVideoRef = ref<HTMLVideoElement>();
+const remoteAudioRef = ref<HTMLAudioElement>();
 const audioEnabled = ref(true);
 const videoEnabled = ref(true);
 const isMaximized = ref(false);
@@ -58,6 +59,7 @@ watch(() => props.remoteStream, async (stream) => {
   // Wait for DOM to be ready
   await nextTick();
 
+  // Attach video tracks to video element
   if (remoteVideoRef.value) {
     console.log('VideoWindow: Setting remoteVideoRef.value.srcObject');
     remoteVideoRef.value.srcObject = stream;
@@ -69,7 +71,20 @@ watch(() => props.remoteStream, async (stream) => {
   } else {
     console.log('VideoWindow: remoteVideoRef.value not ready even after nextTick');
   }
-}, { immediate: true });
+
+  // Attach audio tracks to audio element
+  if (remoteAudioRef.value) {
+    console.log('VideoWindow: Setting remoteAudioRef.value.srcObject');
+    remoteAudioRef.value.srcObject = stream;
+    remoteAudioRef.value.play().then(() => {
+      console.log('VideoWindow: Remote audio playing successfully');
+    }).catch(e => {
+      console.error('VideoWindow: Remote audio play error:', e);
+    });
+  } else {
+    console.log('VideoWindow: remoteAudioRef.value not ready even after nextTick');
+  }
+});
 
 function toggleMaximize() {
   isMaximized.value = !isMaximized.value;
@@ -96,6 +111,9 @@ onBeforeUnmount(() => {
   }
   if (remoteVideoRef.value) {
     remoteVideoRef.value.srcObject = null;
+  }
+  if (remoteAudioRef.value) {
+    remoteAudioRef.value.srcObject = null;
   }
 });
 </script>
@@ -124,6 +142,13 @@ onBeforeUnmount(() => {
 
     <!-- Video Container -->
     <div class="video-container">
+      <!-- Remote Audio (hidden, just for audio output) -->
+      <audio
+        ref="remoteAudioRef"
+        autoplay
+        playsinline
+      />
+
       <!-- Remote Video (main feed) -->
       <video
         ref="remoteVideoRef"

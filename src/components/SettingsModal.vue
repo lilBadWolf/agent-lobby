@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import type { AudioConfig } from '../composables/useLobbyChat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { useMediaDevices } from '../composables/useMediaDevices';
@@ -22,7 +22,7 @@ const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
 const { playAnimation } = useMessageAnimations();
 
-const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
+const { audioInputDevices, audioOutputDevices, videoInputDevices } = useMediaDevices();
 
 watch(
   () => props.config,
@@ -66,10 +66,6 @@ async function previewEffect() {
     }, 300);
   }
 }
-
-onMounted(async () => {
-  await requestMediaPermission();
-});
 
 </script>
 

@@ -36,6 +36,7 @@ const emit = defineEmits<{
   toggleAudio: [user: string, enabled: boolean];
   requestVideo: [user: string];
   toggleVideo: [user: string, enabled: boolean];
+  endVideoCall: [user: string];
   sendFile: [user: string, file: File];
 }>();
 
@@ -249,6 +250,9 @@ function handleEndCall(user: string) {
 }
 
 function handleVideoWindowClose() {
+  if (currentTab.value !== 'requests') {
+    emit('endVideoCall', currentTab.value);
+  }
   activeVideoCallUser.value = null;
 }
 

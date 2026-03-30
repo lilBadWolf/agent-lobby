@@ -1219,6 +1219,45 @@ export function useDirectMessage(
     }
   }
 
+  // End video call and release resources
+  function endVideoCall(user: string) {
+    const chat = activeChats.value.get(user);
+    if (!chat) return;
+
+    // Stop all local tracks
+    if (chat.localMediaStream) {
+      chat.localMediaStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped local track:', track.kind);
+      });
+      chat.localMediaStream = null;
+    }
+
+    // Stop all remote tracks
+    if (chat.remoteMediaStream) {
+      chat.remoteMediaStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped remote track:', track.kind);
+      });
+      chat.remoteMediaStream = null;
+    }
+
+    // Clear video call state
+    chat.videoCallActive = false;
+    chat.audioEnabled = false;
+    chat.videoEnabled = false;
+    chat.callStartTime = null;
+    chat.callDuration = 0;
+
+    // Clear call timer
+    if (callTimers.has(user)) {
+      clearInterval(callTimers.get(user));
+      callTimers.delete(user);
+    }
+
+    console.log('Ended video call with', user);
+  }
+
   // Cleanup on disconnect
   function cleanup() {
     rtcConnections.forEach(rtcConn => {
@@ -1264,6 +1303,7 @@ export function useDirectMessage(
     requestVideoCall,
     acceptVideoCall,
     toggleVideoStream,
+    endVideoCall,
     formatCallDuration,
     sendFile,
     cleanup

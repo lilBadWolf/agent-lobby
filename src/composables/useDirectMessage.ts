@@ -13,6 +13,7 @@ export interface DMChat {
   dataChannel: RTCDataChannel | null;
   isConnected: boolean;
   pendingDisplayMessages: Array<{ id: string; text: string }>;  // Messages waiting for peer to animate
+  isTyping: boolean;  // Whether the peer is currently typing
 }
 
 export interface DMNotice {
@@ -238,6 +239,18 @@ export function useDirectMessage(
         const chat = activeChats.value.get(otherUser);
         if (!chat) return;
 
+        // Check if this is a typing indicator
+        if (data.typing) {
+          chat.isTyping = true;
+          return;
+        }
+
+        // Check if this is a stop_typing indicator
+        if (data.stop_typing) {
+          chat.isTyping = false;
+          return;
+        }
+
         // Check if this is an ACK message
         if (data.ack) {
           // Remove message from pending display queue when peer has animated it
@@ -335,7 +348,8 @@ export function useDirectMessage(
           messages: [],
           dataChannel: null,
           isConnected: false,
-          pendingDisplayMessages: []
+          pendingDisplayMessages: [],
+          isTyping: false
         });
       }
     } catch (e) {
@@ -367,7 +381,8 @@ export function useDirectMessage(
       messages: [],
       dataChannel: null,
       isConnected: false,
-      pendingDisplayMessages: []
+      pendingDisplayMessages: [],
+      isTyping: false
     });
 
     // Remove pending only after the chat tab exists.
@@ -449,6 +464,30 @@ export function useDirectMessage(
       });
     } catch (e) {
       console.error('Failed to send message:', e);
+    }
+  }
+
+  // Send typing indicator
+  function sendTyping(toUser: string) {
+    const chat = activeChats.value.get(toUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+
+    try {
+      chat.dataChannel.send(JSON.stringify({ typing: true }));
+    } catch (e) {
+      console.error('Failed to send typing indicator:', e);
+    }
+  }
+
+  // Send stop typing indicator
+  function sendStopTyping(toUser: string) {
+    const chat = activeChats.value.get(toUser);
+    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+
+    try {
+      chat.dataChannel.send(JSON.stringify({ stop_typing: true }));
+    } catch (e) {
+      console.error('Failed to send stop typing indicator:', e);
     }
   }
 
@@ -548,6 +587,8 @@ export function useDirectMessage(
     acceptDM,
     rejectDM,
     sendDMMessage,
+    sendTyping,
+    sendStopTyping,
     cancelPendingMessages,
     closeDM,
     cleanup

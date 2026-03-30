@@ -23,6 +23,8 @@ const emit = defineEmits<{
   sendMessage: [user: string, message: string, effect: string];
   closeDm: [user: string];
   cancelPendingMessages: [user: string];
+  typing: [user: string];
+  stopTyping: [user: string];
 }>();
 
 const { getUserColor } = useTheme();
@@ -31,6 +33,8 @@ const currentTab = ref<string>('requests'); // 'requests' or username
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
+const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
+const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
 
 // Computed list of all tabs (requests + active chats)
 const allTabs = computed(() => {
@@ -53,6 +57,41 @@ watch(allTabs, (newTabs) => {
 watch(() => props.focusedDMUser, (focusedUser) => {
   if (focusedUser && props.activeChats.has(focusedUser)) {
     currentTab.value = focusedUser;
+  }
+});
+
+// Watch for input changes and send typing indicators (debounced)
+watch(messageInput, (newVal) => {
+  const user = currentTab.value;
+  if (user === 'requests' || !props.activeChats.has(user)) return;
+
+  // Clear existing timeout
+  if (typingTimeouts.has(user)) {
+    clearTimeout(typingTimeouts.get(user));
+  }
+
+  // If there's text being typed
+  if (newVal.trim().length > 0) {
+    // Send typing indicator if we haven't already
+    if (!isTypingMap.get(user)) {
+      emit('typing', user);
+      isTypingMap.set(user, true);
+    }
+
+    // Set timeout to send stop_typing after 1 second of inactivity
+    const timeout = setTimeout(() => {
+      emit('stopTyping', user);
+      isTypingMap.set(user, false);
+      typingTimeouts.delete(user);
+    }, 1000);
+
+    typingTimeouts.set(user, timeout);
+  } else {
+    // No text, send stop_typing immediately
+    if (isTypingMap.get(user)) {
+      emit('stopTyping', user);
+      isTypingMap.set(user, false);
+    }
   }
 });
 
@@ -240,6 +279,9 @@ watch(
             {{ tab }}
             <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
             <span v-else class="status-indicator disconnected">●</span>
+            <span v-if="props.activeChats.get(tab)?.isTyping" class="typing-indicator">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </span>
           </span>
           <button
             v-if="tab !== 'requests'"
@@ -701,6 +743,44 @@ watch(
   50% {
     opacity: 0.5;
   }
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  40% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+.typing-indicator {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.typing-indicator .dot {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: bounce 1.4s infinite;
+}
+
+.typing-indicator .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-indicator .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator .dot:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
 @media (max-width: 600px) {

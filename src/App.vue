@@ -168,6 +168,18 @@ function handleSendDMMessage(user: string, message: string, effect: string) {
   }
 }
 
+function handleTyping(user: string) {
+  if (dm.value) {
+    dm.value.sendTyping(user);
+  }
+}
+
+function handleStopTyping(user: string) {
+  if (dm.value) {
+    dm.value.sendStopTyping(user);
+  }
+}
+
 function handleCloseDM(user: string) {
   if (dm.value) {
     dm.value.closeDM(user);
@@ -239,6 +251,8 @@ function handleCancelPendingMessages(user: string) {
       @reject-dm="handleRejectDM"
       @cancel-request="handleCancelDMRequest"
       @send-message="handleSendDMMessage"
+      @typing="handleTyping"
+      @stop-typing="handleStopTyping"
       @cancel-pending-messages="handleCancelPendingMessages"
       @close-dm="handleCloseDM"
     />

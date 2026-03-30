@@ -136,18 +136,6 @@ onBeforeUnmount(() => {
         <span class="glyph">█</span>
         VIDEO CALL // {{ peerName.toUpperCase() }}
       </div>
-      <div class="titlebar-controls">
-        <button class="titlebar-btn" @click="toggleAudio" :class="{ active: audioEnabled }" title="Toggle Audio">
-          🎤
-        </button>
-        <button class="titlebar-btn" @click="toggleVideo" :class="{ active: videoEnabled }" title="Toggle Video">
-          📹
-        </button>
-        <button class="titlebar-btn" @click="toggleMaximize" title="Maximize">
-          {{ isMaximized ? '◻' : '◻' }}
-        </button>
-        <button class="titlebar-btn close" @click="closeWindow" title="Close">✕</button>
-      </div>
     </div>
 
     <!-- Video Container -->
@@ -157,7 +145,6 @@ onBeforeUnmount(() => {
         ref="remoteAudioRef"
         autoplay
         playsinline
-        controls
         :muted="false"
         style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
       ></audio>

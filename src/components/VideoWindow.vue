@@ -37,6 +37,9 @@ watch(() => props.localStream, async (stream) => {
 
   if (localVideoRef.value) {
     console.log('VideoWindow: Setting localVideoRef.value.srcObject');
+    // Never play local microphone back to the same user.
+    localVideoRef.value.muted = true;
+    localVideoRef.value.defaultMuted = true;
     localVideoRef.value.srcObject = stream;
     localVideoRef.value.play().then(() => {
       console.log('VideoWindow: Local video playing successfully');
@@ -168,6 +171,7 @@ onBeforeUnmount(() => {
           ref="localVideoRef"
           class="local-video"
           autoplay
+          muted
           playsinline
         />
         <div class="pip-border"></div>

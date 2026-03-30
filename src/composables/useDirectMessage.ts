@@ -104,10 +104,12 @@ export function useDirectMessage(
 
     chat.callStartTime = Date.now();
     chat.callDuration = 0;
+    setOrUpdateChat(user, chat);
 
     const timer = setInterval(() => {
       if (chat.callStartTime) {
         chat.callDuration = Math.floor((Date.now() - chat.callStartTime) / 1000);
+        setOrUpdateChat(user, chat);
       }
     }, 1000);
 
@@ -120,6 +122,7 @@ export function useDirectMessage(
     if (chat) {
       chat.callStartTime = null;
       chat.callDuration = 0;
+      setOrUpdateChat(user, chat);
     }
 
     if (callTimers.has(user)) {
@@ -1130,19 +1133,6 @@ export function useDirectMessage(
         stream.getTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
-
-        // Renegotiate the connection to include video
-        try {
-          const offer = await rtcConn.peerConnection.createOffer();
-          await rtcConn.peerConnection.setLocalDescription(offer);
-          mqttClient.publish(
-            getSignalTopic(targetUser),
-            JSON.stringify(offer)
-          );
-          console.log('Initiator created and sent renegotiation offer with video');
-        } catch (e) {
-          console.error('Failed to renegotiate video:', e);
-        }
       }
 
       // Send video request signal
@@ -1201,7 +1191,7 @@ export function useDirectMessage(
           rtcConn.peerConnection.addTrack(track, stream);
         });
 
-        // Renegotiate the connection to include video
+        // Renegotiate only from the acceptor side to avoid offer glare.
         try {
           const offer = await rtcConn.peerConnection.createOffer();
           await rtcConn.peerConnection.setLocalDescription(offer);
@@ -1209,7 +1199,7 @@ export function useDirectMessage(
             getSignalTopic(fromUser),
             JSON.stringify(offer)
           );
-          console.log('Acceptor created and sent renegotiation offer with video');
+          console.log('Acceptor created and sent renegotiation offer with audio/video');
         } catch (e) {
           console.error('Failed to renegotiate video on accept:', e);
         }

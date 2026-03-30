@@ -126,13 +126,12 @@ watch([currentTab, () => props.activeChats], () => {
 // Watch for video call state (when remote media stream has video tracks)
 watch([currentTab, () => props.activeChats], () => {
   const chat = props.activeChats.get(currentTab.value);
-  if (!chat || !chat.remoteMediaStream) {
+  if (!chat) {
     activeVideoCallUser.value = null;
     return;
   }
 
-  const hasVideoTracks = chat.remoteMediaStream.getVideoTracks().length > 0;
-  if (hasVideoTracks) {
+  if (chat.videoCallActive) {
     activeVideoCallUser.value = currentTab.value;
   } else {
     activeVideoCallUser.value = null;
@@ -177,24 +176,6 @@ function handleAcceptVideo(user: string) {
 
 function handleRejectVideo(user: string) {
   emit('rejectVideo', user);
-}
-
-function handleCloseVideoCall() {
-  if (currentTab.value !== 'requests') {
-    emit('closeDm', currentTab.value);
-  }
-}
-
-function handleToggleVideoAudio(enabled: boolean) {
-  if (currentTab.value !== 'requests') {
-    emit('toggleAudio', currentTab.value, enabled);
-  }
-}
-
-function handleToggleVideoVideo(enabled: boolean) {
-  if (currentTab.value !== 'requests') {
-    emit('toggleVideo', currentTab.value, enabled);
-  }
 }
 
 function handleCancelRequest(user: string) {
@@ -436,17 +417,6 @@ watch(
         <button class="close-btn" @click="handleClose">✕</button>
       </div>
 
-      <!-- Video Window Overlay -->
-      <VideoWindow
-        v-if="getCurrentChat()?.videoCallActive"
-        :peer-name="currentTab"
-        :local-stream="getCurrentChat()?.localMediaStream"
-        :remote-stream="getCurrentChat()?.remoteMediaStream"
-        @close="handleCloseVideoCall"
-        @toggle-audio="handleToggleVideoAudio"
-        @toggle-video="handleToggleVideoVideo"
-      />
-
       <div v-if="notices.length > 0" class="notice-stack" role="status" aria-live="polite">
         <div v-for="notice in notices" :key="notice.id" :class="['notice-item', notice.type]">
           {{ notice.message }}
@@ -659,8 +629,8 @@ watch(
         v-if="activeVideoCallUser"
         :key="activeVideoCallUser"
         :peer-name="activeVideoCallUser"
-        :local-stream="getCurrentChat()?.localMediaStream"
-        :remote-stream="getCurrentChat()?.remoteMediaStream"
+        :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
+        :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
         @close="handleVideoWindowClose"
         @toggle-audio="handleVideoWindowToggleAudio"
         @toggle-video="handleVideoWindowToggleVideo"

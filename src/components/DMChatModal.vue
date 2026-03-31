@@ -542,7 +542,6 @@ watch(
               v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn phone-btn"
               @click.stop="handleRequestAudio"
-              title="Request Audio Call"
             >
               ☎
             </button>
@@ -550,7 +549,6 @@ watch(
               v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn camera-btn"
               @click.stop="handleRequestVideo"
-              title="Request Video Call"
             >
               📹
             </button>
@@ -558,7 +556,6 @@ watch(
               v-if="tab !== 'requests' && props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn end-call-btn"
               @click.stop="handleEndCall(tab)"
-              title="End Call"
             >
               ⊗
             </button>
@@ -673,7 +670,6 @@ watch(
                     v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
                     class="file-action-btn accept"
                     @click="acceptFileTransfer(fileId)"
-                    title="Accept transfer"
                   >
                     ACCEPT
                   </button>
@@ -681,7 +677,6 @@ watch(
                     v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
                     class="file-action-btn reject"
                     @click="rejectFileTransfer(fileId)"
-                    title="Reject transfer"
                   >
                     REJECT
                   </button>
@@ -689,7 +684,6 @@ watch(
                     v-if="transfer.status === 'completed' && transfer.direction === 'incoming'"
                     class="file-action-btn"
                     @click="downloadFile(transfer)"
-                    title="Save file"
                   >
                     SAVE
                   </button>
@@ -697,8 +691,7 @@ watch(
                     v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && transfer.savedToDisk"
                     class="file-action-btn"
                     @click="showDownloadsFolder"
-                    title="Show in downloads folder"
-                  >
+                    >
                     SHOW IN FOLDER
                   </button>
                 </div>

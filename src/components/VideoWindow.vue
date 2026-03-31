@@ -39,6 +39,7 @@ const videoEnabled = ref(true);
 const fallbackMessageInput = ref('');
 const lastAnimatedRemoteMessageKey = ref('');
 const hasLocalVideoTrack = ref(false);
+const hasLocalAudioTrack = ref(false);
 const { playAnimation } = useMessageAnimations();
 
 // Remote pane visibility is driven by the peerHasVideo prop which comes from
@@ -69,13 +70,17 @@ watch(() => props.localStream, async (stream) => {
 
   if (!stream) {
     hasLocalVideoTrack.value = false;
+    hasLocalAudioTrack.value = false;
     if (localVideoRef.value) localVideoRef.value.srcObject = null;
     return;
   }
 
   // Local stream is created once with known constraints (video: false or real camera).
   // Check tracks immediately; also listen for addtrack in case of future renegotiation.
-  const update = () => { hasLocalVideoTrack.value = stream.getVideoTracks().length > 0; };
+  const update = () => {
+    hasLocalVideoTrack.value = stream.getVideoTracks().length > 0;
+    hasLocalAudioTrack.value = stream.getAudioTracks().length > 0;
+  };
   stream.addEventListener('addtrack', update);
   stream.addEventListener('removetrack', update);
   update();
@@ -216,9 +221,7 @@ onBeforeUnmount(() => {
         playsinline
       />
       <div v-show="!hasRemoteVideoTrack" class="remote-chat-fallback">
-        <div class="remote-fallback-header">{{ peerName.toUpperCase() }} // NO WEBCAM</div>
         <div ref="remoteFallbackAnimationRef" class="remote-fallback-animation"></div>
-        <div class="remote-fallback-caption">Incoming DM messages animate here</div>
       </div>
 
       <!-- Local Video (PiP bottom-right) -->
@@ -237,7 +240,7 @@ onBeforeUnmount(() => {
               v-model="fallbackMessageInput"
               class="fallback-input"
               type="text"
-              placeholder="Type reply..."
+              placeholder="Ready to send..."
               :disabled="!canSendMessages"
               @keydown.enter="sendFallbackMessage"
             />
@@ -259,23 +262,23 @@ onBeforeUnmount(() => {
       <!-- Control buttons (bottom) -->
       <div class="bottom-controls">
         <button
-          class="control-btn"
-          :class="{ 'btn-off': !audioEnabled }"
-          @click="toggleAudio"
-          title="Toggle Microphone"
-        >
-          {{ audioEnabled ? '🎤 MIC ON' : '🔇 MIC OFF' }}
-        </button>
-        <button
-          class="control-btn"
-          :class="{ 'btn-off': !videoEnabled }"
-          @click="toggleVideo"
-          title="Toggle Camera"
-        >
+            v-show="hasLocalAudioTrack"
+            class="control-btn"
+            :class="{ 'btn-off': !audioEnabled }"
+            @click="toggleAudio"
+          >
+            {{ audioEnabled ? '🎤 MIC ON' : '🔇 MIC OFF' }}
+          </button>
+          <button
+            v-show="hasLocalVideoTrack"
+            class="control-btn"
+            :class="{ 'btn-off': !videoEnabled }"
+            @click="toggleVideo"
+          >
           {{ videoEnabled ? '📹 CAM ON' : '📷 CAM OFF' }}
         </button>
-        <button class="control-btn btn-end" @click="closeWindow" title="End Call">
-          ⏹ END CALL
+        <button class="control-btn btn-end" @click="closeWindow">
+          ⏹ TERMINATE
         </button>
       </div>
     </div>

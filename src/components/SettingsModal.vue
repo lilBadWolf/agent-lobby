@@ -2,7 +2,7 @@
 import { ref, watch, nextTick } from 'vue';
 import type { AudioConfig } from '../composables/useLobbyChat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
-import { NO_WEBCAM_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
+import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
 
 const props = defineProps<{
   showModal: boolean;
@@ -27,15 +27,21 @@ const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPe
 watch(
   () => props.showModal,
   async (isOpen) => {
-    if (isOpen) {
-      // Avoid camera initialization when user explicitly selected no webcam.
+      if (isOpen) {
+      // Avoid camera/mic initialization when user explicitly opted out.
       const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
-      const hasVideoDevices = await requestMediaPermission(includeVideo);
+      const includeAudio = localConfig.value.audioInputDeviceId !== NO_MIC_DEVICE_ID;
+      const hasVideoDevices = await requestMediaPermission(includeVideo, includeAudio);
 
-      // If no camera was found and the user hasn't already made an explicit choice,
-      // silently default them to No Webcam so video calls don't fail.
+      // Auto-default no-webcam when no camera found and user hasn't chosen yet
       if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
         localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
+      // Auto-default no-mic when no audio input found and user hasn't chosen yet
+      const hasAudioDevices = audioInputDevices.value.length > 0;
+      if (!hasAudioDevices && localConfig.value.audioInputDeviceId === '') {
+        localConfig.value.audioInputDeviceId = NO_MIC_DEVICE_ID;
         emit('update', { ...localConfig.value });
       }
     }
@@ -114,31 +120,6 @@ async function previewEffect() {
           />
         </div>
         <div class="setting-row">
-          <label>DM ENABLED</label>
-          <input
-            v-model="localConfig.dmEnabled"
-            type="checkbox"
-            id="set-dm-toggle"
-            @change="handleChange"
-          />
-        </div>
-        <div class="setting-row">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <label>DM CHAT EFFECT</label>
-            <button class="preview-btn" @click="previewEffect" title="Preview Effect">🔭</button>
-          </div>
-          <select
-            v-model="localConfig.dmChatEffect"
-            id="set-dm-effect"
-            @change="handleChange"
-          >
-            <option value="none">NONE</option>
-            <option value="matrix">MATRIX</option>
-            <option value="glitch">GLITCH</option>
-            <option value="flames">FLAMES</option>
-          </select>
-        </div>
-        <div class="setting-row">
           <label>SOUNDPACK</label>
           <select
             v-model="localConfig.soundpack"
@@ -163,20 +144,32 @@ async function previewEffect() {
           </select>
         </div>
         <div class="setting-row">
-          <label>AUDIO INPUT</label>
+          <label>DM ENABLED</label>
+          <input
+            v-model="localConfig.dmEnabled"
+            type="checkbox"
+            id="set-dm-toggle"
+            @change="handleChange"
+          />
+        </div>
+        <div class="setting-row">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label>DM EFFECT</label>
+            <button class="preview-btn" @click="previewEffect">🔭</button>
+          </div>
           <select
-            v-model="localConfig.audioInputDeviceId"
-            id="set-audio-input"
+            v-model="localConfig.dmChatEffect"
+            id="set-dm-effect"
             @change="handleChange"
           >
-            <option value="">DEFAULT</option>
-            <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
-              {{ device.label }}
-            </option>
+            <option value="none">NONE</option>
+            <option value="matrix">MATRIX</option>
+            <option value="glitch">GLITCH</option>
+            <option value="flames">FLAMES</option>
           </select>
         </div>
         <div class="setting-row">
-          <label>AUDIO OUTPUT</label>
+          <label>DM AUDIO OUT</label>
           <select
             v-model="localConfig.audioOutputDeviceId"
             id="set-audio-output"
@@ -189,7 +182,21 @@ async function previewEffect() {
           </select>
         </div>
         <div class="setting-row">
-          <label>VIDEO INPUT</label>
+          <label>DM AUDIO IN</label>
+          <select
+            v-model="localConfig.audioInputDeviceId"
+            id="set-audio-input"
+            @change="handleChange"
+          >
+            <option value="">DEFAULT</option>
+            <option :value="NO_MIC_DEVICE_ID">NO MIC (RECEIVE ONLY)</option>
+            <option v-for="device in audioInputDevices" :key="device.deviceId" :value="device.deviceId">
+              {{ device.label }}
+            </option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>VIDEO</label>
           <select
             v-model="localConfig.videoInputDeviceId"
             id="set-video-input"

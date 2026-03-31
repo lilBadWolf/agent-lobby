@@ -32,7 +32,7 @@ const userList = computed(() =>
     <div id="user-list">
       <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
         <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
-        <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)" title="Request DM">💬</button>
+        <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
       </div>
     </div>
     <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>

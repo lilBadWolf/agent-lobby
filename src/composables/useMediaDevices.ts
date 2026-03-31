@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 
 export const NO_WEBCAM_DEVICE_ID = '__no_webcam__';
+export const NO_MIC_DEVICE_ID = '__no_mic__';
 
 export interface MediaDeviceOption {
   deviceId: string;
@@ -15,11 +16,11 @@ export function useMediaDevices() {
   const permissionError = ref<string | null>(null);
   const isEnumerating = ref(false);
 
-  async function requestMediaPermission(includeVideo = true) {
+  async function requestMediaPermission(includeVideo = true, includeAudio = true) {
     try {
       permissionError.value = null;
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
+        audio: includeAudio,
         video: includeVideo
       });
 

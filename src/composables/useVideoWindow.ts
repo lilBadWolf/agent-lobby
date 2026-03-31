@@ -1,11 +1,5 @@
 import { ref, computed } from 'vue';
-
-export interface VideoWindowState {
-  user: string;
-  localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
-  isOpen: boolean;
-}
+import type { VideoWindowState } from '../types/video';
 
 export function useVideoWindow() {
   const activeVideoWindow = ref<VideoWindowState | null>(null);

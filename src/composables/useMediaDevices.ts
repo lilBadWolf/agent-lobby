@@ -1,13 +1,8 @@
 import { ref } from 'vue';
+import type { MediaDeviceOption } from '../types/media';
 
 export const NO_WEBCAM_DEVICE_ID = '__no_webcam__';
 export const NO_MIC_DEVICE_ID = '__no_mic__';
-
-export interface MediaDeviceOption {
-  deviceId: string;
-  label: string;
-  kind: 'audioinput' | 'audiooutput' | 'videoinput';
-}
 
 export function useMediaDevices() {
   const audioInputDevices = ref<MediaDeviceOption[]>([]);

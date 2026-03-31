@@ -1,6 +1,36 @@
+<template>
+  <div v-if="showModal" id="network-config-modal" @click="(e) => e.target === $el && handleClose()">
+    <div class="modal-box">
+      <div class="config-content">
+        <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">NET_CONFIG</h3>
+        <div class="config-row">
+          <label for="mqtt-server">MQTT SERVER</label>
+          <input
+            id="mqtt-server"
+            v-model="localConfig.mqttServer"
+            type="text"
+            placeholder="wss://broker.emqx.io:8084/mqtt"
+          />
+        </div>
+        <div class="config-row">
+          <label for="default-lobby">DEFAULT LOBBY</label>
+          <input
+            id="default-lobby"
+            v-model="localConfig.defaultLobby"
+            type="text"
+            placeholder="spy_terminal"
+          />
+        </div>
+      </div>
+      <button class="save-btn" @click="handleSave">SAVE CONFIG</button>
+      <button class="close-btn" @click="handleClose">CLOSE</button>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { NetworkConfig } from '../composables/useLobbyChat';
+import type { NetworkConfig } from '../types/chat';
 
 const props = defineProps<{
   showModal: boolean;
@@ -35,36 +65,6 @@ function handleSave() {
   }
 }
 </script>
-
-<template>
-  <div v-if="showModal" id="network-config-modal" @click="(e) => e.target === $el && handleClose()">
-    <div class="modal-box">
-      <div class="config-content">
-        <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">NET_CONFIG</h3>
-        <div class="config-row">
-          <label for="mqtt-server">MQTT SERVER</label>
-          <input
-            id="mqtt-server"
-            v-model="localConfig.mqttServer"
-            type="text"
-            placeholder="wss://broker.emqx.io:8084/mqtt"
-          />
-        </div>
-        <div class="config-row">
-          <label for="default-lobby">DEFAULT LOBBY</label>
-          <input
-            id="default-lobby"
-            v-model="localConfig.defaultLobby"
-            type="text"
-            placeholder="spy_terminal"
-          />
-        </div>
-      </div>
-      <button class="save-btn" @click="handleSave">SAVE CONFIG</button>
-      <button class="close-btn" @click="handleClose">CLOSE</button>
-    </div>
-  </div>
-</template>
 
 <style scoped>
 #network-config-modal {

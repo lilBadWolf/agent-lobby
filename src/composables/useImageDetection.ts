@@ -1,10 +1,5 @@
 import { ref } from 'vue';
-
-export interface DetectedImage {
-  uri: string;
-  loaded: boolean;
-  error: boolean;
-}
+import type { DetectedImage } from '../types/media';
 
 // Safe image formats only
 const SAFE_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];

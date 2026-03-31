@@ -6,7 +6,7 @@
 <p align="center">
   Agent Lobby is a real-time chat app with a cyberpunk terminal vibe.
 
-  [WEB APP](https://thecompanyofwolves.com/lobby/)
+  [WEB APP](https://lilbadwolf.github.io/agent-lobby/)
 </p>
 
 > [!IMPORTANT]

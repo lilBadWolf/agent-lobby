@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { downloadDir } from '@tauri-apps/api/path';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { BaseDirectory, writeFile } from '@tauri-apps/plugin-fs';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -57,6 +56,8 @@ const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state
 const dragOverZone = ref(false); // Track drag-over state for file drop zone
 const activeVideoCallUser = ref<string | null>(null); // Track active video call user
 const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per tab
+const savingFileIds = ref<Set<string>>(new Set()); // Track in-flight save operations
+const savedFileIds = ref<Set<string>>(new Set()); // Track successful local saves before parent sync
 
 function toggleFilesPanel() {
   filesCollapsed.value[currentTab.value] = !filesCollapsed.value[currentTab.value];
@@ -328,15 +329,6 @@ function formatBytes(bytes: number): string {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
-async function showDownloadsFolder() {
-  try {
-    const downloadsPath = await downloadDir();
-    await openPath(downloadsPath);
-  } catch (error) {
-    console.error('Failed to open downloads folder:', error);
-  }
-}
-
 function acceptFileTransfer(fileId: string) {
   if (currentTab.value === 'requests') return;
   emit('acceptFile', currentTab.value, fileId);
@@ -358,30 +350,68 @@ function rejectFileTransferFromNotice(user: string | undefined, fileId: string |
   emit('rejectFile', user, fileId);
 }
 
-function downloadFile(transfer: FileTransferState) {
-  if (!transfer || !transfer.chunks) return;
+function sanitizeFilename(name: string): string {
+  return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim() || 'download.bin';
+}
 
-  const chunks: Uint8Array[] = [];
+function buildTransferBytes(transfer: FileTransferState): Uint8Array {
+  const collected: Uint8Array[] = [];
+  let totalLength = 0;
+
   for (let i = 0; i < transfer.totalChunks; i++) {
     const chunk = transfer.chunks.get(i);
     if (chunk) {
-      chunks.push(chunk);
+      const normalized = Uint8Array.from(chunk);
+      collected.push(normalized);
+      totalLength += normalized.length;
     }
   }
 
-  const blobParts = chunks.map((chunk) => Uint8Array.from(chunk));
-  const blob = new Blob(blobParts, { type: transfer.mimeType || 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = transfer.filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of collected) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
 
-  if (currentTab.value !== 'requests') {
-    emit('fileSaved', currentTab.value, transfer.id);
+function isSavingFile(fileId: string): boolean {
+  return savingFileIds.value.has(fileId);
+}
+
+function isFileAlreadySaved(transfer: FileTransferState): boolean {
+  return transfer.savedToDisk || savedFileIds.value.has(transfer.id);
+}
+
+async function downloadFile(transfer: FileTransferState) {
+  if (!transfer || !transfer.chunks) return;
+  if (isFileAlreadySaved(transfer) || isSavingFile(transfer.id)) return;
+
+  savingFileIds.value.add(transfer.id);
+
+  try {
+    const bytes = buildTransferBytes(transfer);
+    if (bytes.length === 0) {
+      throw new Error('No file data available to save');
+    }
+
+    const baseName = sanitizeFilename(transfer.filename);
+    const targetPath = `${Date.now()}_${baseName}`;
+
+    await writeFile(targetPath, bytes, {
+      baseDir: BaseDirectory.Download
+    });
+
+    savedFileIds.value.add(transfer.id);
+
+    if (currentTab.value !== 'requests') {
+      emit('fileSaved', currentTab.value, transfer.id);
+    }
+  } catch (error) {
+    console.error('Failed to save file via Tauri FS:', error);
+  } finally {
+    savingFileIds.value.delete(transfer.id);
   }
 }
 
@@ -681,18 +711,12 @@ watch(
                     REJECT
                   </button>
                   <button
-                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming'"
+                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && !isFileAlreadySaved(transfer)"
                     class="file-action-btn"
+                    :disabled="isSavingFile(fileId)"
                     @click="downloadFile(transfer)"
                   >
-                    SAVE
-                  </button>
-                  <button
-                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && transfer.savedToDisk"
-                    class="file-action-btn"
-                    @click="showDownloadsFolder"
-                    >
-                    SHOW IN FOLDER
+                    {{ isSavingFile(fileId) ? 'SAVING...' : 'SAVE' }}
                   </button>
                 </div>
               </div>

@@ -1,6 +1,79 @@
+<template>
+  <section id="chat-area">
+    <div ref="messagesContainer" id="messages">
+      <div v-for="(msg, index) in messages" :key="index">
+        <div v-if="msg.isSystem" class="system-msg">
+          <span class="text">[{{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>]</span>
+        </div>
+        <div v-else class="msg">
+          <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
+          <span
+            class="text"
+            :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
+            :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
+          >
+            {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
+          </span>
+          <div v-if="getMessageImages(index).length > 0" class="message-images">
+            <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
+              <img
+                :src="imageUri"
+                :alt="imageUri"
+                @load="handleImageLoad(imageUri)"
+                @error="handleImageError(imageUri)"
+                class="embedded-image"
+              />
+              <span v-if="getImageState(imageUri)?.error" class="image-fallback">{{ imageUri }}</span>
+            </div>
+          </div>
+          <div v-if="getMessageYouTubeUrls(index).length > 0" class="message-videos">
+            <div v-for="ytUrl in getMessageYouTubeUrls(index)" :key="ytUrl" class="video-container">
+              <iframe
+                v-if="getYouTubeVideoId(ytUrl)"
+                :src="`https://www.youtube.com/embed/${getYouTubeVideoId(ytUrl)}`"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowfullscreen
+                class="embedded-video"
+              ></iframe>
+              <span v-else class="video-fallback">{{ ytUrl }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="input-bar" style="position: relative;">
+      <div v-if="emojiSuggestions.length > 0" class="emoji-picker">
+        <div
+          v-for="(item, i) in emojiSuggestions"
+          :key="item.name"
+          class="emoji-item"
+          :class="{ active: i === emojiSelectedIndex }"
+          @mousedown.prevent="selectEmojiSuggestion(item)"
+        >
+          <span class="emoji-char">{{ item.emoji }}</span>
+          <span class="emoji-name">:{{ item.name }}:</span>
+        </div>
+      </div>
+      <input
+        ref="chatInputEl"
+        v-model="chatInput"
+        type="text"
+        id="chat-msg"
+        placeholder="READY TO TRANSMIT..."
+        :disabled="!isConnected"
+        @input="convertEmojisInInput"
+        @keydown="handleInputKeydown"
+        @blur="emit('typing', false)"
+      />
+      <button class="send-btn" :disabled="!isConnected" @click="sendMessage">SEND</button>
+    </div>
+  </section>
+</template>
+
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { ChatMessage } from '../composables/useLobbyChat';
+import type { ChatMessage } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import * as nodeEmoji from 'node-emoji';
@@ -228,79 +301,6 @@ function handleInputKeydown(e: KeyboardEvent) {
   }
 }
 </script>
-
-<template>
-  <section id="chat-area">
-    <div ref="messagesContainer" id="messages">
-      <div v-for="(msg, index) in messages" :key="index">
-        <div v-if="msg.isSystem" class="system-msg">
-          <span class="text">[{{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>]</span>
-        </div>
-        <div v-else class="msg">
-          <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
-          <span
-            class="text"
-            :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
-            :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
-          >
-            {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
-          </span>
-          <div v-if="getMessageImages(index).length > 0" class="message-images">
-            <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
-              <img
-                :src="imageUri"
-                :alt="imageUri"
-                @load="handleImageLoad(imageUri)"
-                @error="handleImageError(imageUri)"
-                class="embedded-image"
-              />
-              <span v-if="getImageState(imageUri)?.error" class="image-fallback">{{ imageUri }}</span>
-            </div>
-          </div>
-          <div v-if="getMessageYouTubeUrls(index).length > 0" class="message-videos">
-            <div v-for="ytUrl in getMessageYouTubeUrls(index)" :key="ytUrl" class="video-container">
-              <iframe
-                v-if="getYouTubeVideoId(ytUrl)"
-                :src="`https://www.youtube.com/embed/${getYouTubeVideoId(ytUrl)}`"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen
-                class="embedded-video"
-              ></iframe>
-              <span v-else class="video-fallback">{{ ytUrl }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="input-bar" style="position: relative;">
-      <div v-if="emojiSuggestions.length > 0" class="emoji-picker">
-        <div
-          v-for="(item, i) in emojiSuggestions"
-          :key="item.name"
-          class="emoji-item"
-          :class="{ active: i === emojiSelectedIndex }"
-          @mousedown.prevent="selectEmojiSuggestion(item)"
-        >
-          <span class="emoji-char">{{ item.emoji }}</span>
-          <span class="emoji-name">:{{ item.name }}:</span>
-        </div>
-      </div>
-      <input
-        ref="chatInputEl"
-        v-model="chatInput"
-        type="text"
-        id="chat-msg"
-        placeholder="READY TO TRANSMIT..."
-        :disabled="!isConnected"
-        @input="convertEmojisInInput"
-        @keydown="handleInputKeydown"
-        @blur="emit('typing', false)"
-      />
-      <button class="send-btn" :disabled="!isConnected" @click="sendMessage">SEND</button>
-    </div>
-  </section>
-</template>
 
 <style scoped>
 #chat-area {

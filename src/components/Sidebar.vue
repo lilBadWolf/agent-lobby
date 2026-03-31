@@ -1,12 +1,20 @@
+<template>
+  <aside id="sidebar">
+    <div style="border-bottom: 1px solid var(--neon-green); padding-bottom: 5px">Agents</div>
+    <div id="user-list">
+      <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
+        <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
+        <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
+      </div>
+    </div>
+    <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>
+  </aside>
+</template>
+
 <script setup lang="ts">
 import { computed } from 'vue';
+import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
-
-export interface UserPresence {
-  username: string;
-  dmAvailable: boolean;
-  isTyping?: boolean;
-}
 
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
@@ -25,19 +33,6 @@ const userList = computed(() =>
   Object.values(props.users || {}).filter(user => user.username !== props.currentUsername)
 );
 </script>
-
-<template>
-  <aside id="sidebar">
-    <div style="border-bottom: 1px solid var(--neon-green); padding-bottom: 5px">Agents</div>
-    <div id="user-list">
-      <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
-        <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
-        <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
-      </div>
-    </div>
-    <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>
-  </aside>
-</template>
 
 <style scoped>
 #sidebar {

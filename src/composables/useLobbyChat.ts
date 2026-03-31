@@ -1,37 +1,6 @@
 import { ref, reactive, computed } from 'vue';
+import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig } from '../types/chat';
 import mqtt from 'mqtt';
-
-export interface UserPresence {
-  username: string;
-  dmAvailable: boolean;
-  isTyping?: boolean;
-}
-
-export interface ChatMessage {
-  user: string;
-  message: string;
-  isSystem?: boolean;
-  effect?: string;
-  duration?: number;
-  messageId?: string;
-}
-
-export interface AudioConfig {
-  audioEnabled: boolean;
-  volume: number;
-  dmEnabled: boolean;
-  soundpack: string;
-  theme: string;
-  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
-  audioInputDeviceId: string;
-  audioOutputDeviceId: string;
-  videoInputDeviceId: string;
-}
-
-export interface NetworkConfig {
-  mqttServer: string;
-  defaultLobby: string;
-}
 
 const users = reactive<Record<string, UserPresence>>({});
 

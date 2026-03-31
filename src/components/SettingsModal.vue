@@ -1,98 +1,3 @@
-<script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
-import type { AudioConfig } from '../composables/useLobbyChat';
-import { useMessageAnimations } from '../composables/useMessageAnimations';
-import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
-
-const props = defineProps<{
-  showModal: boolean;
-  config: AudioConfig;
-  availableSoundpacks: string[];
-  availableThemes: string[];
-}>();
-
-const emit = defineEmits<{
-  update: [config: AudioConfig];
-  close: [];
-  clearLog: [];
-}>();
-
-const localConfig = ref<AudioConfig>({ ...props.config });
-const showEffectPreview = ref(false);
-const previewElement = ref<HTMLElement>();
-const { playAnimation } = useMessageAnimations();
-
-const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
-
-watch(
-  () => props.showModal,
-  async (isOpen) => {
-      if (isOpen) {
-      // Avoid camera/mic initialization when user explicitly opted out.
-      const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
-      const includeAudio = localConfig.value.audioInputDeviceId !== NO_MIC_DEVICE_ID;
-      const hasVideoDevices = await requestMediaPermission(includeVideo, includeAudio);
-
-      // Auto-default no-webcam when no camera found and user hasn't chosen yet
-      if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
-        localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
-        emit('update', { ...localConfig.value });
-      }
-      // Auto-default no-mic when no audio input found and user hasn't chosen yet
-      const hasAudioDevices = audioInputDevices.value.length > 0;
-      if (!hasAudioDevices && localConfig.value.audioInputDeviceId === '') {
-        localConfig.value.audioInputDeviceId = NO_MIC_DEVICE_ID;
-        emit('update', { ...localConfig.value });
-      }
-    }
-  }
-);
-
-watch(
-  () => props.config,
-  (newConfig) => {
-    localConfig.value = { ...newConfig };
-  }
-);
-
-watch(
-  () => props.availableSoundpacks,
-  (newPacks) => {
-    // Ensure the selected soundpack is in the available list
-    if (newPacks.length > 0 && !newPacks.includes(localConfig.value.soundpack)) {
-      localConfig.value.soundpack = newPacks[0];
-    }
-  },
-  { immediate: true }
-);
-
-function handleClose() {
-  emit('close');
-}
-
-function handleChange() {
-  emit('update', { ...localConfig.value });
-}
-
-function handleClearLog() {
-  emit('clearLog');
-}
-
-async function previewEffect() {
-  showEffectPreview.value = true;
-  await nextTick(); // Wait for DOM to render
-  if (previewElement.value) {
-    previewElement.value.innerHTML = '';
-    const effectName = localConfig.value.dmChatEffect.toUpperCase();
-    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
-    setTimeout(() => {
-      showEffectPreview.value = false;
-    }, 300);
-  }
-}
-
-</script>
-
 <template>
   <div v-if="showModal" id="settings-modal" @click="(e) => e.target === $el && handleClose()">
     <div class="modal-box">
@@ -218,6 +123,101 @@ async function previewEffect() {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { ref, watch, nextTick } from 'vue';
+import type { AudioConfig } from '../types/chat';
+import { useMessageAnimations } from '../composables/useMessageAnimations';
+import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
+
+const props = defineProps<{
+  showModal: boolean;
+  config: AudioConfig;
+  availableSoundpacks: string[];
+  availableThemes: string[];
+}>();
+
+const emit = defineEmits<{
+  update: [config: AudioConfig];
+  close: [];
+  clearLog: [];
+}>();
+
+const localConfig = ref<AudioConfig>({ ...props.config });
+const showEffectPreview = ref(false);
+const previewElement = ref<HTMLElement>();
+const { playAnimation } = useMessageAnimations();
+
+const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
+
+watch(
+  () => props.showModal,
+  async (isOpen) => {
+      if (isOpen) {
+      // Avoid camera/mic initialization when user explicitly opted out.
+      const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
+      const includeAudio = localConfig.value.audioInputDeviceId !== NO_MIC_DEVICE_ID;
+      const hasVideoDevices = await requestMediaPermission(includeVideo, includeAudio);
+
+      // Auto-default no-webcam when no camera found and user hasn't chosen yet
+      if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
+        localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
+      // Auto-default no-mic when no audio input found and user hasn't chosen yet
+      const hasAudioDevices = audioInputDevices.value.length > 0;
+      if (!hasAudioDevices && localConfig.value.audioInputDeviceId === '') {
+        localConfig.value.audioInputDeviceId = NO_MIC_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
+    }
+  }
+);
+
+watch(
+  () => props.config,
+  (newConfig) => {
+    localConfig.value = { ...newConfig };
+  }
+);
+
+watch(
+  () => props.availableSoundpacks,
+  (newPacks) => {
+    // Ensure the selected soundpack is in the available list
+    if (newPacks.length > 0 && !newPacks.includes(localConfig.value.soundpack)) {
+      localConfig.value.soundpack = newPacks[0];
+    }
+  },
+  { immediate: true }
+);
+
+function handleClose() {
+  emit('close');
+}
+
+function handleChange() {
+  emit('update', { ...localConfig.value });
+}
+
+function handleClearLog() {
+  emit('clearLog');
+}
+
+async function previewEffect() {
+  showEffectPreview.value = true;
+  await nextTick(); // Wait for DOM to render
+  if (previewElement.value) {
+    previewElement.value.innerHTML = '';
+    const effectName = localConfig.value.dmChatEffect.toUpperCase();
+    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
+    setTimeout(() => {
+      showEffectPreview.value = false;
+    }, 300);
+  }
+}
+
+</script>
 
 <style scoped>
 #settings-modal {

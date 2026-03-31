@@ -1,3 +1,97 @@
+<template>
+  <div class="video-window">
+    <!-- Custom Titlebar -->
+    <div class="titlebar">
+      <div class="titlebar-title">
+        <span class="glyph">█</span>
+        VIDEO CALL // {{ peerName.toUpperCase() }}
+      </div>
+    </div>
+
+    <!-- Video Container -->
+    <div class="video-container">
+      <!-- Remote Audio (hidden, just for audio output) -->
+      <audio
+        ref="remoteAudioRef"
+        autoplay
+        playsinline
+        :muted="false"
+        style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
+      ></audio>
+      <!-- Remote Video (main feed) -->
+      <video
+        v-show="hasRemoteVideoTrack"
+        ref="remoteVideoRef"
+        class="remote-video"
+        autoplay
+        muted
+        playsinline
+      />
+      <div v-show="!hasRemoteVideoTrack" class="remote-chat-fallback">
+        <div ref="remoteFallbackAnimationRef" class="remote-fallback-animation"></div>
+      </div>
+
+      <!-- Local Video (PiP bottom-right) -->
+      <div class="local-video-container" :class="{ 'chat-mode': !hasLocalVideoTrack }">
+        <video
+          v-show="hasLocalVideoTrack"
+          ref="localVideoRef"
+          class="local-video"
+          autoplay
+          muted
+          playsinline
+        />
+        <div v-show="!hasLocalVideoTrack" class="local-chat-fallback">
+          <div class="fallback-input-row">
+            <input
+              v-model="fallbackMessageInput"
+              class="fallback-input"
+              type="text"
+              placeholder="Ready to send..."
+              :disabled="!canSendMessages"
+              @keydown.enter="sendFallbackMessage"
+            />
+            <button
+              class="fallback-send"
+              :disabled="!canSendMessages"
+              @click="sendFallbackMessage"
+            >
+              SEND
+            </button>
+          </div>
+        </div>
+        <div class="pip-border"></div>
+      </div>
+
+      <!-- Glitch effect overlay -->
+      <div class="glitch-overlay"></div>
+
+      <!-- Control buttons (bottom) -->
+      <div class="bottom-controls">
+        <button
+            v-show="hasLocalAudioTrack"
+            class="control-btn"
+            :class="{ 'btn-off': !audioEnabled }"
+            @click="toggleAudio"
+          >
+            {{ audioEnabled ? '🎤 MIC ON' : '🔇 MIC OFF' }}
+          </button>
+          <button
+            v-show="hasLocalVideoTrack"
+            class="control-btn"
+            :class="{ 'btn-off': !videoEnabled }"
+            @click="toggleVideo"
+          >
+          {{ videoEnabled ? '📹 CAM ON' : '📷 CAM OFF' }}
+        </button>
+        <button class="control-btn btn-end" @click="closeWindow">
+          ⏹ TERMINATE
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount, computed } from 'vue';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -190,100 +284,6 @@ onBeforeUnmount(() => {
   }
 });
 </script>
-
-<template>
-  <div class="video-window">
-    <!-- Custom Titlebar -->
-    <div class="titlebar">
-      <div class="titlebar-title">
-        <span class="glyph">█</span>
-        VIDEO CALL // {{ peerName.toUpperCase() }}
-      </div>
-    </div>
-
-    <!-- Video Container -->
-    <div class="video-container">
-      <!-- Remote Audio (hidden, just for audio output) -->
-      <audio
-        ref="remoteAudioRef"
-        autoplay
-        playsinline
-        :muted="false"
-        style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
-      ></audio>
-      <!-- Remote Video (main feed) -->
-      <video
-        v-show="hasRemoteVideoTrack"
-        ref="remoteVideoRef"
-        class="remote-video"
-        autoplay
-        muted
-        playsinline
-      />
-      <div v-show="!hasRemoteVideoTrack" class="remote-chat-fallback">
-        <div ref="remoteFallbackAnimationRef" class="remote-fallback-animation"></div>
-      </div>
-
-      <!-- Local Video (PiP bottom-right) -->
-      <div class="local-video-container" :class="{ 'chat-mode': !hasLocalVideoTrack }">
-        <video
-          v-show="hasLocalVideoTrack"
-          ref="localVideoRef"
-          class="local-video"
-          autoplay
-          muted
-          playsinline
-        />
-        <div v-show="!hasLocalVideoTrack" class="local-chat-fallback">
-          <div class="fallback-input-row">
-            <input
-              v-model="fallbackMessageInput"
-              class="fallback-input"
-              type="text"
-              placeholder="Ready to send..."
-              :disabled="!canSendMessages"
-              @keydown.enter="sendFallbackMessage"
-            />
-            <button
-              class="fallback-send"
-              :disabled="!canSendMessages"
-              @click="sendFallbackMessage"
-            >
-              SEND
-            </button>
-          </div>
-        </div>
-        <div class="pip-border"></div>
-      </div>
-
-      <!-- Glitch effect overlay -->
-      <div class="glitch-overlay"></div>
-
-      <!-- Control buttons (bottom) -->
-      <div class="bottom-controls">
-        <button
-            v-show="hasLocalAudioTrack"
-            class="control-btn"
-            :class="{ 'btn-off': !audioEnabled }"
-            @click="toggleAudio"
-          >
-            {{ audioEnabled ? '🎤 MIC ON' : '🔇 MIC OFF' }}
-          </button>
-          <button
-            v-show="hasLocalVideoTrack"
-            class="control-btn"
-            :class="{ 'btn-off': !videoEnabled }"
-            @click="toggleVideo"
-          >
-          {{ videoEnabled ? '📹 CAM ON' : '📷 CAM OFF' }}
-        </button>
-        <button class="control-btn btn-end" @click="closeWindow">
-          ⏹ TERMINATE
-        </button>
-      </div>
-    </div>
-  </div>
-</template>
 
 <style scoped>
 .video-window {

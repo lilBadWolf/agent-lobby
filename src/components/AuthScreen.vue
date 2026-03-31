@@ -1,3 +1,29 @@
+<template>
+  <div v-if="showAuth" id="auth-screen">
+    <SinewaveBackground />
+    <div class="login-box">
+      <button class="config-btn" @click="handleConfigClick">π</button>
+      <h2 class="glitch-text">AGENT LOBBY</h2>
+      <div class="input-group">
+        <span class="prompt-char">&gt;</span>
+        <input
+          v-model="usernameInput"
+          type="text"
+          id="username-in"
+          placeholder="HANDLE"
+          maxlength="12"
+          autocomplete="off"
+          @click="handleInputClick"
+          @keydown.enter="handleLogin"
+        />
+      </div>
+      <p v-if="authError" id="auth-err">ERROR: HANDLE_ALREADY_EXISTS</p>
+      <button id="login-btn" @click="handleLogin">INITIALIZE LINK</button>
+      <button v-if="hasTauriWindow" id="quit-btn" @click="quit">QUIT</button>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -44,32 +70,6 @@ const quit = async () => {
   await appWindow.close();
 }
 </script>
-
-<template>
-  <div v-if="showAuth" id="auth-screen">
-    <SinewaveBackground />
-    <div class="login-box">
-      <button class="config-btn" @click="handleConfigClick">π</button>
-      <h2 class="glitch-text">AGENT LOBBY</h2>
-      <div class="input-group">
-        <span class="prompt-char">&gt;</span>
-        <input
-          v-model="usernameInput"
-          type="text"
-          id="username-in"
-          placeholder="HANDLE"
-          maxlength="12"
-          autocomplete="off"
-          @click="handleInputClick"
-          @keydown.enter="handleLogin"
-        />
-      </div>
-      <p v-if="authError" id="auth-err">ERROR: HANDLE_ALREADY_EXISTS</p>
-      <button id="login-btn" @click="handleLogin">INITIALIZE LINK</button>
-      <button v-if="hasTauriWindow" id="quit-btn" @click="quit">QUIT</button>
-    </div>
-  </div>
-</template>
 
 <style scoped>
 #auth-screen {

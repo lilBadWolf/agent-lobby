@@ -1,3 +1,179 @@
+<template>
+  <div data-tauri-drag-region class="custom-titlebar">
+    {{ pageTitle }}
+    <button class="minimize-btn" @click="minimize">—</button>
+    <button class="maximize-btn" @click="toggleMaximize">
+      {{ isMaximized ? '◻' : '◻' }}
+    </button>
+    <button class="titlebar-close-btn" @click="quit">✕</button>
+  </div>
+  <div id="app" :class="{ 'shutdown-anim': showShutdownAnim }">
+    <button class="gear-btn" @click="toggleSettings">⚙</button>
+
+    <SettingsModal
+      :show-modal="showSettings"
+      :config="config"
+      :available-soundpacks="availableSoundpacks"
+      :available-themes="availableThemes"
+      @update="
+        (newConfig) => {
+          config.dmEnabled = newConfig.dmEnabled;
+          config.audioEnabled = newConfig.audioEnabled;
+          config.volume = newConfig.volume;
+          config.dmChatEffect = newConfig.dmChatEffect;
+          config.audioInputDeviceId = newConfig.audioInputDeviceId;
+          config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
+          config.videoInputDeviceId = newConfig.videoInputDeviceId;
+          if (config.soundpack !== newConfig.soundpack) {
+            setSoundpack(newConfig.soundpack);
+          }
+          if (config.theme !== newConfig.theme) {
+            applyTheme(newConfig.theme);
+            config.theme = newConfig.theme;
+          }
+          updateSettings();
+        }
+      "
+      @clear-log="clearMessages"
+      @close="toggleSettings"
+    />
+
+    <NetworkConfigModal
+      :show-modal="showNetworkConfig"
+      :network-config="networkConfig"
+      @update="(newConfig) => setNetworkConfig(newConfig)"
+      @close="toggleNetworkConfig"
+    />
+
+    <DMChatModal
+      :show-modal="showDM"
+      :active-chats="dmActiveChats"
+      :pending-requests="dmPendingRequests"
+      :pending-audio-calls="dmPendingAudioCalls"
+      :pending-video-calls="dmPendingVideoCalls"
+      :outgoing-requests="dmOutgoingRequests"
+      :notices="dmNotices"
+      :username="username"
+      :dm-chat-effect="config.dmChatEffect"
+      :focused-dm-user="focusedDMUser"
+      @close="toggleDM"
+      @accept-dm="handleAcceptDM"
+      @reject-dm="handleRejectDM"
+      @accept-audio="handleAcceptAudio"
+      @reject-audio="handleRejectAudio"
+      @accept-video="handleAcceptVideo"
+      @reject-video="handleRejectVideo"
+      @cancel-request="handleCancelDMRequest"
+      @send-message="handleSendDMMessage"
+      @typing="handleTyping"
+      @stop-typing="handleStopTyping"
+      @cancel-pending-messages="handleCancelPendingMessages"
+      @close-dm="handleCloseDM"
+      @request-audio="handleRequestAudio"
+      @toggle-audio="handleToggleAudio"
+      @request-video="handleRequestVideo"
+      @toggle-video="handleToggleVideo"
+      @send-file="handleSendFile"
+      @accept-file="handleAcceptFile"
+      @reject-file="handleRejectFile"
+      @file-saved="handleFileSaved"
+      @remove-file="handleRemoveFile"
+    />
+
+    <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />
+
+    <div v-if="!showAuth" class="main-view">
+      <ChatArea
+        :messages="messages"
+        :username="username"
+        :is-connected="isConnected"
+        @send="sendMessage"
+        @typing="(typing) => setTyping(typing)"
+      />
+      <Sidebar :users="users" :current-username="username" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
+    </div>
+  </div>
+</template>
+
+<style>
+@import './styles/global.css';
+.custom-titlebar {
+  grid-area: titlebar;
+  width: 100%;
+  height: 16px;
+  background: #222;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none; /* Prevents text selection while dragging */
+  z-index: 1000;
+  position: relative;
+}
+
+.minimize-btn {
+  position: absolute;
+  right: 60px;
+  background: none;
+  border: none;
+  color: var(--neon-green);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.minimize-btn:hover {
+  opacity: 1;
+}
+
+.maximize-btn {
+  position: absolute;
+  right: 35px;
+  background: none;
+  border: none;
+  color: var(--neon-green);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.maximize-btn:hover {
+  opacity: 1;
+}
+
+.titlebar-close-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--alert-red);
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+  width: 20px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.titlebar-close-btn:hover {
+  opacity: 1;
+}
+</style>
+
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -354,179 +530,3 @@ function handleRemoveFile(user: string, fileId: string) {
   }
 }
 </script>
-
-<template>
-  <div data-tauri-drag-region class="custom-titlebar">
-    {{ pageTitle }}
-    <button class="minimize-btn" @click="minimize">—</button>
-    <button class="maximize-btn" @click="toggleMaximize">
-      {{ isMaximized ? '◻' : '◻' }}
-    </button>
-    <button class="titlebar-close-btn" @click="quit">✕</button>
-  </div>
-  <div id="app" :class="{ 'shutdown-anim': showShutdownAnim }">
-    <button class="gear-btn" @click="toggleSettings">⚙</button>
-
-    <SettingsModal
-      :show-modal="showSettings"
-      :config="config"
-      :available-soundpacks="availableSoundpacks"
-      :available-themes="availableThemes"
-      @update="
-        (newConfig) => {
-          config.dmEnabled = newConfig.dmEnabled;
-          config.audioEnabled = newConfig.audioEnabled;
-          config.volume = newConfig.volume;
-          config.dmChatEffect = newConfig.dmChatEffect;
-          config.audioInputDeviceId = newConfig.audioInputDeviceId;
-          config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
-          config.videoInputDeviceId = newConfig.videoInputDeviceId;
-          if (config.soundpack !== newConfig.soundpack) {
-            setSoundpack(newConfig.soundpack);
-          }
-          if (config.theme !== newConfig.theme) {
-            applyTheme(newConfig.theme);
-            config.theme = newConfig.theme;
-          }
-          updateSettings();
-        }
-      "
-      @clear-log="clearMessages"
-      @close="toggleSettings"
-    />
-
-    <NetworkConfigModal
-      :show-modal="showNetworkConfig"
-      :network-config="networkConfig"
-      @update="(newConfig) => setNetworkConfig(newConfig)"
-      @close="toggleNetworkConfig"
-    />
-
-    <DMChatModal
-      :show-modal="showDM"
-      :active-chats="dmActiveChats"
-      :pending-requests="dmPendingRequests"
-      :pending-audio-calls="dmPendingAudioCalls"
-      :pending-video-calls="dmPendingVideoCalls"
-      :outgoing-requests="dmOutgoingRequests"
-      :notices="dmNotices"
-      :username="username"
-      :dm-chat-effect="config.dmChatEffect"
-      :focused-dm-user="focusedDMUser"
-      @close="toggleDM"
-      @accept-dm="handleAcceptDM"
-      @reject-dm="handleRejectDM"
-      @accept-audio="handleAcceptAudio"
-      @reject-audio="handleRejectAudio"
-      @accept-video="handleAcceptVideo"
-      @reject-video="handleRejectVideo"
-      @cancel-request="handleCancelDMRequest"
-      @send-message="handleSendDMMessage"
-      @typing="handleTyping"
-      @stop-typing="handleStopTyping"
-      @cancel-pending-messages="handleCancelPendingMessages"
-      @close-dm="handleCloseDM"
-      @request-audio="handleRequestAudio"
-      @toggle-audio="handleToggleAudio"
-      @request-video="handleRequestVideo"
-      @toggle-video="handleToggleVideo"
-      @send-file="handleSendFile"
-      @accept-file="handleAcceptFile"
-      @reject-file="handleRejectFile"
-      @file-saved="handleFileSaved"
-      @remove-file="handleRemoveFile"
-    />
-
-    <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />
-
-    <div v-if="!showAuth" class="main-view">
-      <ChatArea
-        :messages="messages"
-        :username="username"
-        :is-connected="isConnected"
-        @send="sendMessage"
-        @typing="(typing) => setTyping(typing)"
-      />
-      <Sidebar :users="users" :current-username="username" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
-    </div>
-  </div>
-</template>
-
-<style>
-@import './styles/global.css';
-.custom-titlebar {
-  grid-area: titlebar;
-  width: 100%;
-  height: 16px;
-  background: #222;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none; /* Prevents text selection while dragging */
-  z-index: 1000;
-  position: relative;
-}
-
-.minimize-btn {
-  position: absolute;
-  right: 60px;
-  background: none;
-  border: none;
-  color: var(--neon-green);
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.minimize-btn:hover {
-  opacity: 1;
-}
-
-.maximize-btn {
-  position: absolute;
-  right: 35px;
-  background: none;
-  border: none;
-  color: var(--neon-green);
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.maximize-btn:hover {
-  opacity: 1;
-}
-
-.titlebar-close-btn {
-  position: absolute;
-  right: 10px;
-  background: none;
-  border: none;
-  color: var(--alert-red);
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.titlebar-close-btn:hover {
-  opacity: 1;
-}
-</style>

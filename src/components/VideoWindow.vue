@@ -47,11 +47,6 @@ const { playAnimation } = useMessageAnimations();
 // MediaStream addtrack/removetrack event timing issue.
 const hasRemoteVideoTrack = computed(() => props.peerHasVideo ?? false);
 
-const pipMessages = computed(() => {
-  const messages = props.dmMessages ?? [];
-  return messages.filter((msg) => !msg.isSystem).slice(-6);
-});
-
 const latestPeerMessage = computed(() => {
   const messages = props.dmMessages ?? [];
   for (let i = messages.length - 1; i >= 0; i--) {

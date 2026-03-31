@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { BaseDirectory, writeFile } from '@tauri-apps/plugin-fs';
+import { BaseDirectory, exists, writeFile } from '@tauri-apps/plugin-fs';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -85,6 +85,10 @@ const allTabs = computed(() => {
   tabs.push(...Array.from(props.activeChats.keys()));
   return tabs;
 });
+
+const visibleNotices = computed(() =>
+  props.notices.filter((notice) => notice.type !== 'file-offer')
+);
 
 // Default to first available tab
 watch(allTabs, (newTabs) => {
@@ -339,19 +343,32 @@ function rejectFileTransfer(fileId: string) {
   emit('rejectFile', currentTab.value, fileId);
 }
 
-function acceptFileTransferFromNotice(user: string | undefined, fileId: string | undefined) {
-  if (!user || !fileId) return;
-  emit('acceptFile', user, fileId);
-  currentTab.value = user;
-}
-
-function rejectFileTransferFromNotice(user: string | undefined, fileId: string | undefined) {
-  if (!user || !fileId) return;
-  emit('rejectFile', user, fileId);
-}
-
 function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim() || 'download.bin';
+}
+
+function splitFilenameParts(filename: string): { base: string; ext: string } {
+  const dotIndex = filename.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === filename.length - 1) {
+    return { base: filename, ext: '' };
+  }
+  return {
+    base: filename.slice(0, dotIndex),
+    ext: filename.slice(dotIndex)
+  };
+}
+
+async function resolveAvailableFilename(preferredName: string): Promise<string> {
+  const { base, ext } = splitFilenameParts(preferredName);
+  let candidate = preferredName;
+  let counter = 1;
+
+  while (await exists(candidate, { baseDir: BaseDirectory.Download })) {
+    candidate = `${base} (${counter})${ext}`;
+    counter += 1;
+  }
+
+  return candidate;
 }
 
 function buildTransferBytes(transfer: FileTransferState): Uint8Array {
@@ -397,7 +414,7 @@ async function downloadFile(transfer: FileTransferState) {
     }
 
     const baseName = sanitizeFilename(transfer.filename);
-    const targetPath = `${Date.now()}_${baseName}`;
+    const targetPath = await resolveAvailableFilename(baseName);
 
     await writeFile(targetPath, bytes, {
       baseDir: BaseDirectory.Download
@@ -523,8 +540,8 @@ watch(
         <button class="close-btn" @click="handleClose">✕</button>
       </div>
 
-      <div v-if="notices.length > 0" class="notice-stack" role="status" aria-live="polite">
-        <div v-for="notice in notices" :key="notice.id" :class="['notice-item', notice.type]">
+      <div v-if="visibleNotices.length > 0" class="notice-stack" role="status" aria-live="polite">
+        <div v-for="notice in visibleNotices" :key="notice.id" :class="['notice-item', notice.type]">
           {{ notice.message }}
           <div v-if="notice.type === 'audio-call' && notice.from" class="notice-buttons">
             <button class="btn-accept" @click="handleAcceptAudio(notice.from)">ACCEPT</button>
@@ -533,10 +550,6 @@ watch(
           <div v-if="notice.type === 'video-call' && notice.from" class="notice-buttons">
             <button class="btn-accept" @click="handleAcceptVideo(notice.from)">ACCEPT</button>
             <button class="btn-reject" @click="handleRejectVideo(notice.from)">DENY</button>
-          </div>
-          <div v-if="notice.type === 'file-offer' && notice.from && notice.fileId" class="notice-buttons">
-            <button class="btn-accept" @click="acceptFileTransferFromNotice(notice.from, notice.fileId)">ACCEPT</button>
-            <button class="btn-reject" @click="rejectFileTransferFromNotice(notice.from, notice.fileId)">DENY</button>
           </div>
         </div>
       </div>

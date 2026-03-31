@@ -561,7 +561,6 @@ export function useDirectMessage(
       transfer.status = 'completed';
       transfer.progress = 100;
       setOrUpdateChat(otherUser, chat);
-      pushNotice(`File "${file.name}" sent to ${otherUser}`);
     } catch (error) {
       console.error('File transfer error:', error);
       transfer.status = 'failed';
@@ -622,7 +621,6 @@ export function useDirectMessage(
         setOrUpdateChat(otherUser, chat);
       }
       pendingOutgoingFiles.delete(data.id);
-      pushNotice(`${otherUser} declined file "${transfer?.filename || 'transfer'}"`);
       return true;
     }
 
@@ -645,7 +643,6 @@ export function useDirectMessage(
         transfer.status = 'completed';
         transfer.progress = 100;
         setOrUpdateChat(otherUser, chat);
-        pushNotice(`File transfer complete: ${transfer.filename}`);
       }
       return true;
     }
@@ -743,7 +740,6 @@ export function useDirectMessage(
         totalSize: file.size,
         totalChunks
       }));
-      pushNotice(`Waiting for ${toUser} to accept "${file.name}"`);
     } catch (error) {
       console.error('File transfer offer error:', error);
       fileTransfer.status = 'failed';

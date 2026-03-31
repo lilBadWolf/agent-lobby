@@ -483,6 +483,14 @@ export function useDirectMessage(
     setOrUpdateChat(user, chat);
   }
 
+  function removeFileTransfer(user: string, fileId: string) {
+    const chat = activeChats.value.get(user);
+    if (!chat) return;
+
+    chat.fileTransfers.delete(fileId);
+    setOrUpdateChat(user, chat);
+  }
+
   function handleIncomingBinaryChunk(otherUser: string, data: ArrayBuffer) {
     const view = new Uint8Array(data);
     const fileId = normalizeFileId(new TextDecoder().decode(view.slice(0, 36)));
@@ -560,6 +568,7 @@ export function useDirectMessage(
 
       transfer.status = 'completed';
       transfer.progress = 100;
+      chat.fileTransfers.delete(fileId);
       setOrUpdateChat(otherUser, chat);
     } catch (error) {
       console.error('File transfer error:', error);
@@ -1500,6 +1509,7 @@ export function useDirectMessage(
     acceptFileTransfer,
     rejectFileTransfer,
     markFileSaved,
+    removeFileTransfer,
     cleanup
   };
 }

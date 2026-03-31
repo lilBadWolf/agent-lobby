@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { BaseDirectory, exists, writeFile } from '@tauri-apps/plugin-fs';
+import { downloadDir, join } from '@tauri-apps/api/path';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -41,6 +43,7 @@ const emit = defineEmits<{
   acceptFile: [user: string, fileId: string];
   rejectFile: [user: string, fileId: string];
   fileSaved: [user: string, fileId: string];
+  removeFile: [user: string, fileId: string];
 }>();
 
 const { getUserColor } = useTheme();
@@ -58,6 +61,7 @@ const activeVideoCallUser = ref<string | null>(null); // Track active video call
 const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per tab
 const savingFileIds = ref<Set<string>>(new Set()); // Track in-flight save operations
 const savedFileIds = ref<Set<string>>(new Set()); // Track successful local saves before parent sync
+const savedFilePaths = ref<Map<string, string>>(new Map()); // Track saved absolute paths by transfer id
 
 function toggleFilesPanel() {
   filesCollapsed.value[currentTab.value] = !filesCollapsed.value[currentTab.value];
@@ -67,6 +71,10 @@ function isFilesPanelCollapsed(): boolean {
   return filesCollapsed.value[currentTab.value] ?? false;
 }
 
+function expandFilesPanelForTab(tab: string) {
+  filesCollapsed.value[tab] = false;
+}
+
 function hasVisibleTransfers(): boolean {
   const chat = getCurrentChat();
   if (!chat) return false;
@@ -74,6 +82,27 @@ function hasVisibleTransfers(): boolean {
     if (t.status !== 'rejected' && t.status !== 'failed') return true;
   }
   return false;
+}
+
+function visibleTransferCount(): number {
+  const chat = getCurrentChat();
+  if (!chat) return 0;
+  let count = 0;
+  for (const t of chat.fileTransfers.values()) {
+    if (t.status !== 'rejected' && t.status !== 'failed') {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function removeFileTransfer(fileId: string) {
+  if (currentTab.value === 'requests') return;
+
+  savedFileIds.value.delete(fileId);
+  savingFileIds.value.delete(fileId);
+  savedFilePaths.value.delete(fileId);
+  emit('removeFile', currentTab.value, fileId);
 }
 
 // Computed list of all tabs (requests + active chats)
@@ -103,6 +132,29 @@ watch(() => props.focusedDMUser, (focusedUser) => {
     currentTab.value = focusedUser;
   }
 });
+
+// Auto-expand files panel when a new incoming file request appears on the active tab.
+watch(
+  () => {
+    const chat = getCurrentChat();
+    if (!chat) return 0;
+    let pendingIncoming = 0;
+    for (const transfer of chat.fileTransfers.values()) {
+      if (transfer.direction === 'incoming' && transfer.status === 'pending') {
+        pendingIncoming += 1;
+      }
+    }
+    return pendingIncoming;
+  },
+  (pendingIncoming, previousPendingIncoming) => {
+    if (
+      currentTab.value !== 'requests' &&
+      pendingIncoming > (previousPendingIncoming ?? 0)
+    ) {
+      expandFilesPanelForTab(currentTab.value);
+    }
+  }
+);
 
 // Watch for input changes and send typing indicators (debounced)
 watch(messageInput, (newVal) => {
@@ -401,6 +453,21 @@ function isFileAlreadySaved(transfer: FileTransferState): boolean {
   return transfer.savedToDisk || savedFileIds.value.has(transfer.id);
 }
 
+function canRevealSavedFile(transfer: FileTransferState): boolean {
+  return isFileAlreadySaved(transfer) && savedFilePaths.value.has(transfer.id);
+}
+
+async function showSavedFileInFolder(transfer: FileTransferState) {
+  const filePath = savedFilePaths.value.get(transfer.id);
+  if (!filePath) return;
+
+  try {
+    await revealItemInDir(filePath);
+  } catch (error) {
+    console.error('Failed to reveal file in folder:', error);
+  }
+}
+
 async function downloadFile(transfer: FileTransferState) {
   if (!transfer || !transfer.chunks) return;
   if (isFileAlreadySaved(transfer) || isSavingFile(transfer.id)) return;
@@ -419,6 +486,10 @@ async function downloadFile(transfer: FileTransferState) {
     await writeFile(targetPath, bytes, {
       baseDir: BaseDirectory.Download
     });
+
+    const downloadsPath = await downloadDir();
+    const absolutePath = await join(downloadsPath, targetPath);
+    savedFilePaths.value.set(transfer.id, absolutePath);
 
     savedFileIds.value.add(transfer.id);
 
@@ -688,7 +759,7 @@ watch(
           <!-- File Downloads -->
           <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
             <div class="files-header" @click="toggleFilesPanel">
-              <span>📁 FILES ({{ getCurrentChat()?.fileTransfers.size }})</span>
+              <span>📁 FILES ({{ visibleTransferCount() }})</span>
               <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
             </div>
             <div v-if="!isFilesPanelCollapsed()" class="files-list">
@@ -730,6 +801,20 @@ watch(
                     @click="downloadFile(transfer)"
                   >
                     {{ isSavingFile(fileId) ? 'SAVING...' : 'SAVE' }}
+                  </button>
+                  <button
+                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"
+                    class="file-action-btn"
+                    @click="showSavedFileInFolder(transfer)"
+                  >
+                    SHOW IN FOLDER
+                  </button>
+                  <button
+                    v-if="(transfer.status === 'completed' && isFileAlreadySaved(transfer)) || transfer.status === 'rejected' || transfer.status === 'failed'"
+                    class="file-action-btn reject"
+                    @click="removeFileTransfer(fileId)"
+                  >
+                    ✕
                   </button>
                 </div>
               </div>

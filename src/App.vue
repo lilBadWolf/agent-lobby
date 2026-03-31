@@ -294,6 +294,12 @@ function handleFileSaved(user: string, fileId: string) {
     dm.value.markFileSaved(user, fileId);
   }
 }
+
+function handleRemoveFile(user: string, fileId: string) {
+  if (dm.value) {
+    dm.value.removeFileTransfer(user, fileId);
+  }
+}
 </script>
 
 <template>
@@ -375,6 +381,7 @@ function handleFileSaved(user: string, fileId: string) {
       @accept-file="handleAcceptFile"
       @reject-file="handleRejectFile"
       @file-saved="handleFileSaved"
+      @remove-file="handleRemoveFile"
     />
 
     <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />

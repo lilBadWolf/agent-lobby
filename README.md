@@ -9,7 +9,7 @@
 
 > [!IMPORTANT]
 > These downloads are unsigned. Signing them just doesn't feel right for the vibe of the app.
-> [Win64](https://thecompanyofwolves.com/files/agent-lobby-x64.zip) - [macOS](https://thecompanyofwolves.com/files/agent-lobby-macOS.zip)
+> [RELEASES](https://github.com/lilBadWolf/agent-lobby/releases)
 
 ## What You Can Do
 

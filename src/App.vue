@@ -54,6 +54,24 @@ watch(
   }
 );
 
+// Auto-hide when active DMs transition from non-empty to empty (e.g. peer closed last DM),
+// but do not auto-hide while the user is initiating a brand new DM from empty state.
+watch(
+  () => dmActiveChats.value.size,
+  (newCount, oldCount) => {
+    const hasPendingSurface =
+      dmPendingRequests.value.length > 0 ||
+      dmPendingAudioCalls.value.length > 0 ||
+      dmPendingVideoCalls.value.length > 0 ||
+      dmOutgoingRequests.value.length > 0;
+
+    if (showDM.value && oldCount > 0 && newCount === 0 && !hasPendingSurface) {
+      showDM.value = false;
+      focusedDMUser.value = null;
+    }
+  }
+);
+
 // Initialize DM when connected
 watch(isConnected, (connected) => {
   if (connected && !dm.value) {
@@ -237,7 +255,19 @@ function handleStopTyping(user: string) {
 
 function handleCloseDM(user: string) {
   if (dm.value) {
+    const isClosingLastActiveDM = dm.value.activeChats.value.size === 1 && dm.value.activeChats.value.has(user);
+    const hasPendingSurface =
+      dm.value.pendingRequests.value.length > 0 ||
+      dm.value.pendingAudioCalls.value.length > 0 ||
+      dm.value.pendingVideoCalls.value.length > 0 ||
+      dm.value.outgoingRequests.value.length > 0;
+
     dm.value.closeDM(user);
+
+    if (isClosingLastActiveDM && !hasPendingSurface) {
+      showDM.value = false;
+      focusedDMUser.value = null;
+    }
   }
 }
 

@@ -3,6 +3,10 @@ import { ref } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import SinewaveBackground from './SinewaveBackground.vue';
 
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
+}
+
 defineProps<{
   showAuth: boolean;
   authError: boolean;
@@ -15,6 +19,7 @@ const emit = defineEmits<{
 }>();
 
 const usernameInput = ref('');
+const hasTauriWindow = isTauriRuntime();
 
 function handleLogin() {
   if (usernameInput.value.trim()) {
@@ -31,8 +36,12 @@ function handleConfigClick() {
   emit('config-clicked');
 }
 const quit = async () => {
-  const window = getCurrentWindow();
-  await window.close();
+  if (!hasTauriWindow) {
+    return;
+  }
+
+  const appWindow = getCurrentWindow();
+  await appWindow.close();
 }
 </script>
 
@@ -57,7 +66,7 @@ const quit = async () => {
       </div>
       <p v-if="authError" id="auth-err">ERROR: HANDLE_ALREADY_EXISTS</p>
       <button id="login-btn" @click="handleLogin">INITIALIZE LINK</button>
-      <button id="quit-btn" @click="quit">QUIT</button>
+      <button v-if="hasTauriWindow" id="quit-btn" @click="quit">QUIT</button>
     </div>
   </div>
 </template>

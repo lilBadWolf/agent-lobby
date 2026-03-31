@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { BaseDirectory, exists, writeFile } from '@tauri-apps/plugin-fs';
-import { downloadDir, join } from '@tauri-apps/api/path';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../composables/useDirectMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import VideoWindow from './VideoWindow.vue';
+
+type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
+type TauriPathModule = typeof import('@tauri-apps/api/path');
+type TauriOpenerModule = typeof import('@tauri-apps/plugin-opener');
 
 const props = defineProps<{
   showModal: boolean;
@@ -62,6 +63,37 @@ const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per 
 const savingFileIds = ref<Set<string>>(new Set()); // Track in-flight save operations
 const savedFileIds = ref<Set<string>>(new Set()); // Track successful local saves before parent sync
 const savedFilePaths = ref<Map<string, string>>(new Map()); // Track saved absolute paths by transfer id
+let tauriApisPromise: Promise<{
+  fs: TauriFsModule;
+  path: TauriPathModule;
+  opener: TauriOpenerModule;
+} | null> | null = null;
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function getTauriApis() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriApisPromise) {
+    tauriApisPromise = Promise.all([
+      import('@tauri-apps/plugin-fs'),
+      import('@tauri-apps/api/path'),
+      import('@tauri-apps/plugin-opener')
+    ])
+      .then(([fs, path, opener]) => ({ fs, path, opener }))
+      .catch((error) => {
+        console.error('Failed to load Tauri file APIs:', error);
+        tauriApisPromise = null;
+        return null;
+      });
+  }
+
+  return tauriApisPromise;
+}
 
 function toggleFilesPanel() {
   filesCollapsed.value[currentTab.value] = !filesCollapsed.value[currentTab.value];
@@ -411,6 +443,12 @@ function splitFilenameParts(filename: string): { base: string; ext: string } {
 }
 
 async function resolveAvailableFilename(preferredName: string): Promise<string> {
+  const tauriApis = await getTauriApis();
+  if (!tauriApis) {
+    return preferredName;
+  }
+
+  const { BaseDirectory, exists } = tauriApis.fs;
   const { base, ext } = splitFilenameParts(preferredName);
   let candidate = preferredName;
   let counter = 1;
@@ -454,7 +492,15 @@ function isFileAlreadySaved(transfer: FileTransferState): boolean {
 }
 
 function canRevealSavedFile(transfer: FileTransferState): boolean {
-  return isFileAlreadySaved(transfer) && savedFilePaths.value.has(transfer.id);
+  return isTauriRuntime() && isFileAlreadySaved(transfer) && savedFilePaths.value.has(transfer.id);
+}
+
+function getDownloadActionLabel(fileId: string): string {
+  if (isSavingFile(fileId)) {
+    return isTauriRuntime() ? 'SAVING...' : 'DOWNLOADING...';
+  }
+
+  return isTauriRuntime() ? 'SAVE' : 'DOWNLOAD';
 }
 
 async function showSavedFileInFolder(transfer: FileTransferState) {
@@ -462,10 +508,27 @@ async function showSavedFileInFolder(transfer: FileTransferState) {
   if (!filePath) return;
 
   try {
-    await revealItemInDir(filePath);
+    const tauriApis = await getTauriApis();
+    if (!tauriApis) return;
+
+    await tauriApis.opener.revealItemInDir(filePath);
   } catch (error) {
     console.error('Failed to reveal file in folder:', error);
   }
+}
+
+function triggerBrowserDownload(bytes: Uint8Array, filename: string) {
+  const blobBytes = bytes.slice();
+  const blob = new Blob([blobBytes.buffer]);
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
 }
 
 async function downloadFile(transfer: FileTransferState) {
@@ -481,15 +544,21 @@ async function downloadFile(transfer: FileTransferState) {
     }
 
     const baseName = sanitizeFilename(transfer.filename);
-    const targetPath = await resolveAvailableFilename(baseName);
+    const tauriApis = await getTauriApis();
 
-    await writeFile(targetPath, bytes, {
-      baseDir: BaseDirectory.Download
-    });
+    if (tauriApis) {
+      const targetPath = await resolveAvailableFilename(baseName);
 
-    const downloadsPath = await downloadDir();
-    const absolutePath = await join(downloadsPath, targetPath);
-    savedFilePaths.value.set(transfer.id, absolutePath);
+      await tauriApis.fs.writeFile(targetPath, bytes, {
+        baseDir: tauriApis.fs.BaseDirectory.Download
+      });
+
+      const downloadsPath = await tauriApis.path.downloadDir();
+      const absolutePath = await tauriApis.path.join(downloadsPath, targetPath);
+      savedFilePaths.value.set(transfer.id, absolutePath);
+    } else {
+      triggerBrowserDownload(bytes, baseName);
+    }
 
     savedFileIds.value.add(transfer.id);
 
@@ -800,7 +869,7 @@ watch(
                     :disabled="isSavingFile(fileId)"
                     @click="downloadFile(transfer)"
                   >
-                    {{ isSavingFile(fileId) ? 'SAVING...' : 'SAVE' }}
+                    {{ getDownloadActionLabel(fileId) }}
                   </button>
                   <button
                     v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"

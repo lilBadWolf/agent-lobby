@@ -11,6 +11,10 @@ import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMChatModal from './components/DMChatModal.vue';
 
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
+}
+
 const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages, getMqttClient, getRoomId, setTyping } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
@@ -99,6 +103,7 @@ const showSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
 const isMaximized = ref(false);
+const hasTauriWindow = isTauriRuntime();
 
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
@@ -113,9 +118,14 @@ const pageTitle = computed(() => {
 });
 
 onMounted(async () => {
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  if (!hasTauriWindow) {
+    return;
+  }
+
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
-  //window.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
 watch(pageTitle, (newTitle) => {
@@ -123,11 +133,19 @@ watch(pageTitle, (newTitle) => {
 });
 
 function minimize() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
   const appWindow = getCurrentWindow();
   appWindow.minimize();
 }
 
 async function toggleMaximize() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
   const appWindow = getCurrentWindow();
   if (isMaximized.value) {
     await appWindow.unmaximize();
@@ -148,8 +166,13 @@ function quit() {
   setTimeout(async () => {
     disconnect();
     showShutdownAnim.value = false;
-    const window = getCurrentWindow();
-    await window.close();
+
+    if (!hasTauriWindow) {
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    await appWindow.close();
   }, 600);
 }
 

@@ -35,6 +35,11 @@ export interface NetworkConfig {
 
 const users = reactive<Record<string, UserPresence>>({});
 
+function getPublicAssetUrl(path: string): string {
+  const baseUrl = new URL(import.meta.env.BASE_URL, window.location.href);
+  return new URL(path.replace(/^\//, ''), baseUrl).toString();
+}
+
 export function useLobbyChat() {
   // Config defaults
   const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
@@ -106,15 +111,15 @@ export function useLobbyChat() {
   // Initialize audio
   function initAudio() {
     const soundpack = config.value.soundpack;
-    audio.value.numberStation = new Audio(`/sounds/${soundpack}/signal-station.mp3`);
+    audio.value.numberStation = new Audio(getPublicAssetUrl(`sounds/${soundpack}/signal-station.mp3`));
     (audio.value.numberStation as HTMLAudioElement).loop = true;
     audio.value.alerts = {
-      startup: new Audio(`/sounds/${soundpack}/startup-sound.mp3`),
-      system: new Audio(`/sounds/${soundpack}/system-sound.mp3`),
-      join: new Audio(`/sounds/${soundpack}/join-sound.mp3`),
-      part: new Audio(`/sounds/${soundpack}/part-sound.mp3`),
-      message: new Audio(`/sounds/${soundpack}/message-sound.mp3`),
-      shutdown: new Audio(`/sounds/${soundpack}/shutdown-sound.mp3`)
+      startup: new Audio(getPublicAssetUrl(`sounds/${soundpack}/startup-sound.mp3`)),
+      system: new Audio(getPublicAssetUrl(`sounds/${soundpack}/system-sound.mp3`)),
+      join: new Audio(getPublicAssetUrl(`sounds/${soundpack}/join-sound.mp3`)),
+      part: new Audio(getPublicAssetUrl(`sounds/${soundpack}/part-sound.mp3`)),
+      message: new Audio(getPublicAssetUrl(`sounds/${soundpack}/message-sound.mp3`)),
+      shutdown: new Audio(getPublicAssetUrl(`sounds/${soundpack}/shutdown-sound.mp3`))
     };
     applyAudioSettings();
   }

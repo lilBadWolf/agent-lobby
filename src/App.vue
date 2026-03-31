@@ -319,6 +319,9 @@ function handleFileSaved(user: string, fileId: string) {
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
           config.dmChatEffect = newConfig.dmChatEffect;
+          config.audioInputDeviceId = newConfig.audioInputDeviceId;
+          config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
+          config.videoInputDeviceId = newConfig.videoInputDeviceId;
           if (config.soundpack !== newConfig.soundpack) {
             setSoundpack(newConfig.soundpack);
           }

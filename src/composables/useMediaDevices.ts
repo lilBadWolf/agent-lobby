@@ -1,5 +1,7 @@
 import { ref } from 'vue';
 
+export const NO_WEBCAM_DEVICE_ID = '__no_webcam__';
+
 export interface MediaDeviceOption {
   deviceId: string;
   label: string;
@@ -13,19 +15,19 @@ export function useMediaDevices() {
   const permissionError = ref<string | null>(null);
   const isEnumerating = ref(false);
 
-  async function requestMediaPermission() {
+  async function requestMediaPermission(includeVideo = true) {
     try {
       permissionError.value = null;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: true
+        video: includeVideo
       });
 
       // Stop the tracks immediately - we only need permission
       stream.getTracks().forEach(track => track.stop());
 
       // Now enumerate devices
-      await enumerateDevices();
+      return await enumerateDevices();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error('Media permission error:', error);
@@ -33,9 +35,10 @@ export function useMediaDevices() {
 
       // Still try to enumerate - some devices might be available without video
       try {
-        await enumerateDevices();
+        return await enumerateDevices();
       } catch (e) {
         console.error('Failed to enumerate devices:', e);
+        return false;
       }
     }
   }
@@ -68,9 +71,12 @@ export function useMediaDevices() {
           label: device.label || `Video Input ${videoInputDevices.value.length + 1}`,
           kind: 'videoinput'
         }));
+
+      return videoInputDevices.value.length > 0;
     } catch (error) {
       console.error('Error enumerating devices:', error);
       permissionError.value = `Failed to enumerate devices: ${error instanceof Error ? error.message : String(error)}`;
+      return false;
     } finally {
       isEnumerating.value = false;
     }

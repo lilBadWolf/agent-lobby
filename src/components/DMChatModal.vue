@@ -281,6 +281,14 @@ function handleVideoWindowToggleVideo(enabled: boolean) {
   }
 }
 
+function handleVideoWindowSendMessage(message: string) {
+  const user = activeVideoCallUser.value;
+  const trimmed = message.trim();
+  if (!user || !trimmed) return;
+
+  emit('sendMessage', user, trimmed, props.dmChatEffect);
+}
+
 function handleDragOver(e: DragEvent) {
   e.preventDefault();
   dragOverZone.value = true;
@@ -735,9 +743,14 @@ watch(
         :peer-name="activeVideoCallUser"
         :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
         :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
+        :dm-messages="props.activeChats.get(activeVideoCallUser)?.messages || []"
+        :can-send-messages="props.activeChats.get(activeVideoCallUser)?.isConnected ?? false"
+        :username="props.username"
+        :peer-has-video="props.activeChats.get(activeVideoCallUser)?.videoEnabled ?? false"
         @close="handleVideoWindowClose"
         @toggle-audio="handleVideoWindowToggleAudio"
         @toggle-video="handleVideoWindowToggleVideo"
+        @send-message="handleVideoWindowSendMessage"
       />
     </div>
   </div>

@@ -2,7 +2,7 @@
 import { ref, watch, nextTick } from 'vue';
 import type { AudioConfig } from '../composables/useLobbyChat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
-import { useMediaDevices } from '../composables/useMediaDevices';
+import { NO_WEBCAM_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
 
 const props = defineProps<{
   showModal: boolean;
@@ -28,8 +28,16 @@ watch(
   () => props.showModal,
   async (isOpen) => {
     if (isOpen) {
-      // Request media permission and enumerate devices when settings modal opens
-      await requestMediaPermission();
+      // Avoid camera initialization when user explicitly selected no webcam.
+      const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
+      const hasVideoDevices = await requestMediaPermission(includeVideo);
+
+      // If no camera was found and the user hasn't already made an explicit choice,
+      // silently default them to No Webcam so video calls don't fail.
+      if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
+        localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
     }
   }
 );
@@ -188,6 +196,7 @@ async function previewEffect() {
             @change="handleChange"
           >
             <option value="">DEFAULT</option>
+            <option :value="NO_WEBCAM_DEVICE_ID">NO WEBCAM (AUDIO ONLY)</option>
             <option v-for="device in videoInputDevices" :key="device.deviceId" :value="device.deviceId">
               {{ device.label }}
             </option>

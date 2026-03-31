@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import type { ChatMessage, AudioConfig } from './useLobbyChat';
 import mqtt from 'mqtt';
+import { NO_WEBCAM_DEVICE_ID } from './useMediaDevices';
 
 export interface DMRequest {
   from: string;
@@ -1116,16 +1117,16 @@ export function useDirectMessage(
       chat.remoteMediaStream.addTrack(event.track);
       console.log('Remote stream now has', chat.remoteMediaStream.getTracks().length, 'tracks');
 
-      // Force Vue reactivity by re-setting the Map entry (triggers watcher)
-      activeChats.value.set(user, chat);
-      console.log('Triggered remoteMediaStream reactivity for', user);
-
       // Update flags based on track kind
       if (event.track.kind === 'audio') {
         chat.audioEnabled = true;
       } else if (event.track.kind === 'video') {
         chat.videoEnabled = true;
       }
+
+      // Replace the Map entry through helper so Vue updates consumers.
+      setOrUpdateChat(user, chat);
+      console.log('Triggered remoteMediaStream reactivity for', user);
     };
   }
 
@@ -1286,11 +1287,14 @@ export function useDirectMessage(
           }
         : {};
 
-      const videoConstraints: MediaTrackConstraints = audioConfig
-        ? {
-            deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
-          }
-        : {};
+      const noWebcamSelected = audioConfig?.videoInputDeviceId === NO_WEBCAM_DEVICE_ID;
+      const videoConstraints: MediaTrackConstraints | boolean = noWebcamSelected
+        ? false
+        : audioConfig
+          ? {
+              deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
+            }
+          : {};
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
@@ -1300,6 +1304,7 @@ export function useDirectMessage(
       console.log('Initiator setting local stream for video call, tracks:', stream.getTracks());
       chat.localMediaStream = stream;
       chat.videoCallActive = true;
+      setOrUpdateChat(targetUser, chat);
 
       // Add video tracks to peer connection and renegotiate
       const rtcConn = rtcConnections.get(targetUser);
@@ -1322,7 +1327,7 @@ export function useDirectMessage(
       pushNotice(`Video call requested to ${targetUser}`);
     } catch (error) {
       console.error('Failed to get video:', error);
-      pushNotice('Failed to access camera. Check permissions.');
+      pushNotice('Failed to access media devices. Check permissions.');
     }
   }
 
@@ -1340,11 +1345,14 @@ export function useDirectMessage(
           }
         : {};
 
-      const videoConstraints: MediaTrackConstraints = audioConfig
-        ? {
-            deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
-          }
-        : {};
+      const noWebcamSelected = audioConfig?.videoInputDeviceId === NO_WEBCAM_DEVICE_ID;
+      const videoConstraints: MediaTrackConstraints | boolean = noWebcamSelected
+        ? false
+        : audioConfig
+          ? {
+              deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
+            }
+          : {};
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
@@ -1356,6 +1364,7 @@ export function useDirectMessage(
         console.log('Setting local stream for video call, tracks:', stream.getTracks());
         chat.localMediaStream = stream;
         chat.videoCallActive = true;
+        setOrUpdateChat(fromUser, chat);
       }
 
       const rtcConn = rtcConnections.get(fromUser);
@@ -1392,7 +1401,7 @@ export function useDirectMessage(
       pushNotice(`Video call accepted with ${fromUser}`, 'info');
     } catch (error) {
       console.error('Failed to accept video call:', error);
-      pushNotice('Failed to access camera for video call.');
+      pushNotice('Failed to access media devices for video call.');
     }
   }
 

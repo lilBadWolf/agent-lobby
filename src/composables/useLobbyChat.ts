@@ -4,6 +4,7 @@ import mqtt from 'mqtt';
 export interface UserPresence {
   username: string;
   dmAvailable: boolean;
+  isTyping?: boolean;
 }
 
 export interface ChatMessage {
@@ -75,11 +76,22 @@ export function useLobbyChat() {
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
 
+
+  const isTyping = ref(false);
+
   function buildPresencePayload(): UserPresence {
     return {
       username: username.value,
       dmAvailable: config.value.dmEnabled,
+      isTyping: isTyping.value,
     };
+  }
+
+  function setTyping(typing: boolean) {
+    if (isTyping.value !== typing) {
+      isTyping.value = typing;
+      publishPresence();
+    }
   }
 
   function publishPresence() {
@@ -353,6 +365,8 @@ export function useLobbyChat() {
     setSoundpack,
     clearMessages,
     getMqttClient: () => client,
-    getRoomId: () => roomId.value
+    getRoomId: () => roomId.value,
+    setTyping,
+    isTyping,
   };
 }

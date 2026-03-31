@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   send: [message: string];
+  typing: [typing: boolean];
 }>();
 
 const { getUserColor } = useTheme();
@@ -165,12 +166,17 @@ function sendMessage() {
   }
 }
 
+let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 function convertEmojisInInput() {
   const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
   if (converted !== chatInput.value) {
     chatInput.value = converted;
   }
   updateEmojiSuggestions();
+  // --- Presence typing event ---
+  emit('typing', true);
+  if (typingTimeout) clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => emit('typing', false), 2000);
 }
 
 function updateEmojiSuggestions() {
@@ -289,6 +295,7 @@ function handleInputKeydown(e: KeyboardEvent) {
         :disabled="!isConnected"
         @input="convertEmojisInInput"
         @keydown="handleInputKeydown"
+        @blur="emit('typing', false)"
       />
       <button class="send-btn" :disabled="!isConnected" @click="sendMessage">SEND</button>
     </div>

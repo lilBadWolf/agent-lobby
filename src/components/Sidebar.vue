@@ -5,6 +5,7 @@ import { useTheme } from '../composables/useTheme';
 export interface UserPresence {
   username: string;
   dmAvailable: boolean;
+  isTyping?: boolean;
 }
 
 const props = withDefaults(defineProps<{
@@ -30,7 +31,7 @@ const userList = computed(() =>
     <div style="border-bottom: 1px solid var(--neon-green); padding-bottom: 5px">Agents</div>
     <div id="user-list">
       <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
-        <span>{{ user.username }}</span>
+        <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
         <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)" title="Request DM">💬</button>
       </div>
     </div>
@@ -92,6 +93,22 @@ const userList = computed(() =>
 .dm-btn:hover {
   opacity: 1;
   text-shadow: 0 0 5px currentColor;
+}
+
+
+.typing-user {
+  animation: typing-flash 1s step-end infinite;
+  text-shadow: 0 0 6px currentColor;
+}
+
+@keyframes typing-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 #disconnect-btn {

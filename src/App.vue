@@ -11,7 +11,7 @@ import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMChatModal from './components/DMChatModal.vue';
 
-const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages, getMqttClient, getRoomId } = useLobbyChat();
+const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages, getMqttClient, getRoomId, setTyping } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
 // DM system
@@ -377,7 +377,13 @@ function handleFileSaved(user: string, fileId: string) {
     <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />
 
     <div v-if="!showAuth" class="main-view">
-      <ChatArea :messages="messages" :username="username" :is-connected="isConnected" @send="sendMessage" />
+      <ChatArea
+        :messages="messages"
+        :username="username"
+        :is-connected="isConnected"
+        @send="sendMessage"
+        @typing="(typing) => setTyping(typing)"
+      />
       <Sidebar :users="users" :current-username="username" @disconnect="handleDisconnect" @dm-request="handleDMRequest" />
     </div>
   </div>

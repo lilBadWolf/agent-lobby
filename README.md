@@ -1,41 +1,62 @@
 # AGENT LOBBY
 
-A real-time chat application in a cyberpunk hacker aesthetic.
+Agent Lobby is a real-time chat app with a cyberpunk terminal vibe. Pick a handle, enter the lobby, and communicate in a live encrypted channel with optional private links.
 
 <img width="801" height="637" alt="{63672AC0-A029-428B-A49B-EFF2AEC59EF5}" src="https://github.com/user-attachments/assets/7e99e8ff-c17b-45e0-8982-10ff443f7cf1" />
 
-## Features
+> [!IMPORTANT]
+> These downloads are unsigned. Signing them just doesn't feel right for the vibe of the app.
 
-- **Real-time Chat**: Anonymous messaging via MQTT broker with encrypted topics
-- **Audio Cues**: Optional notification sounds for incoming messages (customizable soundpacks)
-- **Terminal Aesthetic**: Neon-green glitch UI styled like classic hacker terminals
-- **Themes**: Multiple color themes to customize your experience
-- **User Presence**: See active operatives
-- **Cross-platform**: Desktop app built with Tauri (Windows, macOS, Linux)
+### Available Compiled
+[Win64](https://thecompanyofwolves.com/files/agent-lobby-x64.zip)
+[macOS](https://thecompanyofwolves.com/files/agent-lobby-macOS.zip)
+
+## What You Can Do
+
+- Real-time lobby chat with live presence and typing indicators
+- Private direct messages with tabbed conversations
+- One-to-one audio and video calls
+- Peer-to-peer file transfer in direct messages
+- Inline media previews for supported image links and YouTube links
+- Emoji shortcode support and suggestions while typing
+- Theme switching to change the entire visual style
+- Soundpacks for startup, message, join/part, and ambient station audio
+- Cross-platform desktop app via Tauri (Windows, macOS, Linux)
 
 ## Quick Start
 
-### Usage
+1. Enter your handle.
+2. Select `INITIALIZE LINK`.
+3. Start chatting in the lobby.
+4. Open settings (`⚙`) anytime to tune audio, devices, themes, and DM effects.
 
-1. **Enter a username** - Choose your operative handle
-2. **Click Initialize Link** - Connect to a room
-3. **Start chatting** - Real-time messages with other operatives in the lobby
-4. **Customize** - Open settings (⚙) to:
-   - Toggle audio notifications
-   - Adjust volume
-   - Choose a soundpack
-   - Switch themes
+## Daily Use
 
-## Customization
+### Lobby Chat
 
-### Themes
+- Send messages in real time and see who is currently active.
+- Paste image links to preview images directly in chat.
+- Paste YouTube links to render embedded previews.
+- Use emoji shortcodes like `:wave:` while typing.
 
-Agent Lobby supports multiple color themes. Switch themes in the settings modal. Want to create your own? See [CONTRIBUTING.md](CONTRIBUTING.md#creating-themes).
+### Direct Messages
 
-### Soundpacks
+- Open a private channel with another user.
+- Exchange messages with optional visual effects.
+- Start audio or video calls from the DM panel.
+- Drag and drop files to send directly to your peer.
 
-Customize notification sounds with different soundpacks. Available packs can be selected in settings. Creating a new soundpack? Check [CONTRIBUTING.md](CONTRIBUTING.md#creating-soundpacks).
+### Settings
 
----
+- Enable/disable audio alerts
+- Adjust master volume
+- Choose a soundpack
+- Pick a theme
+- Select mic/camera/speaker devices
+- Choose DM message animation style
+- Clear lobby log when needed
 
-For developers interested in contributing, building new features, or customizing themes/soundpacks, see [CONTRIBUTING.md](CONTRIBUTING.md).
+## Notes
+
+- Some browsers and systems require a user interaction before audio can play.
+- Media device availability depends on OS permissions.

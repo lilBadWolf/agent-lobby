@@ -33,7 +33,9 @@ npm run tauri build
 
 - **Frontend**: Vue 3 + TypeScript + Vite
 - **Desktop Runtime**: Tauri
-- **Real-time**: MQTT over WebSocket (default: `broker.emqx.io:8084/mqtt`)
+- **Lobby Real-time Transport**: MQTT over WebSocket (default: `broker.emqx.io:8084/mqtt`)
+- **Direct Messaging + Calls**: WebRTC (data channels + media streams)
+- **Desktop Integrations**: Tauri plugins for filesystem save/reveal flows
 
 ### Key Components
 
@@ -43,13 +45,58 @@ npm run tauri build
 | `src/components/AuthScreen.vue` | Login & lobby selection |
 | `src/components/ChatArea.vue` | Message display & rendering |
 | `src/components/Sidebar.vue` | Active users & lobby controls |
-| `src/components/SettingsModal.vue` | Theme/soundpack/audio settings |
+| `src/components/SettingsModal.vue` | Theme/soundpack/audio/device settings |
+| `src/components/DMChatModal.vue` | Direct message tabs, requests, file transfer UI |
+| `src/components/VideoWindow.vue` | In-app video call window and controls |
+| `src/components/NetworkConfigModal.vue` | Network config editing modal |
 | `src/composables/useLobbyChat.ts` | MQTT logic, messages, presence tracking |
+| `src/composables/useDirectMessage.ts` | DM signaling, WebRTC sessions, calls, file transfers |
+| `src/composables/useMediaDevices.ts` | Device enumeration and permission handling |
+| `src/composables/useImageDetection.ts` | Safe inline image URL detection |
+| `src/composables/useMessageAnimations.ts` | Animated DM message effects |
 | `src/composables/useTheme.ts` | Theme loading & application |
 | `src/themes/` | Theme definitions |
 | `public/sounds/` | Soundpack audio files |
 
 ### Core Systems
+
+#### Lobby Messaging & Presence
+
+Lobby chat uses MQTT topics for:
+- **Global chat events**: user messages in the active lobby
+- **Presence state**: join/part lifecycle, DM availability, typing state
+
+Presence is retained per-user and updated when availability/settings change.
+
+#### Direct Messages, Calls, and Signaling
+
+Direct messages are peer sessions layered on top of lobby presence/signaling. The DM stack supports:
+- **Connection requests**: incoming/outgoing DM handshake flow
+- **Typing indicators**: per-peer typing events in active tabs
+- **Audio calls**: WebRTC media sessions with runtime duration tracking
+- **Video calls**: WebRTC video sessions with local/remote track toggles
+
+DM session state is maintained per peer in `DMChat` records (`activeChats` map), including stream references, pending display messages, and call status.
+
+#### File Transfer System
+
+File transfer is implemented over DM data channels with chunked payloads and transfer lifecycle states:
+- `pending`
+- `awaiting-accept`
+- `in-progress`
+- `completed`
+- `rejected`
+- `failed`
+
+Completed incoming files can be written to disk through Tauri FS APIs and surfaced in the OS file explorer.
+
+#### Message Rendering & Rich Content
+
+Chat rendering includes:
+- **Typewriter-style message reveal** in lobby/system feed
+- **Emoji shortcode conversion** and suggestion popover in message input
+- **Inline safe image preview** for allowed URL extensions
+- **Inline YouTube embed support** for recognized links
 
 #### Theme System
 
@@ -69,6 +116,17 @@ Soundpacks are collections of audio files in `public/sounds/[pack-name]/`. The a
 - `message-sound.mp3` - on incoming message
 - `system-sound.mp3` - for system alerts
 - `signal-station.mp3` - background ambience (looped on login screen)
+
+Audio settings are persisted and applied globally (alerts + ambience volume).
+
+#### Media Device System
+
+Device configuration flows through browser media APIs:
+- `getUserMedia` permission requests (scoped to requested tracks)
+- `enumerateDevices` for input/output discovery
+- persistent selection for audio input/output and video input
+
+The settings modal includes no-device fallbacks for mic/camera-disabled operation.
 
 ## Creating Themes
 
@@ -200,7 +258,7 @@ Settings are persisted to localStorage and loaded on startup.
 
 ### localStorage Keys
 
-- `agent_settings` - Audio/theme preferences
+- `agent_settings` - Audio/theme preferences, DM defaults, device IDs
 - `agent_theme` - Current theme selection
 - `agent_network_config` - MQTT broker & lobby settings
 

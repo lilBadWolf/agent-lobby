@@ -1,15 +1,15 @@
 # AGENT LOBBY
 
-Agent Lobby is a real-time chat app with a cyberpunk terminal vibe. Pick a handle, enter the lobby, and communicate in a live encrypted channel with optional private links.
-
-<img width="801" height="637" alt="{63672AC0-A029-428B-A49B-EFF2AEC59EF5}" src="https://github.com/user-attachments/assets/7e99e8ff-c17b-45e0-8982-10ff443f7cf1" />
+<p align="center">
+  <img width="420" height="381" alt="agent-lobby-auth" src="https://github.com/user-attachments/assets/72a6f11a-2e5c-4a90-871c-6d867a1f43c3" />
+</p>
+<p align="center">
+  Agent Lobby is a real-time chat app with a cyberpunk terminal vibe.
+</p>
 
 > [!IMPORTANT]
 > These downloads are unsigned. Signing them just doesn't feel right for the vibe of the app.
-
-### Available Compiled
-[Win64](https://thecompanyofwolves.com/files/agent-lobby-x64.zip)
-[macOS](https://thecompanyofwolves.com/files/agent-lobby-macOS.zip)
+> [Win64](https://thecompanyofwolves.com/files/agent-lobby-x64.zip) - [macOS](https://thecompanyofwolves.com/files/agent-lobby-macOS.zip)
 
 ## What You Can Do
 

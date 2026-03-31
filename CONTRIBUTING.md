@@ -13,16 +13,19 @@ Thanks for your interest in contributing! This guide covers development setup, p
 ### Getting Started
 
 1. Clone and install dependencies:
+
 ```bash
 npm install
 ```
 
-2. Run in development mode:
+1. Run in development mode:
+
 ```bash
 npm run tauri dev
 ```
 
-3. Build for production:
+1. Build for production:
+
 ```bash
 npm run tauri build
 ```
@@ -40,7 +43,7 @@ npm run tauri build
 ### Key Components
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `src/App.vue` | Main app shell, routing, state management |
 | `src/components/AuthScreen.vue` | Login & lobby selection |
 | `src/components/ChatArea.vue` | Message display & rendering |
@@ -63,6 +66,7 @@ npm run tauri build
 #### Lobby Messaging & Presence
 
 Lobby chat uses MQTT topics for:
+
 - **Global chat events**: user messages in the active lobby
 - **Presence state**: join/part lifecycle, DM availability, typing state
 
@@ -71,6 +75,7 @@ Presence is retained per-user and updated when availability/settings change.
 #### Direct Messages, Calls, and Signaling
 
 Direct messages are peer sessions layered on top of lobby presence/signaling. The DM stack supports:
+
 - **Connection requests**: incoming/outgoing DM handshake flow
 - **Typing indicators**: per-peer typing events in active tabs
 - **Audio calls**: WebRTC media sessions with runtime duration tracking
@@ -81,6 +86,7 @@ DM session state is maintained per peer in `DMChat` records (`activeChats` map),
 #### File Transfer System
 
 File transfer is implemented over DM data channels with chunked payloads and transfer lifecycle states:
+
 - `pending`
 - `awaiting-accept`
 - `in-progress`
@@ -93,6 +99,7 @@ Completed incoming files can be written to disk through Tauri FS APIs and surfac
 #### Message Rendering & Rich Content
 
 Chat rendering includes:
+
 - **Typewriter-style message reveal** in lobby/system feed
 - **Emoji shortcode conversion** and suggestion popover in message input
 - **Inline safe image preview** for allowed URL extensions
@@ -101,6 +108,7 @@ Chat rendering includes:
 #### Theme System
 
 Themes control colors across the entire UI. Each theme defines:
+
 - **Primary colors**: neonGreen (main accent), darkBg, dimGreen, alertRed, textWhite, systemDim
 - **User colors**: 15 colors for user-specific message highlighting
 
@@ -109,6 +117,7 @@ Themes are loaded from `src/themes/` and applied via CSS variables.
 #### Soundpack System
 
 Soundpacks are collections of audio files in `public/sounds/[pack-name]/`. The app loads soundpacks dynamically and triggers sounds on specific events:
+
 - `startup-sound.mp3` - on connection
 - `shutdown-sound.mp3` - on disconnection
 - `join-sound.mp3` - when user joins lobby
@@ -122,6 +131,7 @@ Audio settings are persisted and applied globally (alerts + ambience volume).
 #### Media Device System
 
 Device configuration flows through browser media APIs:
+
 - `getUserMedia` permission requests (scoped to requested tracks)
 - `enumerateDevices` for input/output discovery
 - persistent selection for audio input/output and video input
@@ -178,7 +188,7 @@ export const myTheme: Theme = {
 };
 ```
 
-2. **Export from index**: Add to `src/themes/index.ts`:
+1. **Export from index**: Add to `src/themes/index.ts`:
 
 ```typescript
 import { myTheme } from './my-theme';
@@ -191,7 +201,7 @@ export const THEMES = {
 };
 ```
 
-3. **Test**: Run the app and select your theme from the settings modal
+1. **Test**: Run the app and select your theme from the settings modal
 
 ### Design Tips
 
@@ -251,6 +261,7 @@ public/sounds/my-pack/
 The app connects to an MQTT broker. Default: `wss://broker.emqx.io:8084/mqtt`
 
 Users can configure (if they read this whole document or have a keen eye):
+
 - **MQTT Broker**: WebSocket endpoint (`wss://` protocol required)
 - **Default Lobby**: Topic/room name
 

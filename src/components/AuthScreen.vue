@@ -1,7 +1,11 @@
 <template>
   <div v-if="showAuth" id="auth-screen">
     <SinewaveBackground />
-    <div class="login-box">
+    <div
+      class="login-box"
+      :class="systemStatusClass"
+      :data-system-status="systemStatusLabel"
+    >
       <button class="config-btn" @click="handleConfigClick">π</button>
       <h2 class="glitch-text">AGENT LOBBY</h2>
       <div class="input-group">
@@ -54,6 +58,24 @@ const emit = defineEmits<{
 const usernameInput = ref('');
 const hasTauriWindow = isTauriRuntime();
 const canInitialize = computed(() => props.presenceStatus === 'ready');
+const isSystemOnline = computed(() => props.presenceStatus === 'ready');
+const isSystemOffline = computed(() => props.presenceStatus === 'cooldown' || props.presenceStatus === 'error');
+const systemStatusLabel = computed(() => {
+  if (isSystemOnline.value) {
+    return 'System Online';
+  }
+
+  if (isSystemOffline.value) {
+    return 'System Offline';
+  }
+
+  return 'System Checking';
+});
+const systemStatusClass = computed(() => ({
+  online: isSystemOnline.value,
+  offline: isSystemOffline.value,
+  checking: !isSystemOnline.value && !isSystemOffline.value,
+}));
 const presenceStatusClass = computed(() => ({
   pending: props.presenceStatus === 'connecting' || props.presenceStatus === 'checking-users',
   cooldown: props.presenceStatus === 'cooldown',
@@ -123,7 +145,7 @@ const quit = async () => {
 }
 
 .login-box::after {
-  content: 'System Online';
+  content: attr(data-system-status);
   position: absolute;
   bottom: -10px;
   right: 10px;
@@ -131,6 +153,18 @@ const quit = async () => {
   padding: 0 5px;
   font-size: 10px;
   color: var(--neon-green);
+}
+
+.login-box.online::after {
+  color: var(--neon-green);
+}
+
+.login-box.offline::after {
+  color: var(--alert-red);
+}
+
+.login-box.checking::after {
+  color: var(--text-white);
 }
 
 .glitch-text {

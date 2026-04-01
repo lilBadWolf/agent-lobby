@@ -357,7 +357,7 @@ const hasTauriWindow = isTauriRuntime();
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
   if (isConnected.value && !showDM.value) {
-    return `${username.value} // LISTENING`;
+    return `${username.value} // ${isAway.value ? 'AWAY' : 'LISTENING'}`;
   } else if (isConnected.value && showDM.value) {
     const activeDMs = Array.from(dmActiveChats.value.keys());
     if (activeDMs.length > 0) {

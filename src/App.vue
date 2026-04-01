@@ -95,37 +95,24 @@
     <div
       v-if="!showAuth"
       class="main-view"
-      :class="{ 'mobile-layout': isMobileClient }"
     >
       <ChatArea
         :messages="messages"
         :username="username"
         :is-connected="isConnected"
-        @send="sendMessage"
+        :users="users"
+        :mention-request="mentionRequest"
+        @send="handleChatSend"
         @typing="(typing) => setTyping(typing)"
       />
-      <button
-        v-if="isMobileClient"
-        class="sidebar-toggle-btn"
-        :aria-expanded="isSidebarOpen"
-        :aria-label="isSidebarOpen ? 'Hide agent list' : 'Show agent list'"
-        @click="toggleSidebar"
-      >
-        {{ isSidebarOpen ? 'HIDE AGENTS' : 'AGENTS' }}
-      </button>
-      <div
-        v-if="isMobileClient && isSidebarOpen"
-        class="sidebar-scrim"
-        @click="closeSidebar"
-      ></div>
       <Sidebar
         :users="users"
         :current-username="username"
-        :is-mobile="isMobileClient"
-        :is-open="isSidebarOpen"
+        :is-away="isAway"
         @disconnect="handleDisconnect"
         @dm-request="handleDMRequest"
-        @close-mobile="closeSidebar"
+        @mention-request="handleMentionRequest"
+        @toggle-away="handleToggleAway"
       />
     </div>
   </div>
@@ -230,53 +217,10 @@
   opacity: 1;
 }
 
-.sidebar-toggle-btn {
-  display: none;
-}
-
-.sidebar-scrim {
-  display: none;
-}
-
-@media (max-width: 900px) {
-  .main-view.mobile-layout {
-    grid-template-columns: 1fr;
-    position: relative;
-  }
-
-  .sidebar-toggle-btn {
-    display: inline-flex;
-    position: absolute;
-    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
-    right: 10px;
-    z-index: 45;
-    border: 1px solid var(--neon-green);
-    background: rgba(0, 0, 0, 0.82);
-    color: var(--neon-green);
-    font-family: inherit;
-    font-size: 12px;
-    letter-spacing: 0.4px;
-    padding: 6px 10px;
-    cursor: pointer;
-  }
-
-  .sidebar-toggle-btn:active {
-    background: var(--neon-green);
-    color: #000;
-  }
-
-  .sidebar-scrim {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 30;
-    background: rgba(0, 0, 0, 0.45);
-  }
-}
 </style>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
@@ -313,15 +257,19 @@ const {
   setNetworkConfig,
   setSoundpack,
   clearMessages,
+  addSystemMessage,
   getMqttClient,
   getRoomId,
   setTyping,
+  toggleAway,
+  isAway,
 } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
 // DM system
 const showDM = ref(false);
 const focusedDMUser = ref<string | null>(null);
+const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
 
@@ -405,19 +353,6 @@ const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
 const isMaximized = ref(false);
 const hasTauriWindow = isTauriRuntime();
-const isMobileClient = ref(false);
-const isSidebarOpen = ref(false);
-const MOBILE_BREAKPOINT_PX = 900;
-
-function detectMobileClient() {
-  const isSmallViewport = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
-  const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  isMobileClient.value = isSmallViewport || (isCoarsePointer && window.innerWidth <= 1024);
-
-  if (!isMobileClient.value) {
-    isSidebarOpen.value = true;
-  }
-}
 
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
@@ -433,8 +368,6 @@ const pageTitle = computed(() => {
 
 onMounted(async () => {
   window.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('resize', detectMobileClient);
-  detectMobileClient();
 
   if (!hasTauriWindow) {
     return;
@@ -442,10 +375,6 @@ onMounted(async () => {
 
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', detectMobileClient);
 });
 
 watch(pageTitle, (newTitle) => {
@@ -504,6 +433,17 @@ function handleDisconnect() {
   }, 600);
 }
 
+function handleToggleAway() {
+  toggleAway();
+}
+
+function handleMentionRequest(user: string) {
+  mentionRequest.value = {
+    username: user,
+    nonce: Date.now(),
+  };
+}
+
 function toggleSettings() {
   showSettings.value = !showSettings.value;
 }
@@ -516,22 +456,69 @@ function toggleDM() {
   showDM.value = !showDM.value;
 }
 
-function toggleSidebar() {
-  isSidebarOpen.value = !isSidebarOpen.value;
-}
-
-function closeSidebar() {
-  if (isMobileClient.value) {
-    isSidebarOpen.value = false;
-  }
-}
-
 function handleAmbience() {
   tryPlayAmbience();
 }
 
+function handleChatSend(rawMessage: string) {
+  const normalized = rawMessage.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  if (normalized === '/settings') {
+    showSettings.value = true;
+    return;
+  }
+
+  if (normalized === '/quit') {
+    handleDisconnect();
+    return;
+  }
+
+  if (normalized === '/dm on') {
+    config.value.dmEnabled = true;
+    updateSettings();
+    return;
+  }
+
+  if (normalized === '/dm off') {
+    config.value.dmEnabled = false;
+    updateSettings();
+    return;
+  }
+
+  const dmMentionMatch = rawMessage.trim().match(/^\/dm\s+@(.+)$/i);
+  if (dmMentionMatch) {
+    const requestedHandle = dmMentionMatch[1].trim();
+    if (!requestedHandle) {
+      return;
+    }
+
+    const matchingUser = Object.values(users).find(
+      (user) => user.username.toLowerCase() === requestedHandle.toLowerCase()
+    );
+
+    void handleDMRequest(matchingUser?.username || requestedHandle);
+    return;
+  }
+
+  sendMessage(rawMessage);
+}
+
 async function handleDMRequest(user: string) {
   if (dm.value) {
+    const targetPresence = Object.values(users).find(
+      (presence) => presence.username.toLowerCase() === user.toLowerCase()
+    );
+
+    if (targetPresence?.isAway) {
+      addSystemMessage(`${targetPresence.username} IS CURRENTLY AWAY.`);
+      return;
+    }
+
+    if (targetPresence && !targetPresence.dmAvailable) {
+      addSystemMessage(`${targetPresence.username} IS NOT ACCEPTING DIRECT MESSAGES.`);
+      return;
+    }
+
     // Check if chat already exists
     if (dm.value.activeChats.value.has(user)) {
       // Jump to existing chat
@@ -543,8 +530,6 @@ async function handleDMRequest(user: string) {
       showDM.value = true;
     }
   }
-
-  closeSidebar();
 }
 
 function handleAcceptDM(user: string) {

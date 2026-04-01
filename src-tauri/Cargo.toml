@@ -1,9 +1,9 @@
 [package]
 name = "agent-lobby"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
+version = "0.1.4"
+description = "A Chat App"
+authors = ["thecompanyofwolves"]
+edition = "2026"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

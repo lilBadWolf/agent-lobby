@@ -1,21 +1,39 @@
 <template>
-  <aside id="sidebar" :class="{ 'mobile-collapsed': isMobile && !isOpen, 'mobile-open': isMobile && isOpen }">
+  <aside id="sidebar">
     <div class="sidebar-header">
-      <span>Agents</span>
-      <button
-        v-if="isMobile"
-        class="sidebar-close-btn"
-        type="button"
-        aria-label="Hide agent list"
-        @click="emit('closeMobile')"
-      >
-        HIDE
-      </button>
+      <div class="agent-header-title">
+        <span>[{{ onlineCount }}] AGENTS</span>
+        <button
+          class="away-toggle-btn"
+          :class="{ active: props.isAway }"
+          type="button"
+          :title="props.isAway ? 'Set status to active' : 'Set status to away'"
+          :aria-label="props.isAway ? 'Set status to active' : 'Set status to away'"
+          @click="emit('toggleAway')"
+        >
+          <span v-if="!props.isAway" class="status-dot" aria-hidden="true"></span>
+          <span v-else aria-hidden="true">💤</span>
+        </button>
+      </div>
     </div>
     <div id="user-list">
-      <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
-        <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
-        <button v-if="user.dmAvailable" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
+      <div
+        v-for="user in userList"
+        :key="user.username"
+        class="user-node"
+        :class="{ 'away-user': user.isAway }"
+        :style="{ color: getUserColor(user.username) }"
+      >
+        <button
+          type="button"
+          class="user-handle-btn"
+          :class="{ 'typing-user': user.isTyping }"
+          @click="emit('mentionRequest', user.username)"
+        >
+          {{ user.username }}
+        </button>
+        <button v-if="user.dmAvailable && !user.isAway" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
+        <span v-else class="dm-btn-placeholder" aria-hidden="true"></span>
       </div>
     </div>
     <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>
@@ -30,24 +48,32 @@ import { useTheme } from '../composables/useTheme';
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
   currentUsername?: string;
-  isMobile?: boolean;
-  isOpen?: boolean;
+  isAway?: boolean;
 }>(), {
   users: () => ({}), // Default to an empty object
-  isMobile: false,
-  isOpen: true,
+  isAway: false,
 });
 
 const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
-  closeMobile: [];
+  mentionRequest: [user: string];
+  toggleAway: [];
 }>();
 
 const { getUserColor } = useTheme();
-const userList = computed(() =>
-  Object.values(props.users || {}).filter(user => user.username !== props.currentUsername)
+const onlineCount = computed(() =>
+  Object.values(props.users || {}).filter(user => Boolean(user.username)).length
 );
+const userList = computed(() => {
+  const filteredUsers = Object.values(props.users || {}).filter(
+    user => user.username !== props.currentUsername
+  );
+
+  const botUsers = filteredUsers.filter((user) => user.isBot);
+  const nonBotUsers = filteredUsers.filter((user) => !user.isBot);
+  return [...botUsers, ...nonBotUsers];
+});
 </script>
 
 <style scoped>
@@ -67,24 +93,60 @@ const userList = computed(() =>
   padding-bottom: 5px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
 }
 
-.sidebar-close-btn {
-  border: 1px solid var(--neon-green);
-  background: transparent;
-  color: var(--neon-green);
-  font-family: inherit;
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  padding: 3px 6px;
-  cursor: pointer;
+.agent-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.sidebar-close-btn:active {
-  background: var(--neon-green);
-  color: #000;
+.away-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--neon-green);
+  opacity: 1;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s;
+  padding: 0;
+}
+
+.away-toggle-btn:hover {
+  transform: scale(1.08);
+}
+
+.away-toggle-btn.active {
+  color: var(--text-main);
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #36ff6f;
+  box-shadow: 0 0 8px #36ff6f;
+  animation: status-dot-flash 1s ease-in-out infinite;
+}
+
+@keyframes status-dot-flash {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px #36ff6f;
+  }
+  50% {
+    opacity: 0.35;
+    box-shadow: 0 0 2px #36ff6f;
+  }
 }
 
 #user-list {
@@ -108,11 +170,34 @@ const userList = computed(() =>
   opacity: 0.8;
 }
 
+.user-node.away-user {
+  opacity: 0.45;
+}
+
+.user-node.away-user:hover {
+  opacity: 0.6;
+}
+
 .user-node::before {
   content: '[O] ';
   color: var(--neon-green);
   opacity: 0.5;
   margin-right: 4px;
+}
+
+.user-handle-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.user-handle-btn:hover {
+  text-shadow: 0 0 6px currentColor;
 }
 
 .dm-btn {
@@ -129,6 +214,13 @@ const userList = computed(() =>
 .dm-btn:hover {
   opacity: 1;
   text-shadow: 0 0 5px currentColor;
+}
+
+.dm-btn-placeholder {
+  display: inline-block;
+  width: 24px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 
@@ -166,37 +258,4 @@ const userList = computed(() =>
   color: #000;
 }
 
-@media (max-width: 900px) {
-  #sidebar {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 40;
-    width: min(78vw, 320px);
-    padding: 12px;
-    font-size: 11px;
-    transform: translateX(0);
-    transition: transform 0.2s ease;
-    border-left: 1px solid var(--dim-green);
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
-  }
-
-  #sidebar.mobile-collapsed {
-    transform: translateX(105%);
-    pointer-events: none;
-  }
-
-  #sidebar.mobile-open {
-    transform: translateX(0);
-  }
-
-  #user-list {
-    font-size: 10px;
-  }
-
-  .dm-btn {
-    font-size: 10px;
-  }
-}
 </style>

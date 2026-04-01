@@ -5,16 +5,6 @@
       <!-- Header -->
       <div class="modal-header">
         <h3 style="margin: 0">DIRECT MESSAGE</h3>
-        <button
-          v-if="isMobileClient"
-          class="tabs-toggle-btn"
-          type="button"
-          :aria-expanded="isTabDrawerOpen"
-          :aria-label="isTabDrawerOpen ? 'Hide DM chats' : 'Show DM chats'"
-          @click="toggleTabDrawer"
-        >
-          {{ isTabDrawerOpen ? 'HIDE CHATS' : 'CHATS' }}
-        </button>
         <button class="close-btn" @click="handleClose">✕</button>
       </div>
 
@@ -40,7 +30,7 @@
       </div>
 
       <!-- Tab Bar -->
-      <div class="tab-bar" :class="{ 'mobile-collapsed': isMobileClient && !isTabDrawerOpen }">
+      <div class="tab-bar">
         <div
           v-for="tab in allTabs"
           :key="tab"
@@ -234,7 +224,6 @@
               ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
             </div>
             <input
-              ref="dmInputEl"
               v-model="messageInput"
               type="text"
               placeholder="Type message..."
@@ -280,7 +269,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../types/directMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -332,7 +321,6 @@ const { getUserColor } = useTheme();
 const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('requests'); // 'requests' or username
 const messageInput = ref('');
-const dmInputEl = ref<HTMLInputElement>();
 const messagesContainer = ref<HTMLElement>();
 const audioElement = ref<HTMLAudioElement>();
 const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
@@ -345,38 +333,14 @@ const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per 
 const savingFileIds = ref<Set<string>>(new Set()); // Track in-flight save operations
 const savedFileIds = ref<Set<string>>(new Set()); // Track successful local saves before parent sync
 const savedFilePaths = ref<Map<string, string>>(new Map()); // Track saved absolute paths by transfer id
-const isMobileClient = ref(false);
-const isTabDrawerOpen = ref(true);
-const MOBILE_BREAKPOINT_PX = 900;
 let tauriApisPromise: Promise<{
   fs: TauriFsModule;
   path: TauriPathModule;
   opener: TauriOpenerModule;
 } | null> | null = null;
 
-function detectMobileClient() {
-  const isSmallViewport = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
-  const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  isMobileClient.value = isSmallViewport || (isCoarsePointer && window.innerWidth <= 1024);
-
-  if (!isMobileClient.value) {
-    isTabDrawerOpen.value = true;
-  }
-}
-
-function toggleTabDrawer() {
-  isTabDrawerOpen.value = !isTabDrawerOpen.value;
-}
-
-function closeTabDrawer() {
-  if (isMobileClient.value) {
-    isTabDrawerOpen.value = false;
-  }
-}
-
 function selectTab(tab: string) {
   currentTab.value = tab;
-  closeTabDrawer();
 }
 
 function isTauriRuntime(): boolean {
@@ -472,7 +436,6 @@ watch(allTabs, (newTabs) => {
 watch(() => props.focusedDMUser, (focusedUser) => {
   if (focusedUser && props.activeChats.has(focusedUser)) {
     currentTab.value = focusedUser;
-    closeTabDrawer();
   }
 });
 
@@ -589,7 +552,6 @@ function closeTab(user: string) {
 function handleAccept(user: string) {
   emit('acceptDm', user);
   currentTab.value = user;
-  closeTabDrawer();
 }
 
 function handleReject(user: string) {
@@ -626,20 +588,10 @@ function sendMessage() {
 
   emit('sendMessage', currentTab.value, messageInput.value.trim(), props.dmChatEffect);
   messageInput.value = '';
-  closeTabDrawer();
-}
-
-function dismissKeyboardIfTouchInput() {
-  if (!window.matchMedia('(pointer: coarse)').matches) {
-    return;
-  }
-
-  dmInputEl.value?.blur();
 }
 
 function handleMessageInputEnter() {
   sendMessage();
-  dismissKeyboardIfTouchInput();
 }
 
 function getCurrentChat(): DMChat | undefined {
@@ -702,17 +654,7 @@ function handleVideoWindowSendMessage(message: string) {
   if (!user || !trimmed) return;
 
   emit('sendMessage', user, trimmed, props.dmChatEffect);
-  closeTabDrawer();
 }
-
-onMounted(() => {
-  detectMobileClient();
-  window.addEventListener('resize', detectMobileClient);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', detectMobileClient);
-});
 
 function handleDragOver(e: DragEvent) {
   e.preventDefault();
@@ -1183,25 +1125,6 @@ watch(
 
 .close-btn:hover {
   opacity: 1;
-}
-
-.tabs-toggle-btn {
-  display: none;
-  border: 1px solid var(--neon-green);
-  background: transparent;
-  color: var(--neon-green);
-  font-family: inherit;
-  font-size: 10px;
-  letter-spacing: 0.4px;
-  padding: 4px 8px;
-  cursor: pointer;
-  margin-left: auto;
-  margin-right: 10px;
-}
-
-.tabs-toggle-btn:active {
-  background: var(--neon-green);
-  color: #000;
 }
 
 /* Tab Bar */
@@ -1826,28 +1749,4 @@ watch(
   border-color: var(--neon-green);
 }
 
-@media (max-width: 600px) {
-  .tabs-toggle-btn {
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .tab-bar.mobile-collapsed {
-    display: none;
-  }
-
-  .tab {
-    min-width: 80px;
-    padding: 8px 10px;
-    font-size: 11px;
-  }
-
-  .messages {
-    font-size: 12px;
-  }
-
-  .input-bar input {
-    font-size: 16px;
-  }
-}
 </style>

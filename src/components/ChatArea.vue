@@ -12,7 +12,20 @@
             :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
             :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
           >
-            {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
+            <template v-for="(part, partIndex) in getDisplayedParts(index)" :key="`${index}-${partIndex}`">
+              <span v-if="part.type === 'mention'" class="mention-highlight">{{ part.text }}</span>
+              <a
+                v-else-if="part.type === 'link'"
+                class="chat-link"
+                :href="part.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click.prevent="openExternalLink(part.url)"
+              >
+                {{ getExternalLinkLabel(part) }}
+              </a>
+              <span v-else>{{ part.text }}</span>
+            </template><span v-if="isTyping(index)" class="cursor">█</span>
           </span>
           <div v-if="getMessageImages(index).length > 0" class="message-images">
             <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
@@ -120,6 +133,18 @@
       </div>
     </div>
     <div class="input-bar" style="position: relative;">
+      <div v-if="mentionSuggestions.length > 0" class="emoji-picker">
+        <div
+          v-for="(item, i) in mentionSuggestions"
+          :key="item"
+          class="emoji-item"
+          :class="{ active: i === mentionSelectedIndex }"
+          @mousedown.prevent="selectMentionSuggestion(item)"
+        >
+          <span class="emoji-char">@</span>
+          <span class="emoji-name">{{ item }}</span>
+        </div>
+      </div>
       <div v-if="emojiSuggestions.length > 0" class="emoji-picker">
         <div
           v-for="(item, i) in emojiSuggestions"
@@ -151,7 +176,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
-import type { ChatMessage } from '../types/chat';
+import type { ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import * as nodeEmoji from 'node-emoji';
@@ -205,6 +230,8 @@ type DocumentWithLegacyFullscreen = Document & {
   msFullscreenElement?: Element | null;
 };
 
+type TauriOpenerModule = typeof import('@tauri-apps/plugin-opener');
+
 declare global {
   interface Window {
     YT?: YouTubeApiLike;
@@ -216,6 +243,8 @@ const props = defineProps<{
   messages: ChatMessage[];
   username: string;
   isConnected: boolean;
+  users: Record<string, UserPresence>;
+  mentionRequest?: { username: string; nonce: number } | null;
 }>();
 
 const emit = defineEmits<{
@@ -251,18 +280,23 @@ const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
 const youtubeTitleCache = ref<Record<string, string>>({});
+const externalLinkTitleCache = ref<Record<string, string>>({});
 const youtubeTitleRequests = new Set<string>();
+const externalLinkTitleRequests = new Set<string>();
 const youtubePlayers = new Map<string, YouTubePlayerLike>();
 const youtubeContainers = new Map<string, HTMLElement>();
 const youtubeShells = new Map<string, HTMLElement>();
 const youtubePlayerStates = ref<Record<string, YouTubePlayerState>>({});
 let youtubeApiPromise: Promise<YouTubeApiLike> | null = null;
+let tauriOpenerPromise: Promise<TauriOpenerModule | null> | null = null;
 let youtubeSyncInterval: ReturnType<typeof setInterval> | null = null;
 const fullscreenChangeTick = ref(0);
 const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
 const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
 const emojiSelectedIndex = ref(0);
+const mentionSuggestions = ref<string[]>([]);
+const mentionSelectedIndex = ref(0);
 const chatInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
 const FULLSCREEN_OVERLAY_HIDE_DELAY = 2000;
@@ -629,6 +663,11 @@ function getYouTubeEmbedHeader(url: string): string {
   return youtubeTitleCache.value[url] || url;
 }
 
+function extractRawHttpUrls(text: string): string[] {
+  const regex = /https?:\/\/[^\s]+/gi;
+  return Array.from(text.match(regex) ?? []);
+}
+
 async function ensureYouTubeTitle(url: string): Promise<void> {
   if (youtubeTitleCache.value[url] || youtubeTitleRequests.has(url)) {
     return;
@@ -655,6 +694,77 @@ async function ensureYouTubeTitle(url: string): Promise<void> {
   }
 }
 
+function stripHtmlTags(input: string): string {
+  return input.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractHtmlTitle(html: string): string {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (!titleMatch || !titleMatch[1]) {
+    return '';
+  }
+  return stripHtmlTags(titleMatch[1]);
+}
+
+function extractTitleFromJinaMirror(text: string): string {
+  const headerMatch = text.match(/^\s*Title:\s*(.+)$/im);
+  if (headerMatch?.[1]) {
+    return headerMatch[1].trim();
+  }
+
+  const markdownHeading = text.match(/^\s*#\s+(.+)$/m);
+  if (markdownHeading?.[1]) {
+    return markdownHeading[1].trim();
+  }
+
+  return '';
+}
+
+async function fetchExternalTitleViaJina(url: string): Promise<string> {
+  const stripped = url.replace(/^https?:\/\//i, '');
+  const mirrorUrl = `https://r.jina.ai/http://${stripped}`;
+  const response = await fetch(mirrorUrl);
+  if (!response.ok) {
+    return '';
+  }
+  const content = await response.text();
+  return extractTitleFromJinaMirror(content);
+}
+
+async function ensureExternalLinkTitle(url: string): Promise<void> {
+  if (externalLinkTitleCache.value[url] || externalLinkTitleRequests.has(url)) {
+    return;
+  }
+
+  externalLinkTitleRequests.add(url);
+
+  try {
+    let title = '';
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const html = await response.text();
+        title = extractHtmlTitle(html);
+      }
+    } catch {
+      // Ignore direct fetch failures (often CORS in webview).
+    }
+
+    if (!title) {
+      title = await fetchExternalTitleViaJina(url);
+    }
+
+    if (title) {
+      externalLinkTitleCache.value[url] = title;
+    }
+  } catch {
+    // Keep URL fallback on metadata fetch failure.
+  } finally {
+    externalLinkTitleRequests.delete(url);
+  }
+}
+
 // Process images when messages change
 watch(
   () => props.messages.length,
@@ -669,11 +779,32 @@ watch(
           void ensureYouTubeTitle(uri);
         }
       });
+
+      const ytSet = new Set(extractYouTubeUrls(msg.message).map(normalizeUrlToken));
+      const imgSet = new Set(extractImageUris(msg.message).map(normalizeUrlToken));
+      const externalLinks = extractRawHttpUrls(msg.message)
+        .map(normalizeUrlToken)
+        .filter((url) => Boolean(url) && !ytSet.has(url) && !imgSet.has(url));
+
+      externalLinks.forEach((url) => {
+        void ensureExternalLinkTitle(url);
+      });
     });
 
     void initializeYouTubePlayers();
   },
   { immediate: true }
+);
+
+watch(
+  () => props.mentionRequest,
+  (request) => {
+    if (!request || !props.isConnected) {
+      return;
+    }
+
+    appendMentionToInput(request.username);
+  }
 );
 
 watch(
@@ -735,6 +866,136 @@ function getDisplayedText(messageIndex: number): string {
   const progress = typingProgress.value[messageIndex] ?? text.length;
   return text.substring(0, progress);
 }
+
+type DisplayPart =
+  | { type: 'text'; text: string }
+  | { type: 'mention'; text: string }
+  | { type: 'link'; text: string; url: string };
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeUrlToken(token: string): string {
+  return token.replace(/[.,!?;:\]\)]+$/, '');
+}
+
+function pushTextWithMentions(parts: DisplayPart[], text: string, targetUsername: string) {
+  if (!text) {
+    return;
+  }
+
+  const mentionRegex = new RegExp(`@${escapeRegExp(targetUsername)}\\b`, 'gi');
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(mentionRegex)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+
+    if (start > lastIndex) {
+      parts.push({ type: 'text', text: text.slice(lastIndex, start) });
+    }
+
+    parts.push({ type: 'mention', text: text.slice(start, end) });
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', text: text.slice(lastIndex) });
+  }
+}
+
+function getDisplayedParts(messageIndex: number): DisplayPart[] {
+  const text = getDisplayedText(messageIndex);
+  const sourceMessage = props.messages[messageIndex];
+  const targetUsername = props.username?.trim();
+
+  if (!text || !targetUsername) {
+    return [{ type: 'text', text }];
+  }
+
+  const excludedUrls = new Set([
+    ...extractYouTubeUrls(sourceMessage?.message || '').map(normalizeUrlToken),
+    ...extractImageUris(sourceMessage?.message || '').map(normalizeUrlToken),
+  ]);
+
+  const linkRegex = /https?:\/\/[^\s]+/gi;
+  const parts: DisplayPart[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(linkRegex)) {
+    const start = match.index ?? 0;
+    const rawUrl = match[0];
+    const normalizedUrl = normalizeUrlToken(rawUrl);
+    const end = start + rawUrl.length;
+
+    if (start > lastIndex) {
+      pushTextWithMentions(parts, text.slice(lastIndex, start), targetUsername);
+    }
+
+    if (normalizedUrl && !excludedUrls.has(normalizedUrl)) {
+      parts.push({ type: 'link', text: normalizedUrl, url: normalizedUrl });
+
+      const trailingPunctuation = rawUrl.slice(normalizedUrl.length);
+      if (trailingPunctuation) {
+        pushTextWithMentions(parts, trailingPunctuation, targetUsername);
+      }
+    } else {
+      pushTextWithMentions(parts, rawUrl, targetUsername);
+    }
+
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    pushTextWithMentions(parts, text.slice(lastIndex), targetUsername);
+  }
+
+  return parts.length > 0 ? parts : [{ type: 'text', text }];
+}
+
+function openExternalLink(url: string) {
+  void openExternalLinkAsync(url);
+}
+
+function getExternalLinkLabel(part: { text: string; url: string }): string {
+  return externalLinkTitleCache.value[part.url] || part.text;
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function getTauriOpener() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriOpenerPromise) {
+    tauriOpenerPromise = import('@tauri-apps/plugin-opener')
+      .then((module) => module)
+      .catch(() => {
+        tauriOpenerPromise = null;
+        return null;
+      });
+  }
+
+  return tauriOpenerPromise;
+}
+
+async function openExternalLinkAsync(url: string) {
+  try {
+    const opener = await getTauriOpener();
+    if (opener?.openUrl) {
+      await opener.openUrl(url);
+      return;
+    }
+  } catch {
+    // Fall through to browser open fallback.
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 function getMessageYouTubeUrls(messageIndex: number): string[] {
   const message = props.messages[messageIndex];
   if (!message) return [];
@@ -789,15 +1050,27 @@ function sendMessage() {
   }
 }
 
-function dismissKeyboardIfTouchInput() {
-  if (!window.matchMedia('(pointer: coarse)').matches) {
+function appendMentionToInput(targetUsername: string) {
+  const username = targetUsername.trim();
+  if (!username) {
     return;
   }
 
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-    activeElement.blur();
-  }
+  const mentionText = `@${username} `;
+  const needsSeparator = chatInput.value.length > 0 && !/\s$/.test(chatInput.value);
+  chatInput.value = `${chatInput.value}${needsSeparator ? ' ' : ''}${mentionText}`;
+  mentionSuggestions.value = [];
+  emojiSuggestions.value = [];
+
+  nextTick(() => {
+    if (typeof window !== 'undefined') {
+      window.focus();
+    }
+
+    const cursorPos = chatInput.value.length;
+    chatInputEl.value?.focus();
+    chatInputEl.value?.setSelectionRange(cursorPos, cursorPos);
+  });
 }
 
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -806,11 +1079,52 @@ function convertEmojisInInput() {
   if (converted !== chatInput.value) {
     chatInput.value = converted;
   }
-  updateEmojiSuggestions();
+  updateInputSuggestions();
   // --- Presence typing event ---
   emit('typing', true);
   if (typingTimeout) clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => emit('typing', false), 2000);
+}
+
+function getMentionContext() {
+  const input = chatInput.value;
+  const cursorPos = chatInputEl.value?.selectionStart ?? input.length;
+  const textUpToCursor = input.slice(0, cursorPos);
+  const match = textUpToCursor.match(/(^|\s)@([\w]*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const mentionStart = cursorPos - match[0].length + match[1].length;
+  return {
+    cursorPos,
+    query: match[2] ?? '',
+    mentionStart,
+  };
+}
+
+function updateMentionSuggestions() {
+  const mentionContext = getMentionContext();
+  if (!mentionContext) {
+    mentionSuggestions.value = [];
+    mentionSelectedIndex.value = 0;
+    return false;
+  }
+
+  const { query } = mentionContext;
+  const normalizedQuery = query.toLowerCase();
+  const allUsers = Object.values(props.users || {})
+    .map((user) => user.username)
+    .filter((name) => name && name !== props.username);
+
+  const filtered = allUsers
+    .filter((name) => normalizedQuery.length === 0 || name.toLowerCase().startsWith(normalizedQuery))
+    .slice(0, 12);
+
+  mentionSuggestions.value = filtered;
+  mentionSelectedIndex.value = 0;
+  return filtered.length > 0;
 }
 
 function updateEmojiSuggestions() {
@@ -832,6 +1146,37 @@ function updateEmojiSuggestions() {
   }
 }
 
+function updateInputSuggestions() {
+  const hasMentionSuggestions = updateMentionSuggestions();
+  if (hasMentionSuggestions) {
+    emojiSuggestions.value = [];
+    return;
+  }
+
+  mentionSuggestions.value = [];
+  updateEmojiSuggestions();
+}
+
+function selectMentionSuggestion(username: string) {
+  const mentionContext = getMentionContext();
+  if (!mentionContext) {
+    return;
+  }
+
+  const { cursorPos, mentionStart } = mentionContext;
+  const input = chatInput.value;
+  const beforeMention = input.slice(0, mentionStart);
+  const afterMention = input.slice(cursorPos);
+  chatInput.value = `${beforeMention}@${username} ${afterMention}`;
+  mentionSuggestions.value = [];
+
+  nextTick(() => {
+    const newCursor = beforeMention.length + username.length + 2;
+    chatInputEl.value?.setSelectionRange(newCursor, newCursor);
+    chatInputEl.value?.focus();
+  });
+}
+
 function selectEmojiSuggestion(item: { name: string; emoji: string }) {
   const val = chatInput.value;
   const cursorPos = chatInputEl.value?.selectionStart ?? val.length;
@@ -844,24 +1189,35 @@ function selectEmojiSuggestion(item: { name: string; emoji: string }) {
 }
 
 function handleInputKeydown(e: KeyboardEvent) {
-  if (emojiSuggestions.value.length === 0) {
+  const hasMentionSuggestions = mentionSuggestions.value.length > 0;
+  const hasEmojiSuggestions = emojiSuggestions.value.length > 0;
+
+  if (!hasMentionSuggestions && !hasEmojiSuggestions) {
     if (e.key === 'Enter') {
       sendMessage();
-      dismissKeyboardIfTouchInput();
     }
     return;
   }
+
+  const activeList = hasMentionSuggestions ? mentionSuggestions.value : emojiSuggestions.value;
+  const activeIndex = hasMentionSuggestions ? mentionSelectedIndex : emojiSelectedIndex;
+
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    emojiSelectedIndex.value = (emojiSelectedIndex.value + 1) % emojiSuggestions.value.length;
+    activeIndex.value = (activeIndex.value + 1) % activeList.length;
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    emojiSelectedIndex.value = (emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) % emojiSuggestions.value.length;
+    activeIndex.value = (activeIndex.value - 1 + activeList.length) % activeList.length;
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
-    selectEmojiSuggestion(emojiSuggestions.value[emojiSelectedIndex.value]);
+    if (hasMentionSuggestions) {
+      selectMentionSuggestion(mentionSuggestions.value[mentionSelectedIndex.value]);
+    } else {
+      selectEmojiSuggestion(emojiSuggestions.value[emojiSelectedIndex.value]);
+    }
   } else if (e.key === 'Escape') {
     emojiSuggestions.value = [];
+    mentionSuggestions.value = [];
   }
 }
 
@@ -982,6 +1338,26 @@ onBeforeUnmount(() => {
 .text {
   word-wrap: break-word;
   white-space: pre-wrap;
+}
+
+.mention-highlight {
+  color: #000;
+  background: var(--neon-green);
+  border-radius: 2px;
+  padding: 0 3px;
+  margin: 0 1px;
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.45);
+}
+
+.chat-link {
+  color: #8fd3ff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.chat-link:hover {
+  color: #c9ebff;
 }
 
 .large-emoji {
@@ -1337,46 +1713,4 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 600px) {
-  #messages {
-    padding: 10px;
-    font-size: 14px;
-  }
-
-  #chat-msg {
-    font-size: 16px;
-    padding: 0 10px;
-    margin-top: 0;
-  }
-
-  .send-btn {
-    padding: 0 15px;
-    font-size: 12px;
-    align-items: center;
-    padding-top: 0;
-  }
-
-  .input-bar {
-    height: 56px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .video-custom-controls {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .video-timecode {
-    text-align: left;
-    min-width: 0;
-  }
-
-  .video-volume-wrap {
-    justify-content: space-between;
-  }
-
-  .video-volume {
-    width: 120px;
-  }
-}
 </style>

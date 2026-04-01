@@ -12,7 +12,10 @@
             :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
             :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
           >
-            {{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>
+            <template v-for="(part, partIndex) in getDisplayedParts(index)" :key="`${index}-${partIndex}`">
+              <span v-if="part.isMention" class="mention-highlight">{{ part.text }}</span>
+              <span v-else>{{ part.text }}</span>
+            </template><span v-if="isTyping(index)" class="cursor">█</span>
           </span>
           <div v-if="getMessageImages(index).length > 0" class="message-images">
             <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
@@ -120,6 +123,18 @@
       </div>
     </div>
     <div class="input-bar" style="position: relative;">
+      <div v-if="mentionSuggestions.length > 0" class="emoji-picker">
+        <div
+          v-for="(item, i) in mentionSuggestions"
+          :key="item"
+          class="emoji-item"
+          :class="{ active: i === mentionSelectedIndex }"
+          @mousedown.prevent="selectMentionSuggestion(item)"
+        >
+          <span class="emoji-char">@</span>
+          <span class="emoji-name">{{ item }}</span>
+        </div>
+      </div>
       <div v-if="emojiSuggestions.length > 0" class="emoji-picker">
         <div
           v-for="(item, i) in emojiSuggestions"
@@ -151,7 +166,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
-import type { ChatMessage } from '../types/chat';
+import type { ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import * as nodeEmoji from 'node-emoji';
@@ -216,6 +231,8 @@ const props = defineProps<{
   messages: ChatMessage[];
   username: string;
   isConnected: boolean;
+  users: Record<string, UserPresence>;
+  mentionRequest?: { username: string; nonce: number } | null;
 }>();
 
 const emit = defineEmits<{
@@ -263,6 +280,8 @@ const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
 const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
 const emojiSelectedIndex = ref(0);
+const mentionSuggestions = ref<string[]>([]);
+const mentionSelectedIndex = ref(0);
 const chatInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
 const FULLSCREEN_OVERLAY_HIDE_DELAY = 2000;
@@ -677,6 +696,17 @@ watch(
 );
 
 watch(
+  () => props.mentionRequest,
+  (request) => {
+    if (!request || !props.isConnected) {
+      return;
+    }
+
+    appendMentionToInput(request.username);
+  }
+);
+
+watch(
   () => props.messages.length,
   (newLength, oldLength) => {
     if (newLength > oldLength) {
@@ -735,6 +765,41 @@ function getDisplayedText(messageIndex: number): string {
   const progress = typingProgress.value[messageIndex] ?? text.length;
   return text.substring(0, progress);
 }
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getDisplayedParts(messageIndex: number): Array<{ text: string; isMention: boolean }> {
+  const text = getDisplayedText(messageIndex);
+  const targetUsername = props.username?.trim();
+
+  if (!text || !targetUsername) {
+    return [{ text, isMention: false }];
+  }
+
+  const mentionRegex = new RegExp(`@${escapeRegExp(targetUsername)}\\b`, 'gi');
+  const parts: Array<{ text: string; isMention: boolean }> = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(mentionRegex)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+
+    if (start > lastIndex) {
+      parts.push({ text: text.slice(lastIndex, start), isMention: false });
+    }
+
+    parts.push({ text: text.slice(start, end), isMention: true });
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({ text: text.slice(lastIndex), isMention: false });
+  }
+
+  return parts.length > 0 ? parts : [{ text, isMention: false }];
+}
 function getMessageYouTubeUrls(messageIndex: number): string[] {
   const message = props.messages[messageIndex];
   if (!message) return [];
@@ -789,17 +854,81 @@ function sendMessage() {
   }
 }
 
+function appendMentionToInput(targetUsername: string) {
+  const username = targetUsername.trim();
+  if (!username) {
+    return;
+  }
+
+  const mentionText = `@${username} `;
+  const needsSeparator = chatInput.value.length > 0 && !/\s$/.test(chatInput.value);
+  chatInput.value = `${chatInput.value}${needsSeparator ? ' ' : ''}${mentionText}`;
+  mentionSuggestions.value = [];
+  emojiSuggestions.value = [];
+
+  nextTick(() => {
+    if (typeof window !== 'undefined') {
+      window.focus();
+    }
+
+    const cursorPos = chatInput.value.length;
+    chatInputEl.value?.focus();
+    chatInputEl.value?.setSelectionRange(cursorPos, cursorPos);
+  });
+}
+
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 function convertEmojisInInput() {
   const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
   if (converted !== chatInput.value) {
     chatInput.value = converted;
   }
-  updateEmojiSuggestions();
+  updateInputSuggestions();
   // --- Presence typing event ---
   emit('typing', true);
   if (typingTimeout) clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => emit('typing', false), 2000);
+}
+
+function getMentionContext() {
+  const input = chatInput.value;
+  const cursorPos = chatInputEl.value?.selectionStart ?? input.length;
+  const textUpToCursor = input.slice(0, cursorPos);
+  const match = textUpToCursor.match(/(^|\s)@([\w]*)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const mentionStart = cursorPos - match[0].length + match[1].length;
+  return {
+    cursorPos,
+    query: match[2] ?? '',
+    mentionStart,
+  };
+}
+
+function updateMentionSuggestions() {
+  const mentionContext = getMentionContext();
+  if (!mentionContext) {
+    mentionSuggestions.value = [];
+    mentionSelectedIndex.value = 0;
+    return false;
+  }
+
+  const { query } = mentionContext;
+  const normalizedQuery = query.toLowerCase();
+  const allUsers = Object.values(props.users || {})
+    .map((user) => user.username)
+    .filter((name) => name && name !== props.username);
+
+  const filtered = allUsers
+    .filter((name) => normalizedQuery.length === 0 || name.toLowerCase().startsWith(normalizedQuery))
+    .slice(0, 12);
+
+  mentionSuggestions.value = filtered;
+  mentionSelectedIndex.value = 0;
+  return filtered.length > 0;
 }
 
 function updateEmojiSuggestions() {
@@ -821,6 +950,37 @@ function updateEmojiSuggestions() {
   }
 }
 
+function updateInputSuggestions() {
+  const hasMentionSuggestions = updateMentionSuggestions();
+  if (hasMentionSuggestions) {
+    emojiSuggestions.value = [];
+    return;
+  }
+
+  mentionSuggestions.value = [];
+  updateEmojiSuggestions();
+}
+
+function selectMentionSuggestion(username: string) {
+  const mentionContext = getMentionContext();
+  if (!mentionContext) {
+    return;
+  }
+
+  const { cursorPos, mentionStart } = mentionContext;
+  const input = chatInput.value;
+  const beforeMention = input.slice(0, mentionStart);
+  const afterMention = input.slice(cursorPos);
+  chatInput.value = `${beforeMention}@${username} ${afterMention}`;
+  mentionSuggestions.value = [];
+
+  nextTick(() => {
+    const newCursor = beforeMention.length + username.length + 2;
+    chatInputEl.value?.setSelectionRange(newCursor, newCursor);
+    chatInputEl.value?.focus();
+  });
+}
+
 function selectEmojiSuggestion(item: { name: string; emoji: string }) {
   const val = chatInput.value;
   const cursorPos = chatInputEl.value?.selectionStart ?? val.length;
@@ -833,23 +993,35 @@ function selectEmojiSuggestion(item: { name: string; emoji: string }) {
 }
 
 function handleInputKeydown(e: KeyboardEvent) {
-  if (emojiSuggestions.value.length === 0) {
+  const hasMentionSuggestions = mentionSuggestions.value.length > 0;
+  const hasEmojiSuggestions = emojiSuggestions.value.length > 0;
+
+  if (!hasMentionSuggestions && !hasEmojiSuggestions) {
     if (e.key === 'Enter') {
       sendMessage();
     }
     return;
   }
+
+  const activeList = hasMentionSuggestions ? mentionSuggestions.value : emojiSuggestions.value;
+  const activeIndex = hasMentionSuggestions ? mentionSelectedIndex : emojiSelectedIndex;
+
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    emojiSelectedIndex.value = (emojiSelectedIndex.value + 1) % emojiSuggestions.value.length;
+    activeIndex.value = (activeIndex.value + 1) % activeList.length;
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    emojiSelectedIndex.value = (emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) % emojiSuggestions.value.length;
+    activeIndex.value = (activeIndex.value - 1 + activeList.length) % activeList.length;
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
-    selectEmojiSuggestion(emojiSuggestions.value[emojiSelectedIndex.value]);
+    if (hasMentionSuggestions) {
+      selectMentionSuggestion(mentionSuggestions.value[mentionSelectedIndex.value]);
+    } else {
+      selectEmojiSuggestion(emojiSuggestions.value[emojiSelectedIndex.value]);
+    }
   } else if (e.key === 'Escape') {
     emojiSuggestions.value = [];
+    mentionSuggestions.value = [];
   }
 }
 
@@ -970,6 +1142,15 @@ onBeforeUnmount(() => {
 .text {
   word-wrap: break-word;
   white-space: pre-wrap;
+}
+
+.mention-highlight {
+  color: #000;
+  background: var(--neon-green);
+  border-radius: 2px;
+  padding: 0 3px;
+  margin: 0 1px;
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.45);
 }
 
 .large-emoji {

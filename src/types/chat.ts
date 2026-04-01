@@ -2,6 +2,8 @@ export interface UserPresence {
   username: string;
   dmAvailable: boolean;
   isTyping?: boolean;
+  isAway?: boolean;
+  isBot?: boolean;
 }
 
 export interface ChatMessage {

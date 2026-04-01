@@ -229,12 +229,14 @@ export function useLobbyChat() {
 
 
   const isTyping = ref(false);
+  const isAway = ref(false);
 
   function buildPresencePayload(): UserPresence {
     return {
       username: username.value,
-      dmAvailable: config.value.dmEnabled,
+      dmAvailable: config.value.dmEnabled && !isAway.value,
       isTyping: isTyping.value,
+      isAway: isAway.value,
     };
   }
 
@@ -243,6 +245,17 @@ export function useLobbyChat() {
       isTyping.value = typing;
       publishPresence();
     }
+  }
+
+  function setAway(away: boolean) {
+    if (isAway.value !== away) {
+      isAway.value = away;
+      publishPresence();
+    }
+  }
+
+  function toggleAway() {
+    setAway(!isAway.value);
   }
 
   function publishPresence() {
@@ -382,6 +395,10 @@ export function useLobbyChat() {
     messages.value.push({ user, message, isSystem });
   }
 
+  function addSystemMessage(message: string) {
+    addMessage('SYSTEM', message, true);
+  }
+
   // Clear messages
   function clearMessages() {
     messages.value = [];
@@ -391,6 +408,21 @@ export function useLobbyChat() {
   function sendMessage(msg: string) {
     if (!msg || !client || !isConnected.value) return;
     const cleanMsg = scrub(msg);
+    const normalized = cleanMsg.trim().toLowerCase();
+
+    if (normalized === '/away') {
+      setAway(true);
+      return;
+    }
+
+    if (normalized === '/back') {
+      setAway(false);
+      return;
+    }
+
+    if (isAway.value) {
+      setAway(false);
+    }
     client.publish(CHAT_TOPIC, JSON.stringify({ u: username.value, m: cleanMsg }));
   }
 
@@ -409,6 +441,8 @@ export function useLobbyChat() {
   function resetUI() {
     username.value = '';
     messages.value = [];
+    isTyping.value = false;
+    isAway.value = false;
     clearUsers();
     client = null;
     startPresencePreview();
@@ -533,9 +567,13 @@ export function useLobbyChat() {
     setNetworkConfig,
     setSoundpack,
     clearMessages,
+    addSystemMessage,
     getMqttClient: () => client,
     getRoomId: () => roomId.value,
     setTyping,
+    setAway,
+    toggleAway,
     isTyping,
+    isAway,
   };
 }

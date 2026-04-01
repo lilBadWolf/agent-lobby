@@ -28,6 +28,14 @@
           >
             MEDIA
           </button>
+          <button
+            class="tab-btn"
+            :class="{ active: activeTab === 'help' }"
+            type="button"
+            @click="activeTab = 'help'"
+          >
+            HELP
+          </button>
         </div>
 
         <div v-if="activeTab === 'general'" class="tab-panel">
@@ -76,6 +84,7 @@
               </option>
             </select>
           </div>
+          <button class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
         </div>
 
         <div v-if="activeTab === 'dm'" class="tab-panel">
@@ -149,8 +158,49 @@
             </select>
           </div>
         </div>
+
+        <div v-if="activeTab === 'help'" class="tab-panel help-panel">
+          <div class="help-title">SLASH COMMANDS</div>
+          <div class="help-row">
+            <code>/away</code>
+            <span>SET STATUS TO AWAY</span>
+          </div>
+          <div class="help-row">
+            <code>/back</code>
+            <span>SET STATUS TO ACTIVE</span>
+          </div>
+          <div class="help-row">
+            <code>/settings</code>
+            <span>OPEN SETTINGS MODAL</span>
+          </div>
+          <div class="help-row">
+            <code>/quit</code>
+            <span>DISCONNECT FROM LOBBY</span>
+          </div>
+          <div class="help-row">
+            <code>/dm on</code>
+            <span>ENABLE DIRECT MESSAGES</span>
+          </div>
+          <div class="help-row">
+            <code>/dm off</code>
+            <span>DISABLE DIRECT MESSAGES</span>
+          </div>
+          <div class="help-row">
+            <code>/dm @username</code>
+            <span>REQUEST DM WITH USER</span>
+          </div>
+
+          <div class="help-title">CHAT TIPS</div>
+          <div class="help-row">
+            <code>:emoji_name:</code>
+            <span>TYPE EMOJI SHORTCODES</span>
+          </div>
+          <div class="help-row">
+            <code>@username</code>
+            <span>TYPE @ TO PICK A USER</span>
+          </div>
+        </div>
       </div>
-      <button class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
     </div>
     <div v-if="showEffectPreview" class="effect-preview">
@@ -179,7 +229,7 @@ const emit = defineEmits<{
 }>();
 
 const localConfig = ref<AudioConfig>({ ...props.config });
-const activeTab = ref<'general' | 'dm' | 'media'>('general');
+const activeTab = ref<'general' | 'dm' | 'media' | 'help'>('general');
 const hasInitializedMediaForOpen = ref(false);
 const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
@@ -283,7 +333,7 @@ async function previewEffect() {
 }
 
 .modal-box {
-  width: 300px;
+  width: 340px;
   border: 2px solid var(--neon-green);
   background: var(--dark-bg);
   padding: 20px;
@@ -312,7 +362,7 @@ async function previewEffect() {
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -358,6 +408,39 @@ async function previewEffect() {
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.help-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.help-title {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: var(--neon-green);
+  text-transform: uppercase;
+}
+
+.help-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-white);
+}
+
+.help-row code {
+  color: var(--neon-green);
+  background: rgba(57, 255, 20, 0.08);
+  border: 1px solid rgba(57, 255, 20, 0.35);
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 2px;
 }
 
 input[type='range'] {

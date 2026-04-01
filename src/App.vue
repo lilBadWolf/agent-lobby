@@ -100,14 +100,19 @@
         :messages="messages"
         :username="username"
         :is-connected="isConnected"
-        @send="sendMessage"
+        :users="users"
+        :mention-request="mentionRequest"
+        @send="handleChatSend"
         @typing="(typing) => setTyping(typing)"
       />
       <Sidebar
         :users="users"
         :current-username="username"
+        :is-away="isAway"
         @disconnect="handleDisconnect"
         @dm-request="handleDMRequest"
+        @mention-request="handleMentionRequest"
+        @toggle-away="handleToggleAway"
       />
     </div>
   </div>
@@ -252,15 +257,19 @@ const {
   setNetworkConfig,
   setSoundpack,
   clearMessages,
+  addSystemMessage,
   getMqttClient,
   getRoomId,
   setTyping,
+  toggleAway,
+  isAway,
 } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
 // DM system
 const showDM = ref(false);
 const focusedDMUser = ref<string | null>(null);
+const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
 
@@ -424,6 +433,17 @@ function handleDisconnect() {
   }, 600);
 }
 
+function handleToggleAway() {
+  toggleAway();
+}
+
+function handleMentionRequest(user: string) {
+  mentionRequest.value = {
+    username: user,
+    nonce: Date.now(),
+  };
+}
+
 function toggleSettings() {
   showSettings.value = !showSettings.value;
 }
@@ -440,8 +460,65 @@ function handleAmbience() {
   tryPlayAmbience();
 }
 
+function handleChatSend(rawMessage: string) {
+  const normalized = rawMessage.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  if (normalized === '/settings') {
+    showSettings.value = true;
+    return;
+  }
+
+  if (normalized === '/quit') {
+    handleDisconnect();
+    return;
+  }
+
+  if (normalized === '/dm on') {
+    config.value.dmEnabled = true;
+    updateSettings();
+    return;
+  }
+
+  if (normalized === '/dm off') {
+    config.value.dmEnabled = false;
+    updateSettings();
+    return;
+  }
+
+  const dmMentionMatch = rawMessage.trim().match(/^\/dm\s+@(.+)$/i);
+  if (dmMentionMatch) {
+    const requestedHandle = dmMentionMatch[1].trim();
+    if (!requestedHandle) {
+      return;
+    }
+
+    const matchingUser = Object.values(users).find(
+      (user) => user.username.toLowerCase() === requestedHandle.toLowerCase()
+    );
+
+    void handleDMRequest(matchingUser?.username || requestedHandle);
+    return;
+  }
+
+  sendMessage(rawMessage);
+}
+
 async function handleDMRequest(user: string) {
   if (dm.value) {
+    const targetPresence = Object.values(users).find(
+      (presence) => presence.username.toLowerCase() === user.toLowerCase()
+    );
+
+    if (targetPresence?.isAway) {
+      addSystemMessage(`${targetPresence.username} IS CURRENTLY AWAY.`);
+      return;
+    }
+
+    if (targetPresence && !targetPresence.dmAvailable) {
+      addSystemMessage(`${targetPresence.username} IS NOT ACCEPTING DIRECT MESSAGES.`);
+      return;
+    }
+
     // Check if chat already exists
     if (dm.value.activeChats.value.has(user)) {
       // Jump to existing chat

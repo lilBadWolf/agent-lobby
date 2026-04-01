@@ -862,7 +862,7 @@ function getDisplayedText(messageIndex: number): string {
   // Remove CSS-like blocks from display text
   text = text.replace(/\.[\w-]+\s*\{[^}]+\}/g, '').trim();
   // Convert :emojiName: to emoji characters
-  text = nodeEmoji.replace(text, (emoji) => emoji.emoji);
+  text = nodeEmoji.emojify(text);
   const progress = typingProgress.value[messageIndex] ?? text.length;
   return text.substring(0, progress);
 }
@@ -1075,7 +1075,7 @@ function appendMentionToInput(targetUsername: string) {
 
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 function convertEmojisInInput() {
-  const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
+  const converted = nodeEmoji.emojify(chatInput.value);
   if (converted !== chatInput.value) {
     chatInput.value = converted;
   }

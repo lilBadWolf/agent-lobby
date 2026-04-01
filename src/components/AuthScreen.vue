@@ -1,7 +1,11 @@
 <template>
   <div v-if="showAuth" id="auth-screen">
     <SinewaveBackground />
-    <div class="login-box">
+    <div
+      class="login-box"
+      :class="systemStatusClass"
+      :data-system-status="systemStatusLabel"
+    >
       <button class="config-btn" @click="handleConfigClick">π</button>
       <h2 class="glitch-text">AGENT LOBBY</h2>
       <div class="input-group">
@@ -18,14 +22,17 @@
         />
       </div>
       <p v-if="authError" id="auth-err">ERROR: HANDLE_ALREADY_EXISTS</p>
-      <button id="login-btn" @click="handleLogin">INITIALIZE LINK</button>
+      <p id="online-count" :class="presenceStatusClass">
+        {{ presenceStatusMessage }}
+      </p>
+      <button id="login-btn" :disabled="!canInitialize" @click="handleLogin">INITIALIZE LINK</button>
       <button v-if="hasTauriWindow" id="quit-btn" @click="quit">QUIT</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import SinewaveBackground from './SinewaveBackground.vue';
 
@@ -33,9 +40,13 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
 }
 
-defineProps<{
+const props = defineProps<{
   showAuth: boolean;
   authError: boolean;
+  onlineAgentCount: number;
+  presenceReady: boolean;
+  presenceStatus: 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
+  presenceStatusMessage: string;
 }>();
 
 const emit = defineEmits<{
@@ -46,8 +57,37 @@ const emit = defineEmits<{
 
 const usernameInput = ref('');
 const hasTauriWindow = isTauriRuntime();
+const canInitialize = computed(() => props.presenceStatus === 'ready');
+const isSystemOnline = computed(() => props.presenceStatus === 'ready');
+const isSystemOffline = computed(() => props.presenceStatus === 'cooldown' || props.presenceStatus === 'error');
+const systemStatusLabel = computed(() => {
+  if (isSystemOnline.value) {
+    return 'System Online';
+  }
+
+  if (isSystemOffline.value) {
+    return 'System Offline';
+  }
+
+  return 'System Checking';
+});
+const systemStatusClass = computed(() => ({
+  online: isSystemOnline.value,
+  offline: isSystemOffline.value,
+  checking: !isSystemOnline.value && !isSystemOffline.value,
+}));
+const presenceStatusClass = computed(() => ({
+  pending: props.presenceStatus === 'connecting' || props.presenceStatus === 'checking-users',
+  cooldown: props.presenceStatus === 'cooldown',
+  error: props.presenceStatus === 'error',
+  ready: props.presenceStatus === 'ready',
+}));
 
 function handleLogin() {
+  if (!canInitialize.value) {
+    return;
+  }
+
   if (usernameInput.value.trim()) {
     emit('login', usernameInput.value.trim().toUpperCase());
     usernameInput.value = '';
@@ -105,7 +145,7 @@ const quit = async () => {
 }
 
 .login-box::after {
-  content: 'System Online';
+  content: attr(data-system-status);
   position: absolute;
   bottom: -10px;
   right: 10px;
@@ -113,6 +153,18 @@ const quit = async () => {
   padding: 0 5px;
   font-size: 10px;
   color: var(--neon-green);
+}
+
+.login-box.online::after {
+  color: var(--neon-green);
+}
+
+.login-box.offline::after {
+  color: var(--alert-red);
+}
+
+.login-box.checking::after {
+  color: var(--text-white);
 }
 
 .glitch-text {
@@ -171,6 +223,12 @@ const quit = async () => {
   box-shadow: 0 0 15px var(--neon-green);
 }
 
+#login-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 #quit-btn {
   width: 100%;
   padding: 15px;
@@ -199,6 +257,33 @@ const quit = async () => {
   margin-top: -15px;
   margin-bottom: 10px;
   display: block;
+}
+
+#online-count {
+  color: var(--text-white);
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: -8px;
+  margin-bottom: 14px;
+  letter-spacing: 1px;
+}
+
+#online-count.pending {
+  color: var(--neon-green);
+  opacity: 0.9;
+}
+
+#online-count.cooldown {
+  color: var(--alert-red);
+  opacity: 0.92;
+}
+
+#online-count.ready {
+  color: var(--text-white);
+}
+
+#online-count.error {
+  color: var(--alert-red);
 }
 
 @keyframes glitch {

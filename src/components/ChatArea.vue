@@ -26,17 +26,26 @@
               <span v-if="getImageState(imageUri)?.error" class="image-fallback">{{ imageUri }}</span>
             </div>
           </div>
-          <div v-if="getMessageYouTubeUrls(index).length > 0" class="message-videos">
-            <div v-for="ytUrl in getMessageYouTubeUrls(index)" :key="ytUrl" class="video-container">
-              <iframe
-                v-if="getYouTubeVideoId(ytUrl)"
-                :src="`https://www.youtube.com/embed/${getYouTubeVideoId(ytUrl)}`"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowfullscreen
-                class="embedded-video"
-              ></iframe>
-              <span v-else class="video-fallback">{{ ytUrl }}</span>
+          <div v-if="getMessageYouTubeEmbeds(index).length > 0" class="message-videos">
+            <div v-for="embed in getMessageYouTubeEmbeds(index)" :key="embed.url" class="video-container">
+              <details v-if="embed.videoId" class="video-expandable">
+                <summary class="video-header">
+                  <span class="video-header-title">{{ getYouTubeEmbedHeader(embed.url) }}</span>
+                  <span class="video-header-control" aria-hidden="true">
+                    <span class="video-control-show">SHOW</span>
+                    <span class="video-control-hide">HIDE</span>
+                    <span class="video-control-indicator"></span>
+                  </span>
+                </summary>
+                <iframe
+                  :src="`https://www.youtube.com/embed/${embed.videoId}`"
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                  class="embedded-video"
+                ></iframe>
+              </details>
+              <span v-else class="video-fallback">{{ embed.url }}</span>
             </div>
           </div>
         </div>
@@ -116,10 +125,42 @@ function getYouTubeVideoId(url: string): string | null {
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
+const youtubeTitleCache = ref<Record<string, string>>({});
+const youtubeTitleRequests = new Set<string>();
 const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
 const emojiSelectedIndex = ref(0);
 const chatInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
+
+function getYouTubeEmbedHeader(url: string): string {
+  return youtubeTitleCache.value[url] || url;
+}
+
+async function ensureYouTubeTitle(url: string): Promise<void> {
+  if (youtubeTitleCache.value[url] || youtubeTitleRequests.has(url)) {
+    return;
+  }
+
+  youtubeTitleRequests.add(url);
+
+  try {
+    const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const response = await fetch(endpoint);
+
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json() as { title?: unknown };
+    if (typeof data.title === 'string' && data.title.trim()) {
+      youtubeTitleCache.value[url] = data.title.trim();
+    }
+  } catch {
+    // Ignore network and CORS failures; header falls back to URL.
+  } finally {
+    youtubeTitleRequests.delete(url);
+  }
+}
 
 // Process images when messages change
 watch(
@@ -128,6 +169,13 @@ watch(
     props.messages.forEach((msg) => {
       const imageUris = extractImageUris(msg.message);
       imageUris.forEach(uri => initializeImage(uri));
+
+      const ytUris = extractYouTubeUrls(msg.message);
+      ytUris.forEach(uri => {
+        if (getYouTubeVideoId(uri)) {
+          void ensureYouTubeTitle(uri);
+        }
+      });
     });
   },
   { immediate: true }
@@ -196,6 +244,13 @@ function getMessageYouTubeUrls(messageIndex: number): string[] {
   const message = props.messages[messageIndex];
   if (!message) return [];
   return extractYouTubeUrls(message.message);
+}
+
+function getMessageYouTubeEmbeds(messageIndex: number): Array<{ url: string; videoId: string | null }> {
+  return getMessageYouTubeUrls(messageIndex).map(url => ({
+    url,
+    videoId: getYouTubeVideoId(url),
+  }));
 }
 
 function getMessageImages(messageIndex: number): string[] {
@@ -469,6 +524,95 @@ function handleInputKeydown(e: KeyboardEvent) {
   position: relative;
   max-width: 400px;
   width: 100%;
+}
+
+.video-expandable {
+  border: 1px solid var(--dim-green);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.video-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--text-white);
+  font-size: 12px;
+  line-height: 1.2;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+.video-expandable[open] .video-header {
+  border-bottom-color: var(--dim-green);
+}
+
+.video-header::-webkit-details-marker {
+  color: var(--neon-green);
+}
+
+.video-header-title {
+  color: var(--text-white);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-header-control {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--system-dim);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.video-header:hover .video-header-control {
+  color: var(--neon-green);
+}
+
+.video-expandable[open] .video-header-control {
+  color: var(--neon-green);
+}
+
+.video-control-indicator {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 700;
+  width: 12px;
+  text-align: center;
+}
+
+.video-control-indicator::before {
+  content: "⤵";
+}
+
+.video-control-show,
+.video-control-hide {
+  font-weight: 700;
+}
+
+.video-control-hide {
+  display: none;
+}
+
+.video-expandable[open] .video-control-indicator::before {
+  content: "⤴";
+}
+
+.video-expandable[open] .video-control-show {
+  display: none;
+}
+
+.video-expandable[open] .video-control-hide {
+  display: inline;
 }
 
 .embedded-video {

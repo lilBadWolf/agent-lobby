@@ -10,6 +10,10 @@ function getPublicAssetUrl(path: string): string {
 }
 
 export function useLobbyChat() {
+  type PresencePreviewStatus = 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
+  const PRESENCE_PREVIEW_RETRY_DELAY_MS = 30000;
+  const PRESENCE_PREVIEW_MAX_RETRIES = 5;
+
   // Config defaults
   const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
   const DEFAULT_LOBBY = `spy_terminal`;
@@ -25,16 +29,189 @@ export function useLobbyChat() {
 
   // State
   let client: mqtt.MqttClient | null = null;
+  let previewClient: mqtt.MqttClient | null = null;
   const username = ref<string>('');
   const roomId = ref<string>(networkConfig.value.defaultLobby);
   const messages = ref<ChatMessage[]>([]);
   
   const isConnected = ref(false);
   const authError = ref(false);
+  const isPresencePreviewReady = ref(false);
+  const presencePreviewStatus = ref<PresencePreviewStatus>('idle');
+  const presencePreviewError = ref('');
+  const presencePreviewRetryAttempt = ref(0);
+  const presencePreviewCooldownSeconds = ref(0);
+
+  let presencePreviewRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let presencePreviewCooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   let CHAT_TOPIC = '';
   let PRESENCE_TOPIC = '';
   let PRESENCE_OPTIONS: UserPresence | null = null;
+
+  function getPresenceTopicPrefix(targetRoomId: string): string {
+    return `${targetRoomId}_lobby/presence/`;
+  }
+
+  function clearUsers() {
+    for (const key in users) {
+      delete users[key];
+    }
+  }
+
+  function clearPresencePreviewRetryTimers() {
+    if (presencePreviewRetryTimer) {
+      clearTimeout(presencePreviewRetryTimer);
+      presencePreviewRetryTimer = null;
+    }
+
+    if (presencePreviewCooldownTimer) {
+      clearInterval(presencePreviewCooldownTimer);
+      presencePreviewCooldownTimer = null;
+    }
+  }
+
+  function closePresencePreviewClient() {
+    if (!previewClient) {
+      return;
+    }
+
+    previewClient.removeAllListeners();
+    previewClient.end(true);
+    previewClient = null;
+  }
+
+  function stopPresencePreview() {
+    clearPresencePreviewRetryTimers();
+    closePresencePreviewClient();
+    isPresencePreviewReady.value = false;
+    presencePreviewStatus.value = 'idle';
+    presencePreviewError.value = '';
+    presencePreviewRetryAttempt.value = 0;
+    presencePreviewCooldownSeconds.value = 0;
+  }
+
+  function schedulePresencePreviewRetry(reason: string) {
+    if (isConnected.value) {
+      return;
+    }
+
+    clearPresencePreviewRetryTimers();
+    closePresencePreviewClient();
+
+    isPresencePreviewReady.value = false;
+
+    if (presencePreviewRetryAttempt.value >= PRESENCE_PREVIEW_MAX_RETRIES) {
+      presencePreviewStatus.value = 'error';
+      presencePreviewError.value = reason;
+      presencePreviewCooldownSeconds.value = 0;
+      return;
+    }
+
+    presencePreviewRetryAttempt.value += 1;
+    presencePreviewStatus.value = 'cooldown';
+    presencePreviewError.value = reason;
+    presencePreviewCooldownSeconds.value = Math.floor(PRESENCE_PREVIEW_RETRY_DELAY_MS / 1000);
+
+    presencePreviewCooldownTimer = setInterval(() => {
+      presencePreviewCooldownSeconds.value = Math.max(0, presencePreviewCooldownSeconds.value - 1);
+    }, 1000);
+
+    presencePreviewRetryTimer = setTimeout(() => {
+      clearPresencePreviewRetryTimers();
+      void startPresencePreview({ isRetryAttempt: true });
+    }, PRESENCE_PREVIEW_RETRY_DELAY_MS);
+  }
+
+  function handlePresenceMessage(topic: string, raw: string, { withAlerts }: { withAlerts: boolean }) {
+    if (!topic.startsWith(PRESENCE_TOPIC)) {
+      return;
+    }
+
+    const user = topic.split('/').pop()?.toUpperCase() || '';
+    if (!user) {
+      return;
+    }
+
+    if (raw === '') {
+      if (users[user]) {
+        if (withAlerts) {
+          playAlert('part');
+          addMessage('SYSTEM', `${user}${partMsg}`, true);
+        }
+        delete users[user];
+      }
+      return;
+    }
+
+    const parsed = JSON.parse(raw) as UserPresence;
+    if (!users[user] && withAlerts) {
+      playAlert('join');
+      addMessage('SYSTEM', `${user}${joinMsg}`, true);
+    }
+    users[user] = parsed;
+  }
+
+  async function startPresencePreview({ isRetryAttempt = false }: { isRetryAttempt?: boolean } = {}) {
+    if (isConnected.value) {
+      return;
+    }
+
+    clearPresencePreviewRetryTimers();
+    closePresencePreviewClient();
+
+    if (!isRetryAttempt) {
+      presencePreviewRetryAttempt.value = 0;
+    }
+
+    // Auth screen collisions are checked against this preloaded snapshot.
+    clearUsers();
+
+    const previewRoom = roomId.value || networkConfig.value.defaultLobby;
+    CHAT_TOPIC = `${previewRoom}_lobby/chat_global`;
+    PRESENCE_TOPIC = getPresenceTopicPrefix(previewRoom);
+    isPresencePreviewReady.value = false;
+    presencePreviewStatus.value = 'connecting';
+    presencePreviewError.value = '';
+    presencePreviewCooldownSeconds.value = 0;
+
+    previewClient = mqtt.connect(networkConfig.value.mqttServer, {
+      reconnectPeriod: 0,
+    });
+
+    previewClient.on('connect', () => {
+      presencePreviewStatus.value = 'checking-users';
+      previewClient?.subscribe(PRESENCE_TOPIC + '#', { qos: 1 }, (err) => {
+        if (err) {
+          schedulePresencePreviewRetry(err.message || 'Failed to subscribe to presence topic');
+          return;
+        }
+
+        isPresencePreviewReady.value = true;
+        presencePreviewStatus.value = 'ready';
+        presencePreviewRetryAttempt.value = 0;
+      });
+    });
+
+    previewClient.on('message', (topic, payload) => {
+      const raw = payload.toString();
+      try {
+        handlePresenceMessage(topic, raw, { withAlerts: false });
+      } catch {
+        // Ignore malformed presence payloads from third-party clients.
+      }
+    });
+
+    previewClient.on('error', (err) => {
+      schedulePresencePreviewRetry(err.message || 'Unable to reach MQTT server');
+    });
+
+    previewClient.on('close', () => {
+      if (!isConnected.value && presencePreviewStatus.value !== 'cooldown' && presencePreviewStatus.value !== 'error') {
+        schedulePresencePreviewRetry('Connection closed by server');
+      }
+    });
+  }
 
   const config = ref<AudioConfig>({
     dmEnabled: true,
@@ -155,8 +332,10 @@ export function useLobbyChat() {
       roomId.value = customRoomId.toLowerCase().replace(/[^a-z0-9_]/g, '');
     }
 
+    stopPresencePreview();
+
     CHAT_TOPIC = `${roomId.value}_lobby/chat_global`;
-    PRESENCE_TOPIC = `${roomId.value}_lobby/presence/`;
+    PRESENCE_TOPIC = getPresenceTopicPrefix(roomId.value);
     PRESENCE_OPTIONS = buildPresencePayload();
 
     const options = {
@@ -183,22 +362,10 @@ export function useLobbyChat() {
       const raw = payload.toString();
       console.log(raw);
       if (topic.startsWith(PRESENCE_TOPIC)) {
-        const user = topic.split('/').pop()?.toUpperCase() || '';
-        if (raw === '') {
-          if (users[user]) {
-            playAlert('part');
-            addMessage('SYSTEM', `${user}${partMsg}`, true);
-            delete users[user];
-          }
-        } else {
-          if (!users[user]) {
-            playAlert('join');
-            addMessage('SYSTEM', `${user}${joinMsg}`, true);
-            users[user] = JSON.parse(raw) as UserPresence;
-          }
-          else {
-            users[user] = JSON.parse(raw) as UserPresence;
-          }
+        try {
+          handlePresenceMessage(topic, raw, { withAlerts: true });
+        } catch {
+          // Ignore malformed presence payloads from third-party clients.
         }
         return;
       }
@@ -242,10 +409,9 @@ export function useLobbyChat() {
   function resetUI() {
     username.value = '';
     messages.value = [];
-    for (const key in users) {
-      delete users[key];
-    }
+    clearUsers();
     client = null;
+    startPresencePreview();
   }
 
   // Load network config
@@ -270,6 +436,7 @@ export function useLobbyChat() {
     networkConfig.value = config;
     roomId.value = config.defaultLobby;
     localStorage.setItem('agent_network_config', JSON.stringify(config));
+    startPresencePreview();
   }
 
   // Load settings
@@ -318,11 +485,39 @@ export function useLobbyChat() {
   loadSettings();
   loadAvailableSoundpacks();
   initAudio();
+  startPresencePreview();
+
+  const onlineAgentCount = computed(() =>
+    Object.values(users).filter((u) => Boolean(u?.username)).length
+  );
+
+  const presencePreviewStatusMessage = computed(() => {
+    if (presencePreviewStatus.value === 'error') {
+      return `CONNECTION ERROR: ${presencePreviewError.value || 'Unable to reach MQTT server'} (MAX RETRIES REACHED)`;
+    }
+    if (presencePreviewStatus.value === 'cooldown') {
+      return `CONNECTION ERROR. RETRY ${presencePreviewRetryAttempt.value}/${PRESENCE_PREVIEW_MAX_RETRIES} IN ${presencePreviewCooldownSeconds.value}s`;
+    }
+    if (presencePreviewStatus.value === 'connecting') {
+      return 'CONNECTING TO SERVER...';
+    }
+    if (presencePreviewStatus.value === 'checking-users') {
+      return 'CHECKING ONLINE USERS...';
+    }
+    if (presencePreviewStatus.value === 'ready') {
+      return `${onlineAgentCount.value} AGENTS ONLINE`;
+    }
+    return 'READY TO CONNECT';
+  });
 
   return {
     username: computed(() => username.value),
     messages: computed(() => messages.value),
     users: users,
+    onlineAgentCount,
+    isPresencePreviewReady: computed(() => isPresencePreviewReady.value),
+    presencePreviewStatus: computed(() => presencePreviewStatus.value),
+    presencePreviewStatusMessage,
     isConnected: computed(() => isConnected.value),
     authError: computed(() => authError.value),
     config,

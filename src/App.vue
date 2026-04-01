@@ -80,7 +80,17 @@
       @remove-file="handleRemoveFile"
     />
 
-    <AuthScreen :show-auth="showAuth" :auth-error="authError" @login="handleLogin" @ambience="handleAmbience" @config-clicked="toggleNetworkConfig" />
+    <AuthScreen
+      :show-auth="showAuth"
+      :auth-error="authError"
+      :online-agent-count="onlineAgentCount"
+      :presence-ready="isPresencePreviewReady"
+      :presence-status="presencePreviewStatus"
+      :presence-status-message="presencePreviewStatusMessage"
+      @login="handleLogin"
+      @ambience="handleAmbience"
+      @config-clicked="toggleNetworkConfig"
+    />
 
     <div v-if="!showAuth" class="main-view">
       <ChatArea
@@ -191,7 +201,31 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
 }
 
-const { username, messages, users, isConnected, authError, config, networkConfig, availableSoundpacks, boot, sendMessage, disconnect, updateSettings, tryPlayAmbience, setNetworkConfig, setSoundpack, clearMessages, getMqttClient, getRoomId, setTyping } = useLobbyChat();
+const {
+  username,
+  messages,
+  users,
+  onlineAgentCount,
+  isPresencePreviewReady,
+  presencePreviewStatus,
+  presencePreviewStatusMessage,
+  isConnected,
+  authError,
+  config,
+  networkConfig,
+  availableSoundpacks,
+  boot,
+  sendMessage,
+  disconnect,
+  updateSettings,
+  tryPlayAmbience,
+  setNetworkConfig,
+  setSoundpack,
+  clearMessages,
+  getMqttClient,
+  getRoomId,
+  setTyping,
+} = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 
 // DM system

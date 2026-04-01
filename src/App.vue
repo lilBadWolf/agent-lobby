@@ -95,7 +95,6 @@
     <div
       v-if="!showAuth"
       class="main-view"
-      :class="{ 'mobile-layout': isMobileClient }"
     >
       <ChatArea
         :messages="messages"
@@ -104,28 +103,11 @@
         @send="sendMessage"
         @typing="(typing) => setTyping(typing)"
       />
-      <button
-        v-if="isMobileClient"
-        class="sidebar-toggle-btn"
-        :aria-expanded="isSidebarOpen"
-        :aria-label="isSidebarOpen ? 'Hide agent list' : 'Show agent list'"
-        @click="toggleSidebar"
-      >
-        {{ isSidebarOpen ? 'HIDE AGENTS' : 'AGENTS' }}
-      </button>
-      <div
-        v-if="isMobileClient && isSidebarOpen"
-        class="sidebar-scrim"
-        @click="closeSidebar"
-      ></div>
       <Sidebar
         :users="users"
         :current-username="username"
-        :is-mobile="isMobileClient"
-        :is-open="isSidebarOpen"
         @disconnect="handleDisconnect"
         @dm-request="handleDMRequest"
-        @close-mobile="closeSidebar"
       />
     </div>
   </div>
@@ -230,53 +212,10 @@
   opacity: 1;
 }
 
-.sidebar-toggle-btn {
-  display: none;
-}
-
-.sidebar-scrim {
-  display: none;
-}
-
-@media (max-width: 900px) {
-  .main-view.mobile-layout {
-    grid-template-columns: 1fr;
-    position: relative;
-  }
-
-  .sidebar-toggle-btn {
-    display: inline-flex;
-    position: absolute;
-    bottom: calc(100px + env(safe-area-inset-bottom, 0px));
-    right: 10px;
-    z-index: 45;
-    border: 1px solid var(--neon-green);
-    background: rgba(0, 0, 0, 0.82);
-    color: var(--neon-green);
-    font-family: inherit;
-    font-size: 12px;
-    letter-spacing: 0.4px;
-    padding: 6px 10px;
-    cursor: pointer;
-  }
-
-  .sidebar-toggle-btn:active {
-    background: var(--neon-green);
-    color: #000;
-  }
-
-  .sidebar-scrim {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 30;
-    background: rgba(0, 0, 0, 0.45);
-  }
-}
 </style>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
@@ -405,19 +344,6 @@ const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
 const isMaximized = ref(false);
 const hasTauriWindow = isTauriRuntime();
-const isMobileClient = ref(false);
-const isSidebarOpen = ref(false);
-const MOBILE_BREAKPOINT_PX = 900;
-
-function detectMobileClient() {
-  const isSmallViewport = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
-  const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
-  isMobileClient.value = isSmallViewport || (isCoarsePointer && window.innerWidth <= 1024);
-
-  if (!isMobileClient.value) {
-    isSidebarOpen.value = true;
-  }
-}
 
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
@@ -433,8 +359,6 @@ const pageTitle = computed(() => {
 
 onMounted(async () => {
   window.addEventListener('contextmenu', (e) => e.preventDefault());
-  window.addEventListener('resize', detectMobileClient);
-  detectMobileClient();
 
   if (!hasTauriWindow) {
     return;
@@ -442,10 +366,6 @@ onMounted(async () => {
 
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', detectMobileClient);
 });
 
 watch(pageTitle, (newTitle) => {
@@ -516,16 +436,6 @@ function toggleDM() {
   showDM.value = !showDM.value;
 }
 
-function toggleSidebar() {
-  isSidebarOpen.value = !isSidebarOpen.value;
-}
-
-function closeSidebar() {
-  if (isMobileClient.value) {
-    isSidebarOpen.value = false;
-  }
-}
-
 function handleAmbience() {
   tryPlayAmbience();
 }
@@ -543,8 +453,6 @@ async function handleDMRequest(user: string) {
       showDM.value = true;
     }
   }
-
-  closeSidebar();
 }
 
 function handleAcceptDM(user: string) {

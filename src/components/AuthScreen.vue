@@ -326,14 +326,4 @@ const quit = async () => {
   text-shadow: 0 0 8px rgba(57, 255, 20, 0.5);
 }
 
-@media (max-width: 600px) {
-  .login-box {
-    width: 90%;
-    padding: 20px;
-  }
-
-  .glitch-text {
-    font-size: 18px;
-  }
-}
 </style>

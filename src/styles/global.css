@@ -107,8 +107,9 @@ body::after {
   grid-template-columns: 1fr 220px;
   grid-template-areas:
     "chatarea sidebar";
-  overflow: hidden;
+  overflow: auto;
   min-height: 0;
+  min-width: 760px;
   position: relative;
 }
 
@@ -135,14 +136,3 @@ body::after {
   transform: rotate(45deg);
 }
 
-/* Mobile specific adjustments */
-@media (max-width: 600px) {
-  #app {
-    border: none;
-    grid-template-rows: 16px 1fr;
-  }
-
-  .main-view {
-    grid-template-columns: 1fr;
-  }
-}

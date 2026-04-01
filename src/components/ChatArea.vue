@@ -789,17 +789,6 @@ function sendMessage() {
   }
 }
 
-function dismissKeyboardIfTouchInput() {
-  if (!window.matchMedia('(pointer: coarse)').matches) {
-    return;
-  }
-
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-    activeElement.blur();
-  }
-}
-
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 function convertEmojisInInput() {
   const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
@@ -847,7 +836,6 @@ function handleInputKeydown(e: KeyboardEvent) {
   if (emojiSuggestions.value.length === 0) {
     if (e.key === 'Enter') {
       sendMessage();
-      dismissKeyboardIfTouchInput();
     }
     return;
   }
@@ -1337,46 +1325,4 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (max-width: 600px) {
-  #messages {
-    padding: 10px;
-    font-size: 14px;
-  }
-
-  #chat-msg {
-    font-size: 16px;
-    padding: 0 10px;
-    margin-top: 0;
-  }
-
-  .send-btn {
-    padding: 0 15px;
-    font-size: 12px;
-    align-items: center;
-    padding-top: 0;
-  }
-
-  .input-bar {
-    height: 56px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .video-custom-controls {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .video-timecode {
-    text-align: left;
-    min-width: 0;
-  }
-
-  .video-volume-wrap {
-    justify-content: space-between;
-  }
-
-  .video-volume {
-    width: 120px;
-  }
-}
 </style>

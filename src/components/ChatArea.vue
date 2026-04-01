@@ -789,6 +789,17 @@ function sendMessage() {
   }
 }
 
+function dismissKeyboardIfTouchInput() {
+  if (!window.matchMedia('(pointer: coarse)').matches) {
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+    activeElement.blur();
+  }
+}
+
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 function convertEmojisInInput() {
   const converted = nodeEmoji.replace(chatInput.value, (emoji) => emoji.emoji);
@@ -834,7 +845,10 @@ function selectEmojiSuggestion(item: { name: string; emoji: string }) {
 
 function handleInputKeydown(e: KeyboardEvent) {
   if (emojiSuggestions.value.length === 0) {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter') {
+      sendMessage();
+      dismissKeyboardIfTouchInput();
+    }
     return;
   }
   if (e.key === 'ArrowDown') {
@@ -1330,17 +1344,21 @@ onBeforeUnmount(() => {
   }
 
   #chat-msg {
-    font-size: 14px;
+    font-size: 16px;
     padding: 0 10px;
+    margin-top: 0;
   }
 
   .send-btn {
     padding: 0 15px;
     font-size: 12px;
+    align-items: center;
+    padding-top: 0;
   }
 
   .input-bar {
-    height: 50px;
+    height: 56px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .video-custom-controls {

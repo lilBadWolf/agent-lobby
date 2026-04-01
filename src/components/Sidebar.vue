@@ -1,6 +1,17 @@
 <template>
-  <aside id="sidebar">
-    <div style="border-bottom: 1px solid var(--neon-green); padding-bottom: 5px">Agents</div>
+  <aside id="sidebar" :class="{ 'mobile-collapsed': isMobile && !isOpen, 'mobile-open': isMobile && isOpen }">
+    <div class="sidebar-header">
+      <span>Agents</span>
+      <button
+        v-if="isMobile"
+        class="sidebar-close-btn"
+        type="button"
+        aria-label="Hide agent list"
+        @click="emit('closeMobile')"
+      >
+        HIDE
+      </button>
+    </div>
     <div id="user-list">
       <div v-for="user in userList" :key="user.username" class="user-node" :style="{ color: getUserColor(user.username) }">
         <span :class="{ 'typing-user': user.isTyping }">{{ user.username }}</span>
@@ -19,13 +30,18 @@ import { useTheme } from '../composables/useTheme';
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
   currentUsername?: string;
+  isMobile?: boolean;
+  isOpen?: boolean;
 }>(), {
-  users: () => ({}) // Default to an empty object
+  users: () => ({}), // Default to an empty object
+  isMobile: false,
+  isOpen: true,
 });
 
 const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
+  closeMobile: [];
 }>();
 
 const { getUserColor } = useTheme();
@@ -44,6 +60,31 @@ const userList = computed(() =>
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.sidebar-header {
+  border-bottom: 1px solid var(--neon-green);
+  padding-bottom: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-close-btn {
+  border: 1px solid var(--neon-green);
+  background: transparent;
+  color: var(--neon-green);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+.sidebar-close-btn:active {
+  background: var(--neon-green);
+  color: #000;
 }
 
 #user-list {
@@ -125,11 +166,29 @@ const userList = computed(() =>
   color: #000;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 900px) {
   #sidebar {
-    width: 100px;
-    padding: 10px;
-    font-size: 10px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(78vw, 320px);
+    padding: 12px;
+    font-size: 11px;
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+    border-left: 1px solid var(--dim-green);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+
+  #sidebar.mobile-collapsed {
+    transform: translateX(105%);
+    pointer-events: none;
+  }
+
+  #sidebar.mobile-open {
+    transform: translateX(0);
   }
 
   #user-list {

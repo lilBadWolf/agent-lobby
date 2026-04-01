@@ -1,0 +1,20 @@
+{
+  "name": "Agent Lobby",
+  "short_name": "Lobby",
+  "description": "Real-time lobby chat with DMs, calls, file transfer, and theme switching.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#05081a",
+  "theme_color": "#05081a",
+  "icons": [
+    {
+      "src": "./og-preview.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

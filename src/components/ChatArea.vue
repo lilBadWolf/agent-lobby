@@ -27,8 +27,16 @@
             </div>
           </div>
           <div v-if="getMessageYouTubeEmbeds(index).length > 0" class="message-videos">
-            <div v-for="embed in getMessageYouTubeEmbeds(index)" :key="embed.url" class="video-container">
-              <details v-if="embed.videoId" class="video-expandable">
+            <div
+              v-for="(embed, embedIndex) in getMessageYouTubeEmbeds(index)"
+              :key="`${embed.url}-${embedIndex}`"
+              class="video-container"
+            >
+              <details
+                v-if="embed.videoId"
+                class="video-expandable"
+                @toggle="handleYouTubeEmbedToggle(getEmbedKey(index, embed.url, embedIndex), $event)"
+              >
                 <summary class="video-header">
                   <span class="video-header-title">{{ getYouTubeEmbedHeader(embed.url) }}</span>
                   <span class="video-header-control" aria-hidden="true">
@@ -37,13 +45,73 @@
                     <span class="video-control-indicator"></span>
                   </span>
                 </summary>
-                <iframe
-                  :src="`https://www.youtube.com/embed/${embed.videoId}`"
-                  frameborder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowfullscreen
-                  class="embedded-video"
-                ></iframe>
+                <div
+                  class="video-player-shell"
+                  :ref="(el) => registerYouTubeShell(getEmbedKey(index, embed.url, embedIndex), el)"
+                  @mousemove="handleFullscreenPointerActivity(getEmbedKey(index, embed.url, embedIndex))"
+                >
+                  <button
+                    v-if="isYouTubeFullscreen(getEmbedKey(index, embed.url, embedIndex))"
+                    class="video-fullscreen-exit"
+                    :class="{ hidden: !isFullscreenOverlayVisible(getEmbedKey(index, embed.url, embedIndex)) }"
+                    type="button"
+                    @click="exitYouTubeFullscreen(getEmbedKey(index, embed.url, embedIndex))"
+                    aria-label="Exit fullscreen"
+                    title="Exit fullscreen"
+                  >
+                    EXIT FULLSCREEN
+                  </button>
+                  <div class="youtube-player-host">
+                    <div
+                      class="youtube-player-mount"
+                      :ref="(el) => registerYouTubeContainer(getEmbedKey(index, embed.url, embedIndex), el)"
+                    ></div>
+                  </div>
+                  <div class="video-custom-controls">
+                    <button
+                      class="video-control-btn"
+                      type="button"
+                      :disabled="!getPlayerState(getEmbedKey(index, embed.url, embedIndex)).ready"
+                      @click="toggleYouTubePlayback(getEmbedKey(index, embed.url, embedIndex))"
+                    >
+                      {{ getPlayerState(getEmbedKey(index, embed.url, embedIndex)).isPlaying ? 'PAUSE' : 'PLAY' }}
+                    </button>
+                    <span class="video-timecode">
+                      {{ formatYouTubeTime(getPlayerState(getEmbedKey(index, embed.url, embedIndex)).currentTime) }}
+                      /
+                      {{ formatYouTubeTime(getPlayerState(getEmbedKey(index, embed.url, embedIndex)).duration) }}
+                    </span>
+                    <input
+                      class="video-range video-progress"
+                      type="range"
+                      min="0"
+                      :max="Math.max(1, getPlayerState(getEmbedKey(index, embed.url, embedIndex)).duration)"
+                      :value="getPlayerState(getEmbedKey(index, embed.url, embedIndex)).currentTime"
+                      :disabled="!getPlayerState(getEmbedKey(index, embed.url, embedIndex)).ready"
+                      @input="seekYouTubePlayer(getEmbedKey(index, embed.url, embedIndex), $event)"
+                    />
+                    <label class="video-volume-wrap">
+                      <span>VOL</span>
+                      <input
+                        class="video-range video-volume"
+                        type="range"
+                        min="0"
+                        max="100"
+                        :value="getPlayerState(getEmbedKey(index, embed.url, embedIndex)).volume"
+                        :disabled="!getPlayerState(getEmbedKey(index, embed.url, embedIndex)).ready"
+                        @input="setYouTubeVolume(getEmbedKey(index, embed.url, embedIndex), $event)"
+                      />
+                    </label>
+                    <button
+                      class="video-control-btn"
+                      type="button"
+                      :disabled="!getPlayerState(getEmbedKey(index, embed.url, embedIndex)).ready"
+                      @click="toggleYouTubeFullscreen(getEmbedKey(index, embed.url, embedIndex))"
+                    >
+                      {{ isYouTubeFullscreen(getEmbedKey(index, embed.url, embedIndex)) ? 'EXIT' : 'FULL' }}
+                    </button>
+                  </div>
+                </div>
               </details>
               <span v-else class="video-fallback">{{ embed.url }}</span>
             </div>
@@ -81,11 +149,68 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
 import type { ChatMessage } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import * as nodeEmoji from 'node-emoji';
+
+type YouTubePlayerState = {
+  ready: boolean;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+};
+
+type YouTubePlayerLike = {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  setVolume: (volume: number) => void;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  getVolume: () => number;
+  getPlayerState: () => number;
+  destroy: () => void;
+};
+
+type YouTubeApiLike = {
+  Player: new (
+    element: HTMLElement,
+    options: {
+      videoId: string;
+      playerVars?: Record<string, string | number>;
+      events?: {
+        onReady?: () => void;
+        onStateChange?: (event: { data: number }) => void;
+      };
+    }
+  ) => YouTubePlayerLike;
+  PlayerState: {
+    PLAYING: number;
+  };
+};
+
+type FullscreenElementWithLegacy = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+  msRequestFullscreen?: () => Promise<void> | void;
+};
+
+type DocumentWithLegacyFullscreen = Document & {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  msExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+  msFullscreenElement?: Element | null;
+};
+
+declare global {
+  interface Window {
+    YT?: YouTubeApiLike;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
 
 const props = defineProps<{
   messages: ChatMessage[];
@@ -127,10 +252,378 @@ const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
 const youtubeTitleCache = ref<Record<string, string>>({});
 const youtubeTitleRequests = new Set<string>();
+const youtubePlayers = new Map<string, YouTubePlayerLike>();
+const youtubeContainers = new Map<string, HTMLElement>();
+const youtubeShells = new Map<string, HTMLElement>();
+const youtubePlayerStates = ref<Record<string, YouTubePlayerState>>({});
+let youtubeApiPromise: Promise<YouTubeApiLike> | null = null;
+let youtubeSyncInterval: ReturnType<typeof setInterval> | null = null;
+const fullscreenChangeTick = ref(0);
+const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
+const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
 const emojiSelectedIndex = ref(0);
 const chatInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
+const FULLSCREEN_OVERLAY_HIDE_DELAY = 2000;
+
+function createDefaultPlayerState(): YouTubePlayerState {
+  return {
+    ready: false,
+    isPlaying: false,
+    currentTime: 0,
+    duration: 0,
+    volume: 70,
+  };
+}
+
+function getEmbedKey(messageIndex: number, embedUrl: string, embedIndex: number): string {
+  return `${messageIndex}:${embedIndex}:${embedUrl}`;
+}
+
+function getPlayerState(key: string): YouTubePlayerState {
+  return youtubePlayerStates.value[key] ?? createDefaultPlayerState();
+}
+
+function patchPlayerState(key: string, patch: Partial<YouTubePlayerState>) {
+  youtubePlayerStates.value[key] = {
+    ...getPlayerState(key),
+    ...patch,
+  };
+}
+
+function registerYouTubeContainer(key: string, element: Element | ComponentPublicInstance | null) {
+  const candidate = element && '$el' in element ? element.$el : element;
+  if (candidate instanceof HTMLElement) {
+    youtubeContainers.set(key, candidate);
+  } else {
+    youtubeContainers.delete(key);
+  }
+}
+
+function registerYouTubeShell(key: string, element: Element | ComponentPublicInstance | null) {
+  const candidate = element && '$el' in element ? element.$el : element;
+  if (candidate instanceof HTMLElement) {
+    youtubeShells.set(key, candidate);
+  } else {
+    youtubeShells.delete(key);
+  }
+}
+
+function getAllYouTubeEmbeds(): Array<{ key: string; videoId: string }> {
+  const embeds: Array<{ key: string; videoId: string }> = [];
+  props.messages.forEach((message, messageIndex) => {
+    const msgEmbeds = extractYouTubeUrls(message.message)
+      .map((url, embedIndex) => ({
+        key: getEmbedKey(messageIndex, url, embedIndex),
+        videoId: getYouTubeVideoId(url),
+      }))
+      .filter((item): item is { key: string; videoId: string } => Boolean(item.videoId));
+    embeds.push(...msgEmbeds);
+  });
+  return embeds;
+}
+
+async function ensureYouTubeApi(): Promise<YouTubeApiLike> {
+  if (window.YT?.Player) {
+    return window.YT;
+  }
+  if (youtubeApiPromise) {
+    return youtubeApiPromise;
+  }
+
+  youtubeApiPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById('youtube-iframe-api') as HTMLScriptElement | null;
+    const script = existingScript ?? document.createElement('script');
+
+    if (!existingScript) {
+      script.id = 'youtube-iframe-api';
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.async = true;
+      script.onerror = () => reject(new Error('Failed to load YouTube IFrame API'));
+      document.head.appendChild(script);
+    }
+
+    const previousReady = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previousReady?.();
+      if (window.YT?.Player) {
+        resolve(window.YT);
+      }
+    };
+  });
+
+  return youtubeApiPromise;
+}
+
+function syncYouTubePlayerStates() {
+  youtubePlayers.forEach((player, key) => {
+    const current = Number(player.getCurrentTime()) || 0;
+    const duration = Number(player.getDuration()) || 0;
+    const volume = Number(player.getVolume()) || 0;
+    patchPlayerState(key, {
+      currentTime: current,
+      duration,
+      volume,
+      isPlaying: player.getPlayerState() === window.YT?.PlayerState.PLAYING,
+    });
+  });
+}
+
+function startYouTubeSync() {
+  if (youtubeSyncInterval) {
+    return;
+  }
+  youtubeSyncInterval = setInterval(syncYouTubePlayerStates, 350);
+}
+
+function stopYouTubeSync() {
+  if (youtubeSyncInterval) {
+    clearInterval(youtubeSyncInterval);
+    youtubeSyncInterval = null;
+  }
+}
+
+async function initializeYouTubePlayers() {
+  await nextTick();
+  if (youtubeContainers.size === 0) {
+    return;
+  }
+
+  const api = await ensureYouTubeApi();
+  const activeEmbeds = getAllYouTubeEmbeds();
+  const activeKeys = new Set(activeEmbeds.map((embed) => embed.key));
+
+  youtubePlayers.forEach((player, key) => {
+    if (!activeKeys.has(key)) {
+      player.destroy();
+      youtubePlayers.delete(key);
+      const { [key]: _removed, ...rest } = youtubePlayerStates.value;
+      youtubePlayerStates.value = rest;
+    }
+  });
+
+  activeEmbeds.forEach(({ key, videoId }) => {
+    if (youtubePlayers.has(key)) {
+      return;
+    }
+
+    const container = youtubeContainers.get(key);
+    if (!container) {
+      return;
+    }
+
+    const player = new api.Player(container, {
+      videoId,
+      playerVars: {
+        controls: 0,
+        rel: 0,
+        modestbranding: 1,
+        playsinline: 1,
+      },
+      events: {
+        onReady: () => {
+          patchPlayerState(key, {
+            ready: true,
+            duration: Number(player.getDuration()) || 0,
+            volume: Number(player.getVolume()) || 70,
+          });
+        },
+        onStateChange: (event) => {
+          patchPlayerState(key, {
+            isPlaying: event.data === api.PlayerState.PLAYING,
+          });
+        },
+      },
+    });
+
+    youtubePlayers.set(key, player);
+    patchPlayerState(key, createDefaultPlayerState());
+  });
+
+  if (youtubePlayers.size > 0) {
+    startYouTubeSync();
+  } else {
+    stopYouTubeSync();
+  }
+}
+
+function destroyAllYouTubePlayers() {
+  youtubePlayers.forEach((player) => player.destroy());
+  youtubePlayers.clear();
+  youtubeContainers.clear();
+  youtubeShells.clear();
+  youtubePlayerStates.value = {};
+  fullscreenOverlayVisible.value = {};
+  fullscreenOverlayHideTimers.forEach((timerId) => clearTimeout(timerId));
+  fullscreenOverlayHideTimers.clear();
+  stopYouTubeSync();
+}
+
+function toggleYouTubePlayback(key: string) {
+  const player = youtubePlayers.get(key);
+  if (!player) return;
+
+  if (getPlayerState(key).isPlaying) {
+    player.pauseVideo();
+  } else {
+    player.playVideo();
+  }
+}
+
+function handleYouTubeEmbedToggle(key: string, event: Event) {
+  const details = event.target as HTMLDetailsElement;
+  if (details.open) {
+    return;
+  }
+
+  const player = youtubePlayers.get(key);
+  if (!player) return;
+
+  player.pauseVideo();
+  patchPlayerState(key, { isPlaying: false });
+}
+
+function seekYouTubePlayer(key: string, event: Event) {
+  const player = youtubePlayers.get(key);
+  if (!player) return;
+
+  const target = event.target as HTMLInputElement;
+  const value = Number(target.value) || 0;
+  player.seekTo(value, true);
+  patchPlayerState(key, { currentTime: value });
+}
+
+function setYouTubeVolume(key: string, event: Event) {
+  const player = youtubePlayers.get(key);
+  if (!player) return;
+
+  const target = event.target as HTMLInputElement;
+  const value = Math.max(0, Math.min(100, Number(target.value) || 0));
+  player.setVolume(value);
+  patchPlayerState(key, { volume: value });
+}
+
+function getCurrentFullscreenElement(): Element | null {
+  const doc = document as DocumentWithLegacyFullscreen;
+  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? doc.msFullscreenElement ?? null;
+}
+
+function clearFullscreenOverlayHideTimer(key: string) {
+  const timerId = fullscreenOverlayHideTimers.get(key);
+  if (timerId) {
+    clearTimeout(timerId);
+    fullscreenOverlayHideTimers.delete(key);
+  }
+}
+
+function setFullscreenOverlayVisible(key: string, visible: boolean) {
+  fullscreenOverlayVisible.value = {
+    ...fullscreenOverlayVisible.value,
+    [key]: visible,
+  };
+}
+
+function scheduleFullscreenOverlayHide(key: string) {
+  clearFullscreenOverlayHideTimer(key);
+  const timerId = setTimeout(() => {
+    if (isYouTubeFullscreen(key)) {
+      setFullscreenOverlayVisible(key, false);
+    }
+    fullscreenOverlayHideTimers.delete(key);
+  }, FULLSCREEN_OVERLAY_HIDE_DELAY);
+  fullscreenOverlayHideTimers.set(key, timerId);
+}
+
+function showFullscreenOverlayTemporarily(key: string) {
+  setFullscreenOverlayVisible(key, true);
+  scheduleFullscreenOverlayHide(key);
+}
+
+function isFullscreenOverlayVisible(key: string): boolean {
+  return fullscreenOverlayVisible.value[key] ?? true;
+}
+
+async function exitDocumentFullscreen(): Promise<void> {
+  const doc = document as DocumentWithLegacyFullscreen;
+  if (doc.exitFullscreen) {
+    await doc.exitFullscreen();
+  } else if (doc.webkitExitFullscreen) {
+    await doc.webkitExitFullscreen();
+  } else if (doc.msExitFullscreen) {
+    await doc.msExitFullscreen();
+  }
+}
+
+async function toggleYouTubeFullscreen(key: string) {
+  const shell = youtubeShells.get(key);
+  if (!shell) return;
+
+  try {
+    const currentFullscreenEl = getCurrentFullscreenElement();
+    if (currentFullscreenEl === shell) {
+      await exitDocumentFullscreen();
+      return;
+    }
+
+    const fsShell = shell as FullscreenElementWithLegacy;
+    if (fsShell.requestFullscreen) {
+      await fsShell.requestFullscreen();
+    } else if (fsShell.webkitRequestFullscreen) {
+      await fsShell.webkitRequestFullscreen();
+    } else if (fsShell.msRequestFullscreen) {
+      await fsShell.msRequestFullscreen();
+    }
+  } catch {
+    // Ignore fullscreen API failures on unsupported platforms.
+  }
+}
+
+async function exitYouTubeFullscreen(key: string) {
+  const shell = youtubeShells.get(key);
+  if (!shell) return;
+
+  try {
+    if (getCurrentFullscreenElement() === shell) {
+      await exitDocumentFullscreen();
+    }
+  } catch {
+    // Ignore fullscreen API failures on unsupported platforms.
+  }
+}
+
+function handleFullscreenPointerActivity(key: string) {
+  if (!isYouTubeFullscreen(key)) {
+    return;
+  }
+  showFullscreenOverlayTemporarily(key);
+}
+
+function getYouTubeEmbedKeyByShell(shell: Element | null): string | null {
+  if (!shell) return null;
+  for (const [key, entryShell] of youtubeShells.entries()) {
+    if (entryShell === shell) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function isYouTubeFullscreen(key: string): boolean {
+  // Touch this ref so computed checks react to fullscreenchange events.
+  fullscreenChangeTick.value;
+  const shell = youtubeShells.get(key);
+  const currentFullscreenEl = getCurrentFullscreenElement();
+  if (!shell || !currentFullscreenEl) return false;
+  return currentFullscreenEl === shell;
+}
+
+function formatYouTubeTime(seconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remSeconds = totalSeconds % 60;
+  return `${minutes}:${remSeconds.toString().padStart(2, '0')}`;
+}
 
 function getYouTubeEmbedHeader(url: string): string {
   return youtubeTitleCache.value[url] || url;
@@ -177,6 +670,8 @@ watch(
         }
       });
     });
+
+    void initializeYouTubePlayers();
   },
   { immediate: true }
 );
@@ -355,6 +850,31 @@ function handleInputKeydown(e: KeyboardEvent) {
     emojiSuggestions.value = [];
   }
 }
+
+function handleFullscreenChange() {
+  fullscreenChangeTick.value += 1;
+  const fullscreenElement = getCurrentFullscreenElement();
+
+  if (!fullscreenElement) {
+    fullscreenOverlayHideTimers.forEach((timerId) => clearTimeout(timerId));
+    fullscreenOverlayHideTimers.clear();
+    return;
+  }
+
+  const fullscreenKey = getYouTubeEmbedKeyByShell(fullscreenElement);
+  if (fullscreenKey) {
+    showFullscreenOverlayTemporarily(fullscreenKey);
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  destroyAllYouTubePlayers();
+});
 </script>
 
 <style scoped>
@@ -617,12 +1137,136 @@ function handleInputKeydown(e: KeyboardEvent) {
 
 .embedded-video {
   width: 100%;
-  min-width: 250px;
-  max-width: 400px;
-  height: 225px;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
   border: 1px solid var(--dim-green);
   border-radius: 4px;
   background: #000;
+}
+
+.video-player-shell {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--dim-green);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.youtube-player-host {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: 0;
+  padding-top: 56.25%;
+  border-bottom: 1px solid var(--dim-green);
+  background: #000;
+  overflow: hidden;
+}
+
+.youtube-player-mount {
+  position: absolute;
+  inset: 0;
+}
+
+.youtube-player-host :deep(iframe) {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  display: block;
+  border: 0;
+}
+
+.video-fullscreen-exit {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  border: 1px solid var(--neon-green);
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--neon-green);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.2s;
+}
+
+.video-fullscreen-exit:hover {
+  background: var(--neon-green);
+  color: #000;
+}
+
+.video-fullscreen-exit.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-custom-controls {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--text-white);
+  font-size: 11px;
+}
+
+.video-control-btn {
+  border: 1px solid var(--neon-green);
+  background: transparent;
+  color: var(--neon-green);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.video-control-btn:hover:not(:disabled) {
+  background: var(--neon-green);
+  color: #000;
+}
+
+.video-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.video-timecode {
+  color: var(--system-dim);
+  min-width: 76px;
+  text-align: right;
+  font-family: monospace;
+}
+
+.video-range {
+  accent-color: var(--neon-green);
+}
+
+.video-progress {
+  width: 100%;
+}
+
+.video-volume-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--system-dim);
+  font-weight: 700;
+}
+
+.video-volume {
+  width: 82px;
 }
 
 .video-fallback {
@@ -697,6 +1341,24 @@ function handleInputKeydown(e: KeyboardEvent) {
 
   .input-bar {
     height: 50px;
+  }
+
+  .video-custom-controls {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .video-timecode {
+    text-align: left;
+    min-width: 0;
+  }
+
+  .video-volume-wrap {
+    justify-content: space-between;
+  }
+
+  .video-volume {
+    width: 120px;
   }
 }
 </style>

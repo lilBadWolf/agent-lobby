@@ -14,7 +14,17 @@
     </button>
     <button class="titlebar-close-btn" @click="quit">✕</button>
   </div>
-  <div id="app" :class="{ 'shutdown-anim': showShutdownAnim }">
+  <div id="app-shell" :class="{ 'shutdown-anim': showShutdownAnim }">
+    <button
+      v-if="!showAuth"
+      class="sidebar-pane-toggle-btn"
+      type="button"
+      :title="isSidebarVisible ? 'Compact agent pane' : 'Expand agent pane'"
+      :aria-label="isSidebarVisible ? 'Compact agent pane' : 'Expand agent pane'"
+      @click="toggleSidebarPane"
+    >
+      &#x1F464;&#xFE0E;
+    </button>
     <button class="gear-btn" @click="toggleSettings">⚙</button>
 
     <SettingsModal
@@ -120,6 +130,7 @@
     <div
       v-if="!showAuth"
       class="main-view"
+      :class="{ 'sidebar-compact': !isSidebarVisible }"
     >
       <ChatArea
         :messages="messages"
@@ -142,6 +153,7 @@
         :is-away="isAway"
         :dm-bubble-states="dmBubbleStates"
         :show-dm-launcher="hasDMActivity"
+        :is-compact="!isSidebarVisible"
         @disconnect="handleDisconnect"
         @dm-request="handleDMRequest"
         @show-dm-window="handleShowDMWindow"
@@ -442,6 +454,7 @@ const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
+const isSidebarVisible = ref(true);
 const isMaximized = ref(false);
 const hasTauriWindow = isTauriRuntime();
 
@@ -605,6 +618,10 @@ function handleMentionRequest(user: string) {
 
 function toggleSettings() {
   showSettings.value = !showSettings.value;
+}
+
+function toggleSidebarPane() {
+  isSidebarVisible.value = !isSidebarVisible.value;
 }
 
 function toggleNetworkConfig() {

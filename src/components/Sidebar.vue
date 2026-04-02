@@ -1,6 +1,6 @@
 <template>
-  <aside id="sidebar">
-    <div class="sidebar-header">
+  <aside id="sidebar" :class="{ compact: props.isCompact }">
+    <div v-if="!props.isCompact" class="sidebar-header">
       <div class="agent-header-title">
         <span>[{{ onlineCount }}] AGENTS</span>
         <button
@@ -16,44 +16,65 @@
         </button>
       </div>
     </div>
+    <div v-else class="compact-header-divider">
+      <button
+        class="away-toggle-btn compact-away-toggle-btn"
+        :class="{ active: props.isAway }"
+        type="button"
+        :title="props.isAway ? 'Set status to active' : 'Set status to away'"
+        :aria-label="props.isAway ? 'Set status to active' : 'Set status to away'"
+        @click="emit('toggleAway')"
+      >
+        <span v-if="!props.isAway" class="status-dot" aria-hidden="true"></span>
+        <span v-else aria-hidden="true">💤</span>
+      </button>
+    </div>
     <div id="user-list">
       <div
         v-for="user in userList"
         :key="user.username"
         class="user-node"
-        :class="{ 'away-user': user.isAway }"
+        :class="{ 'away-user': user.isAway, 'compact-user-node': props.isCompact }"
         :style="{ color: getUserColor(user.username) }"
       >
         <button
           type="button"
           class="user-handle-btn"
-          :class="{ 'typing-user': user.isTyping }"
+          :class="{ 'compact-user-handle-btn': props.isCompact, 'typing-user': user.isTyping }"
+          :title="user.username"
+          :aria-label="`Mention ${user.username}`"
           @click="emit('mentionRequest', user.username)"
         >
-          {{ user.username }}
+          {{ props.isCompact ? getCompactUserLabel(user.username) : user.username }}
         </button>
         <button
           v-if="user.dmAvailable && !user.isAway"
           class="dm-btn"
-          :class="getDMBubbleClass(user.username)"
+          :class="[{ 'compact-dm-btn': props.isCompact }, getDMBubbleClass(user.username)]"
           :title="getDMBubbleTitle(user.username)"
           :aria-label="getDMBubbleTitle(user.username)"
           @click="emit('dmRequest', user.username)"
         >
           {{ getDMBubbleIcon(user.username) }}
         </button>
-        <span v-else class="dm-btn-placeholder" aria-hidden="true"></span>
+        <span
+          v-else-if="!props.isCompact"
+          class="dm-btn-placeholder"
+          :class="{ 'compact-dm-btn-placeholder': props.isCompact }"
+          aria-hidden="true"
+        ></span>
       </div>
     </div>
     <button
       v-if="props.showDmLauncher"
       id="show-dm-btn"
       type="button"
+      :class="{ 'compact-show-dm-btn': props.isCompact }"
       @click="emit('showDmWindow')"
     >
-      SHOW DM
+      {{ props.isCompact ? 'DM' : 'SHOW DM' }}
     </button>
-    <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>
+    <button id="disconnect-btn" :class="{ 'compact-disconnect-btn': props.isCompact }" @click="emit('disconnect')">{{ props.isCompact ? 'X' : 'TERMINATE' }}</button>
   </aside>
 </template>
 
@@ -68,11 +89,13 @@ const props = withDefaults(defineProps<{
   isAway?: boolean;
   dmBubbleStates?: Record<string, 'active' | 'pending' | 'denied'>;
   showDmLauncher?: boolean;
+  isCompact?: boolean;
 }>(), {
   users: () => ({}), // Default to an empty object
   isAway: false,
   dmBubbleStates: () => ({}),
   showDmLauncher: false,
+  isCompact: false,
 });
 
 const emit = defineEmits<{
@@ -121,6 +144,10 @@ function getDMBubbleTitle(user: string): string {
   if (state === 'denied') return `${user} denied your DM request`;
   return `Send direct message to ${user}`;
 }
+
+function getCompactUserLabel(user: string): string {
+  return user.toUpperCase();
+}
 </script>
 
 <style scoped>
@@ -135,6 +162,11 @@ function getDMBubbleTitle(user: string): string {
   min-height: 0;
 }
 
+#sidebar.compact {
+  width: 88px;
+  padding: 8px 6px 10px;
+}
+
 .sidebar-header {
   border-bottom: 1px solid var(--neon-green);
   padding-bottom: 5px;
@@ -142,6 +174,24 @@ function getDMBubbleTitle(user: string): string {
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
+}
+
+.compact-header-divider {
+  height: 27px;
+  border-bottom: 1px solid var(--neon-green);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 2px;
+  padding-bottom: 5px;
+}
+
+.compact-away-toggle-btn {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  margin-left: -4px;
 }
 
 .agent-header-title {
@@ -181,18 +231,18 @@ function getDMBubbleTitle(user: string): string {
   border-radius: 50%;
   background: #36ff6f;
   box-shadow: 0 0 8px #36ff6f;
-  animation: status-dot-flash 1s ease-in-out infinite;
+  animation: status-dot-flash 2.6s ease-in-out infinite;
 }
 
 @keyframes status-dot-flash {
   0%,
   100% {
-    opacity: 1;
-    box-shadow: 0 0 8px #36ff6f;
+    opacity: 0.72;
+    box-shadow: 0 0 4px rgba(54, 255, 111, 0.45);
   }
   50% {
-    opacity: 0.35;
-    box-shadow: 0 0 2px #36ff6f;
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(54, 255, 111, 0.85);
   }
 }
 
@@ -202,6 +252,10 @@ function getDMBubbleTitle(user: string): string {
   flex-grow: 1;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+#sidebar.compact #user-list {
+  margin-top: 4px;
 }
 
 .user-node {
@@ -233,6 +287,19 @@ function getDMBubbleTitle(user: string): string {
   margin-right: 4px;
 }
 
+#sidebar.compact .user-node {
+  margin-bottom: 3px;
+  padding: 1px 2px;
+  gap: 4px;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+#sidebar.compact .user-node::before {
+  content: none;
+  display: none;
+}
+
 .user-handle-btn {
   background: none;
   border: none;
@@ -242,6 +309,18 @@ function getDMBubbleTitle(user: string): string {
   cursor: pointer;
   padding: 0;
   text-align: left;
+}
+
+.compact-user-handle-btn {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
+  font-size: 10px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-handle-btn:hover {
@@ -259,6 +338,23 @@ function getDMBubbleTitle(user: string): string {
   padding: 2px 4px;
   border-radius: 999px;
   min-width: 24px;
+}
+
+.compact-dm-btn {
+  min-width: 14px;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  padding: 0;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.8;
+  border-width: 1px;
+}
+
+.compact-dm-btn-placeholder {
+  flex: 0 0 14px;
+  width: 14px;
 }
 
 .dm-btn:hover {
@@ -320,6 +416,11 @@ function getDMBubbleTitle(user: string): string {
   flex-shrink: 0;
 }
 
+.compact-dm-btn-placeholder {
+  width: 14px;
+  height: 14px;
+}
+
 
 .typing-user {
   animation: typing-flash 1s step-end infinite;
@@ -350,6 +451,13 @@ function getDMBubbleTitle(user: string): string {
   font-family: inherit;
 }
 
+#disconnect-btn.compact-disconnect-btn {
+  margin-top: 6px;
+  padding: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+
 #disconnect-btn:hover {
   background: var(--alert-red);
   color: #000;
@@ -367,6 +475,12 @@ function getDMBubbleTitle(user: string): string {
   transition: 0.2s;
   text-transform: uppercase;
   font-family: inherit;
+}
+
+#show-dm-btn.compact-show-dm-btn {
+  margin-top: 6px;
+  padding: 4px;
+  font-size: 10px;
 }
 
 #show-dm-btn:hover {

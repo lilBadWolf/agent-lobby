@@ -2157,6 +2157,7 @@ onBeforeUnmount(() => {
   border-right: 1px solid var(--neon-green);
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .lobby-tabs-wrap {
@@ -2359,6 +2360,7 @@ onBeforeUnmount(() => {
 
 #messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px;
   font-size: 16px;
@@ -2367,6 +2369,8 @@ onBeforeUnmount(() => {
 
 .input-bar {
   display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
   border-top: 1px solid var(--neon-green);
   height: 60px;
   background: #000;
@@ -2376,9 +2380,9 @@ onBeforeUnmount(() => {
   background: transparent;
   border: none;
   color: var(--neon-green);
-  padding: 0px 20px;
-  margin-top: -16px;
+  padding: 0 20px;
   flex: 1;
+  height: 100%;
   font-family: inherit;
   font-size: 18px;
   outline: none;
@@ -2399,8 +2403,7 @@ onBeforeUnmount(() => {
   font-weight: bold;
   transition: all 0.2s;
   display: flex;
-  align-items: flex-start;
-  padding-top: 16px;
+  align-items: center;
 }
 
 .send-btn:hover:not(:disabled) {

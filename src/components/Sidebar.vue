@@ -201,6 +201,7 @@ function getDMBubbleTitle(user: string): string {
   font-size: 13px;
   flex-grow: 1;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .user-node {
@@ -277,6 +278,19 @@ function getDMBubbleTitle(user: string): string {
   border-color: rgba(255, 216, 74, 0.55);
   box-shadow: 0 0 10px rgba(255, 216, 74, 0.4);
   opacity: 1;
+  animation: dm-pending-pulse 1s ease-in-out infinite;
+}
+
+@keyframes dm-pending-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(255, 216, 74, 0.35);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(255, 216, 74, 0.65);
+    opacity: 1;
+  }
 }
 
 .dm-btn-denied {

@@ -347,6 +347,7 @@ let dmPopupWindow: Window | null = null;
 let dmPopupWatchIntervalId: number | null = null;
 let dmWebChannel: BroadcastChannel | null = null;
 let cleanupDMActionListener: (() => void) | null = null;
+let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
 const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
 type DMType = ReturnType<typeof useDirectMessage>;
@@ -477,6 +478,10 @@ onBeforeUnmount(() => {
   }
   dmWebChannel?.close();
   dmWebChannel = null;
+  if (webMessageListenerBound) {
+    window.removeEventListener('message', handleWebPopupMessage);
+    webMessageListenerBound = false;
+  }
   cleanupDMActionListener?.();
   cleanupDMActionListener = null;
 });
@@ -914,6 +919,11 @@ function handleRemoveFile(user: string, fileId: string) {
 }
 
 function initializeWebDMBridge() {
+  if (!webMessageListenerBound) {
+    window.addEventListener('message', handleWebPopupMessage);
+    webMessageListenerBound = true;
+  }
+
   if (typeof BroadcastChannel === 'undefined') {
     return;
   }
@@ -927,6 +937,19 @@ function initializeWebDMBridge() {
 
     handleDetachedDMAction(message.payload as DMWindowAction);
   };
+}
+
+function handleWebPopupMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const message = event.data as { type?: string; payload?: unknown };
+  if (message?.type !== 'action') {
+    return;
+  }
+
+  handleDetachedDMAction(message.payload as DMWindowAction);
 }
 
 function startWebPopupHeartbeat() {
@@ -964,9 +987,15 @@ async function emitDMWindowState() {
     return;
   }
 
+  const webPayload = toWebSerializablePayload(payload);
+
+  if (dmPopupWindow && !dmPopupWindow.closed) {
+    dmPopupWindow.postMessage({ type: 'state', payload: webPayload }, window.location.origin);
+  }
+
   dmWebChannel?.postMessage({
     type: 'state',
-    payload,
+    payload: webPayload,
   });
 }
 
@@ -1058,6 +1087,10 @@ function buildDMWindowStatePayload(): DMWindowStatePayload {
     dmChatEffect: config.value.dmChatEffect,
     focusedDMUser: focusedDMUser.value,
   };
+}
+
+function toWebSerializablePayload(payload: DMWindowStatePayload): DMWindowStatePayload {
+  return JSON.parse(JSON.stringify(payload)) as DMWindowStatePayload;
 }
 
 async function focusDetachedDMWindow(): Promise<boolean> {

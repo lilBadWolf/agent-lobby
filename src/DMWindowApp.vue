@@ -70,6 +70,7 @@ const isMaximized = ref(false);
 
 let webChannel: BroadcastChannel | null = null;
 let cleanupTauriListener: (() => void) | null = null;
+let webMessageListenerBound = false;
 const hasTauriWindow = isTauriRuntime();
 
 const pageTitle = computed(() => {
@@ -136,7 +137,23 @@ async function sendAction(action: DMWindowAction) {
     return;
   }
 
+  if (window.opener && window.opener !== window) {
+    window.opener.postMessage({ type: 'action', payload: action }, window.location.origin);
+    return;
+  }
+
   webChannel?.postMessage({ type: 'action', payload: action });
+}
+
+function handleWebMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const message = event.data as { type?: string; payload?: unknown };
+  if (message?.type === 'state') {
+    applyState(message.payload as DMWindowStatePayload);
+  }
 }
 
 async function handleClose() {
@@ -192,7 +209,12 @@ onMounted(async () => {
     return;
   }
 
-  if (typeof BroadcastChannel !== 'undefined') {
+  if (window.opener && window.opener !== window) {
+    if (!webMessageListenerBound) {
+      window.addEventListener('message', handleWebMessage);
+      webMessageListenerBound = true;
+    }
+  } else if (typeof BroadcastChannel !== 'undefined') {
     webChannel = new BroadcastChannel(DM_WEB_CHANNEL);
     webChannel.onmessage = (event: MessageEvent) => {
       const message = event.data as { type?: string; payload?: unknown };
@@ -200,12 +222,17 @@ onMounted(async () => {
         applyState(message.payload as DMWindowStatePayload);
       }
     };
-    await sendAction({ type: 'windowReady' });
   }
+
+  await sendAction({ type: 'windowReady' });
 });
 
 onBeforeUnmount(() => {
   void sendAction({ type: 'windowClosed' });
+  if (webMessageListenerBound) {
+    window.removeEventListener('message', handleWebMessage);
+    webMessageListenerBound = false;
+  }
   cleanupTauriListener?.();
   cleanupTauriListener = null;
   webChannel?.close();

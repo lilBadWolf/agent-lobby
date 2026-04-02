@@ -23,7 +23,7 @@ interface RTCConnection {
 
 export function useDirectMessage(
   username: { value: string },
-  roomId: string,
+  _roomId: string,
   mqttClient: mqtt.MqttClient | null,
   onConnect: (callback: () => void) => void,
   audioConfig: AudioConfig | null = null
@@ -119,11 +119,11 @@ export function useDirectMessage(
 
   // Topics for signaling
   function getSignalTopic(toUser: string) {
-    return `${roomId}_lobby/dm_signal/${username.value}/${toUser}`;
+    return `agent_lobby/dm_signal/${username.value}/${toUser}`;
   }
 
   function getIncomingSignalTopic() {
-    return `${roomId}_lobby/dm_signal/+/${username.value}`;
+    return `agent_lobby/dm_signal/+/${username.value}`;
   }
 
   // Initialize subscriptions when connected
@@ -148,7 +148,7 @@ export function useDirectMessage(
 
     // Check if it's a DM signal message
     const dmSignalMatch = topic.match(
-      new RegExp(`${roomId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_lobby/dm_signal/([^/]+)/${username.value}$`)
+      new RegExp(`agent_lobby/dm_signal/([^/]+)/${username.value}$`)
     );
     if (dmSignalMatch) {
       const fromUser = dmSignalMatch[1];

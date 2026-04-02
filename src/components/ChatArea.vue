@@ -2,7 +2,7 @@
   <section id="chat-area" ref="chatAreaEl">
     <div v-if="pinnedYouTubeEmbed" class="pinned-video-panel">
       <div class="pinned-video-header">
-        <span class="pinned-video-title">{{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
+        <span class="pinned-video-title">PINNED: {{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
         <div class="pinned-video-actions">
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
             &lt;
@@ -96,6 +96,56 @@
       @mousedown.prevent="startPinnedResize"
     >
       <span class="pinned-video-divider-grip" aria-hidden="true"></span>
+    </div>
+    <div v-if="isConnected" class="lobby-tabs-wrap">
+      <div class="lobby-tabs" role="tablist" aria-label="Lobby tabs">
+        <button
+          v-for="lobby in lobbyTabs"
+          :key="lobby.id"
+          class="lobby-tab"
+          :class="{
+            active: lobby.id === activeLobbyId,
+            'has-unread': lobby.unreadCount > 0 && lobby.id !== activeLobbyId,
+          }"
+          role="tab"
+          :aria-selected="lobby.id === activeLobbyId"
+          @click="emit('switchLobby', lobby.id)"
+        >
+          <span class="lobby-label">#{{ lobby.label }}</span>
+          <span v-if="lobby.unreadCount > 0 && lobby.id !== activeLobbyId" class="tab-unread">
+            {{ lobby.unreadCount }}
+          </span>
+          <span
+            v-if="!lobby.isDefault"
+            class="tab-close"
+            role="button"
+            aria-label="Close lobby"
+            title="Close lobby"
+            @click.stop="emit('closeLobby', lobby.id)"
+          >
+            ×
+          </span>
+        </button>
+      </div>
+      <div class="lobby-actions">
+        <button class="lobby-join-toggle" type="button" @click="toggleJoinLobbyInput">
+          + JOIN
+        </button>
+      </div>
+    </div>
+    <div v-if="isConnected && showJoinLobbyInput" class="lobby-join-bar">
+      <input
+        ref="joinLobbyInputEl"
+        v-model="joinLobbyInput"
+        class="lobby-join-input"
+        type="text"
+        maxlength="32"
+        placeholder="JOIN LOBBY ID"
+        @keydown.enter.prevent="submitJoinLobby"
+        @keydown.esc.prevent="cancelJoinLobby"
+      />
+      <button class="lobby-join-confirm" type="button" @click="submitJoinLobby">CONNECT</button>
+      <button class="lobby-join-cancel" type="button" @click="cancelJoinLobby">CANCEL</button>
     </div>
     <div ref="messagesContainer" id="messages">
       <div v-for="(msg, index) in messages" :key="index">
@@ -351,12 +401,18 @@ const props = defineProps<{
   username: string;
   isConnected: boolean;
   users: Record<string, UserPresence>;
+  lobbyTabs?: Array<{ id: string; label: string; unreadCount: number; isDefault?: boolean }>;
+  activeLobbyId?: string;
+  defaultLobbyId?: string;
   mentionRequest?: { username: string; nonce: number } | null;
 }>();
 
 const emit = defineEmits<{
   send: [message: string];
   typing: [typing: boolean];
+  joinLobby: [lobbyId: string];
+  switchLobby: [lobbyId: string];
+  closeLobby: [lobbyId: string];
 }>();
 
 const { getUserColor } = useTheme();
@@ -426,8 +482,42 @@ const emojiSelectedIndex = ref(0);
 const mentionSuggestions = ref<string[]>([]);
 const mentionSelectedIndex = ref(0);
 const chatInputEl = ref<HTMLInputElement>();
+const showJoinLobbyInput = ref(false);
+const joinLobbyInput = ref('');
+const joinLobbyInputEl = ref<HTMLInputElement>();
 const TYPING_SPEED = 30; // ms per character
 const FULLSCREEN_OVERLAY_HIDE_DELAY = 2000;
+
+const lobbyTabs = computed(() => (props.lobbyTabs ?? []).map((lobby) => ({
+  ...lobby,
+  isDefault: Boolean(lobby.isDefault) || lobby.id === props.defaultLobbyId,
+})));
+const activeLobbyId = computed(() => props.activeLobbyId ?? '');
+
+function toggleJoinLobbyInput() {
+  showJoinLobbyInput.value = !showJoinLobbyInput.value;
+  if (showJoinLobbyInput.value) {
+    nextTick(() => {
+      joinLobbyInputEl.value?.focus();
+      joinLobbyInputEl.value?.select();
+    });
+  }
+}
+
+function cancelJoinLobby() {
+  showJoinLobbyInput.value = false;
+  joinLobbyInput.value = '';
+}
+
+function submitJoinLobby() {
+  const rawLobbyId = joinLobbyInput.value.trim();
+  if (!rawLobbyId) {
+    return;
+  }
+
+  emit('joinLobby', rawLobbyId);
+  cancelJoinLobby();
+}
 
 function createDefaultPlayerState(): YouTubePlayerState {
   return {
@@ -1242,6 +1332,15 @@ watch(
 );
 
 watch(
+  () => props.activeLobbyId,
+  () => {
+    typingProgress.value = {};
+    showJoinLobbyInput.value = false;
+    joinLobbyInput.value = '';
+  }
+);
+
+watch(
   () => props.mentionRequest,
   (request) => {
     if (!request || !props.isConnected) {
@@ -1723,6 +1822,205 @@ onBeforeUnmount(() => {
   flex-direction: column;
   border-right: 1px solid var(--neon-green);
   min-height: 0;
+  min-width: 0;
+}
+
+.lobby-tabs-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dim-green);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 18, 6, 0.72));
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.lobby-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  flex: 1;
+  min-width: 0;
+}
+
+.lobby-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.lobby-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lobby-tabs::-webkit-scrollbar-thumb {
+  background: rgba(57, 255, 20, 0);
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+
+.lobby-tabs:hover::-webkit-scrollbar-thumb,
+.lobby-tabs:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(57, 255, 20, 0.55);
+}
+
+.lobby-tabs:hover,
+.lobby-tabs:focus-within {
+  scrollbar-color: rgba(57, 255, 20, 0.55) transparent;
+}
+
+.lobby-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--dim-green);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--system-dim);
+  padding: 5px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+  max-width: 180px;
+  flex-shrink: 0;
+}
+
+.lobby-label {
+  min-width: 0;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.tab-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.lobby-tab.active .tab-close:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.lobby-tab:hover {
+  color: var(--neon-green);
+  border-color: var(--neon-green);
+}
+
+.lobby-tab.active {
+  color: #000;
+  border-color: var(--neon-green);
+  background: var(--neon-green);
+}
+
+.lobby-tab.has-unread {
+  color: #ffd36f;
+  border-color: #ffd36f;
+  animation: lobby-tab-flash 1.1s steps(2, end) infinite;
+}
+
+.tab-unread {
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  background: #ffd36f;
+  color: #121212;
+}
+
+.lobby-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lobby-join-toggle,
+.lobby-join-confirm,
+.lobby-join-cancel {
+  border: 1px solid var(--dim-green);
+  background: transparent;
+  color: var(--neon-green);
+  font-family: inherit;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.lobby-join-toggle:hover,
+.lobby-join-confirm:hover,
+.lobby-join-cancel:hover {
+  border-color: var(--neon-green);
+}
+
+.lobby-join-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--dim-green);
+  background: rgba(0, 0, 0, 0.7);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.lobby-join-input {
+  flex: 1;
+  min-width: 120px;
+  border: 1px solid var(--dim-green);
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--neon-green);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  text-transform: lowercase;
+}
+
+.lobby-join-input:focus {
+  border-color: var(--neon-green);
+}
+
+.lobby-join-cancel {
+  color: var(--system-dim);
+}
+
+@keyframes lobby-tab-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 211, 111, 0);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 211, 111, 0.5);
+  }
 }
 
 #messages {

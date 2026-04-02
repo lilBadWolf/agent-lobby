@@ -102,8 +102,14 @@
         :username="username"
         :is-connected="isConnected"
         :users="users"
+        :lobby-tabs="lobbyTabs"
+        :active-lobby-id="activeLobbyId"
+        :default-lobby-id="networkConfig.defaultLobby"
         :mention-request="mentionRequest"
         @send="handleChatSend"
+        @join-lobby="handleJoinLobby"
+        @switch-lobby="handleSwitchLobby"
+        @close-lobby="handleCloseLobby"
         @typing="(typing) => setTyping(typing)"
       />
       <Sidebar
@@ -242,6 +248,8 @@ const {
   messages,
   users,
   onlineAgentCount,
+  activeLobbyId,
+  lobbyTabs,
   isPresencePreviewReady,
   presencePreviewStatus,
   presencePreviewStatusMessage,
@@ -251,6 +259,9 @@ const {
   networkConfig,
   availableSoundpacks,
   boot,
+  joinLobby,
+  leaveLobby,
+  switchLobby,
   sendMessage,
   disconnect,
   updateSettings,
@@ -472,6 +483,18 @@ function handleAmbience() {
 function handleChatSend(rawMessage: string) {
   const normalized = rawMessage.trim().toLowerCase().replace(/\s+/g, ' ');
 
+  const joinLobbyMatch = rawMessage.trim().match(/^\/join\s+(.+)$/i);
+  if (joinLobbyMatch) {
+    void handleJoinLobby(joinLobbyMatch[1]);
+    return;
+  }
+
+  const switchLobbyMatch = rawMessage.trim().match(/^\/lobby\s+(.+)$/i);
+  if (switchLobbyMatch) {
+    handleSwitchLobby(switchLobbyMatch[1]);
+    return;
+  }
+
   if (normalized === '/settings') {
     showSettings.value = true;
     return;
@@ -510,6 +533,49 @@ function handleChatSend(rawMessage: string) {
   }
 
   sendMessage(rawMessage);
+}
+
+async function handleJoinLobby(rawLobbyId: string) {
+  const result = await joinLobby(rawLobbyId);
+  if (result.ok) {
+    addSystemMessage(`CONNECTED TO LOBBY ${result.lobbyId.toUpperCase()}`);
+    return;
+  }
+
+  if (result.reason === 'duplicate') {
+    addSystemMessage('ALREADY CONNECTED TO THAT LOBBY.');
+  } else if (result.reason === 'username-taken') {
+    addSystemMessage('HANDLE ALREADY ACTIVE IN TARGET LOBBY.');
+  } else if (result.reason === 'invalid') {
+    addSystemMessage('INVALID LOBBY ID. USE LETTERS, NUMBERS, OR _.');
+  } else {
+    addSystemMessage('UNABLE TO JOIN LOBBY WHILE DISCONNECTED.');
+  }
+}
+
+function handleSwitchLobby(rawLobbyId: string) {
+  const switched = switchLobby(rawLobbyId);
+  if (!switched) {
+    addSystemMessage('LOBBY NOT FOUND. JOIN IT FIRST.');
+  }
+}
+
+function handleCloseLobby(rawLobbyId: string) {
+  const result = leaveLobby(rawLobbyId);
+  if (result.ok) {
+    addSystemMessage(`LEFT LOBBY ${result.lobbyId.toUpperCase()}`);
+    return;
+  }
+
+  if (result.reason === 'default') {
+    addSystemMessage('MAIN LOBBY CANNOT BE CLOSED.');
+  } else if (result.reason === 'last-lobby') {
+    addSystemMessage('AT LEAST ONE LOBBY MUST REMAIN OPEN.');
+  } else if (result.reason === 'missing') {
+    addSystemMessage('LOBBY NOT FOUND.');
+  } else {
+    addSystemMessage('UNABLE TO CLOSE LOBBY WHILE DISCONNECTED.');
+  }
 }
 
 async function handleDMRequest(user: string) {

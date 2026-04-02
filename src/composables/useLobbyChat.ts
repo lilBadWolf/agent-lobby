@@ -2,8 +2,6 @@ import { ref, reactive, computed, watch } from 'vue';
 import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig } from '../types/chat';
 import mqtt from 'mqtt';
 
-const users = reactive<Record<string, UserPresence>>({});
-
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
   audioEnabled: true,
@@ -39,29 +37,44 @@ function getPublicAssetUrl(path: string): string {
 
 export function useLobbyChat() {
   type PresencePreviewStatus = 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
+  type JoinLobbyResult =
+    | { ok: true; lobbyId: string }
+    | { ok: false; reason: 'invalid' | 'duplicate' | 'disconnected' | 'username-taken' };
+  type LeaveLobbyResult =
+    | { ok: true; lobbyId: string }
+    | { ok: false; reason: 'default' | 'missing' | 'last-lobby' | 'disconnected' };
+
   const PRESENCE_PREVIEW_RETRY_DELAY_MS = 30000;
   const PRESENCE_PREVIEW_MAX_RETRIES = 5;
+  const LOBBY_JOIN_PRESENCE_PROBE_MS = 1200;
 
-  // Config defaults
-  const DEFAULT_MQTT_SERVER = `wss://broker.emqx.io:8084/mqtt`;
-  const DEFAULT_LOBBY = `spy_terminal`;
-  const sysMsg = `NETWORK LINK STABLE. ENCRYPTION ACTIVE.`;
-  const partMsg = `'s SIGNAL TERMINATED`;
-  const joinMsg = ` IS RECEIVING`;
+  const DEFAULT_MQTT_SERVER = 'wss://broker.emqx.io:8084/mqtt';
+  const DEFAULT_LOBBY = 'spy_terminal';
+  const sysMsg = 'NETWORK LINK STABLE. ENCRYPTION ACTIVE.';
+  const partMsg = "'s SIGNAL TERMINATED";
+  const joinMsg = ' IS RECEIVING';
 
-  // Network config state
   const networkConfig = ref<NetworkConfig>({
     mqttServer: DEFAULT_MQTT_SERVER,
     defaultLobby: DEFAULT_LOBBY
   });
 
-  // State
   let client: mqtt.MqttClient | null = null;
   let previewClient: mqtt.MqttClient | null = null;
   const username = ref<string>('');
   const roomId = ref<string>(networkConfig.value.defaultLobby);
+  const activeLobbyId = ref<string>(networkConfig.value.defaultLobby);
+  const joinedLobbies = ref<string[]>([]);
+
   const messages = ref<ChatMessage[]>([]);
-  
+  const users = reactive<Record<string, UserPresence>>({});
+  const previewUsers = reactive<Record<string, UserPresence>>({});
+
+  const lobbyMessages = reactive<Record<string, ChatMessage[]>>({});
+  const lobbyUsers = reactive<Record<string, Record<string, UserPresence>>>({});
+  const lobbyUnread = reactive<Record<string, number>>({});
+  const lobbyTyping = reactive<Record<string, boolean>>({});
+
   const isConnected = ref(false);
   const authError = ref(false);
   const isPresencePreviewReady = ref(false);
@@ -73,17 +86,275 @@ export function useLobbyChat() {
   let presencePreviewRetryTimer: ReturnType<typeof setTimeout> | null = null;
   let presencePreviewCooldownTimer: ReturnType<typeof setInterval> | null = null;
 
-  let CHAT_TOPIC = '';
-  let PRESENCE_TOPIC = '';
-  let PRESENCE_OPTIONS: UserPresence | null = null;
+  const config = ref<AudioConfig>(normalizeAudioConfig());
+  const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
+
+  const isAway = ref(false);
+  let awaySource: 'auto' | 'manual' | null = null;
+  let autoAwayTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function normalizeLobbyId(rawLobbyId: string): string {
+    return rawLobbyId.toLowerCase().replace(/[^a-z0-9_]/g, '');
+  }
+
+  function getChatTopic(targetRoomId: string): string {
+    return `${targetRoomId}_lobby/chat_global`;
+  }
 
   function getPresenceTopicPrefix(targetRoomId: string): string {
     return `${targetRoomId}_lobby/presence/`;
   }
 
+  function parseRoomFromChatTopic(topic: string): string | null {
+    const match = topic.match(/^([^/]+)_lobby\/chat_global$/);
+    return match?.[1] || null;
+  }
+
+  function parsePresenceTopic(topic: string): { room: string; user: string } | null {
+    const match = topic.match(/^([^/]+)_lobby\/presence\/([^/]+)$/);
+    if (!match) {
+      return null;
+    }
+
+    return {
+      room: match[1],
+      user: match[2].toUpperCase(),
+    };
+  }
+
+  function clearUserRecord(target: Record<string, UserPresence>) {
+    for (const key in target) {
+      delete target[key];
+    }
+  }
+
+  function clearMessagesRecord(target: Record<string, ChatMessage[]>) {
+    for (const key in target) {
+      delete target[key];
+    }
+  }
+
+  function clearLobbyUsersRecord(target: Record<string, Record<string, UserPresence>>) {
+    for (const key in target) {
+      delete target[key];
+    }
+  }
+
+  function clearUnreadRecord(target: Record<string, number>) {
+    for (const key in target) {
+      delete target[key];
+    }
+  }
+
+  function clearTypingRecord(target: Record<string, boolean>) {
+    for (const key in target) {
+      delete target[key];
+    }
+  }
+
+  function ensureLobbyState(targetRoomId: string) {
+    if (!lobbyMessages[targetRoomId]) {
+      lobbyMessages[targetRoomId] = [];
+    }
+
+    if (!lobbyUsers[targetRoomId]) {
+      lobbyUsers[targetRoomId] = {};
+    }
+
+    if (typeof lobbyUnread[targetRoomId] !== 'number') {
+      lobbyUnread[targetRoomId] = 0;
+    }
+
+    if (typeof lobbyTyping[targetRoomId] !== 'boolean') {
+      lobbyTyping[targetRoomId] = false;
+    }
+  }
+
   function clearUsers() {
-    for (const key in users) {
-      delete users[key];
+    clearUserRecord(users);
+  }
+
+  function syncActiveLobbyView() {
+    ensureLobbyState(activeLobbyId.value);
+    messages.value = lobbyMessages[activeLobbyId.value];
+
+    clearUsers();
+    Object.assign(users, lobbyUsers[activeLobbyId.value]);
+  }
+
+  function subscribeToLobby(targetRoomId: string) {
+    if (!client) {
+      return;
+    }
+
+    client.subscribe(getChatTopic(targetRoomId));
+    client.subscribe(`${getPresenceTopicPrefix(targetRoomId)}#`);
+  }
+
+  function buildPresencePayload(targetRoomId: string): UserPresence {
+    return {
+      username: username.value,
+      dmAvailable: config.value.dmEnabled && !isAway.value,
+      isTyping: lobbyTyping[targetRoomId] || false,
+      isAway: isAway.value,
+    };
+  }
+
+  function publishPresenceForLobby(targetRoomId: string) {
+    if (!client || !client.connected || !username.value) {
+      return;
+    }
+
+    ensureLobbyState(targetRoomId);
+
+    client.publish(
+      `${getPresenceTopicPrefix(targetRoomId)}${username.value}`,
+      JSON.stringify(buildPresencePayload(targetRoomId)),
+      { retain: true }
+    );
+  }
+
+  function publishPresence() {
+    if (!client || !client.connected || !username.value) return;
+
+    joinedLobbies.value.forEach((lobbyId) => {
+      publishPresenceForLobby(lobbyId);
+    });
+  }
+
+  async function probeLobbyHandleAvailability(targetRoomId: string, handle: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const normalizedHandle = handle.trim().toUpperCase();
+      if (!normalizedHandle) {
+        resolve(false);
+        return;
+      }
+
+      const probeClient = mqtt.connect(networkConfig.value.mqttServer, {
+        reconnectPeriod: 0,
+      });
+
+      let isResolved = false;
+      let isHandleTaken = false;
+
+      const finish = (available: boolean) => {
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+        clearTimeout(probeTimer);
+        probeClient.removeAllListeners();
+        probeClient.end(true);
+        resolve(available);
+      };
+
+      const probeTimer = setTimeout(() => {
+        finish(!isHandleTaken);
+      }, LOBBY_JOIN_PRESENCE_PROBE_MS);
+
+      probeClient.on('connect', () => {
+        probeClient.subscribe(`${getPresenceTopicPrefix(targetRoomId)}#`, { qos: 1 }, (err) => {
+          if (err) {
+            finish(false);
+          }
+        });
+      });
+
+      probeClient.on('message', (topic, payload) => {
+        const parsedTopic = parsePresenceTopic(topic);
+        if (!parsedTopic || parsedTopic.room !== targetRoomId) {
+          return;
+        }
+
+        if (payload.toString() === '') {
+          return;
+        }
+
+        if (parsedTopic.user === normalizedHandle) {
+          isHandleTaken = true;
+          finish(false);
+        }
+      });
+
+      probeClient.on('error', () => {
+        finish(false);
+      });
+
+      probeClient.on('close', () => {
+        if (!isResolved) {
+          finish(!isHandleTaken);
+        }
+      });
+    });
+  }
+
+  function addMessageToLobby(
+    targetRoomId: string,
+    user: string,
+    message: string,
+    isSystem = false,
+    incrementUnread = false
+  ) {
+    ensureLobbyState(targetRoomId);
+    lobbyMessages[targetRoomId].push({ user, message, isSystem });
+
+    if (incrementUnread && targetRoomId !== activeLobbyId.value) {
+      lobbyUnread[targetRoomId] = (lobbyUnread[targetRoomId] || 0) + 1;
+    }
+
+    if (targetRoomId === activeLobbyId.value) {
+      syncActiveLobbyView();
+    }
+  }
+
+  function addMessage(user: string, message: string, isSystem = false) {
+    addMessageToLobby(activeLobbyId.value, user, message, isSystem);
+  }
+
+  function addSystemMessage(message: string) {
+    addMessage('SYSTEM', message, true);
+  }
+
+  function handlePresenceMessage(topic: string, raw: string, { withAlerts }: { withAlerts: boolean }) {
+    const parsedTopic = parsePresenceTopic(topic);
+    if (!parsedTopic) {
+      return;
+    }
+
+    const targetRoomId = parsedTopic.room;
+    const user = parsedTopic.user;
+
+    if (!joinedLobbies.value.includes(targetRoomId)) {
+      return;
+    }
+
+    ensureLobbyState(targetRoomId);
+    const roomUsers = lobbyUsers[targetRoomId];
+
+    if (raw === '') {
+      if (roomUsers[user]) {
+        if (withAlerts) {
+          playAlert('part');
+          addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${partMsg}`, true);
+        }
+        delete roomUsers[user];
+        if (targetRoomId === activeLobbyId.value) {
+          delete users[user];
+        }
+      }
+      return;
+    }
+
+    const parsed = JSON.parse(raw) as UserPresence;
+    if (!roomUsers[user] && withAlerts) {
+      playAlert('join');
+      addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${joinMsg}`, true);
+    }
+
+    roomUsers[user] = parsed;
+    if (targetRoomId === activeLobbyId.value) {
+      users[user] = parsed;
     }
   }
 
@@ -151,35 +422,6 @@ export function useLobbyChat() {
     }, PRESENCE_PREVIEW_RETRY_DELAY_MS);
   }
 
-  function handlePresenceMessage(topic: string, raw: string, { withAlerts }: { withAlerts: boolean }) {
-    if (!topic.startsWith(PRESENCE_TOPIC)) {
-      return;
-    }
-
-    const user = topic.split('/').pop()?.toUpperCase() || '';
-    if (!user) {
-      return;
-    }
-
-    if (raw === '') {
-      if (users[user]) {
-        if (withAlerts) {
-          playAlert('part');
-          addMessage('SYSTEM', `${user}${partMsg}`, true);
-        }
-        delete users[user];
-      }
-      return;
-    }
-
-    const parsed = JSON.parse(raw) as UserPresence;
-    if (!users[user] && withAlerts) {
-      playAlert('join');
-      addMessage('SYSTEM', `${user}${joinMsg}`, true);
-    }
-    users[user] = parsed;
-  }
-
   async function startPresencePreview({ isRetryAttempt = false }: { isRetryAttempt?: boolean } = {}) {
     if (isConnected.value) {
       return;
@@ -192,12 +434,10 @@ export function useLobbyChat() {
       presencePreviewRetryAttempt.value = 0;
     }
 
-    // Auth screen collisions are checked against this preloaded snapshot.
-    clearUsers();
+    clearUserRecord(previewUsers);
 
     const previewRoom = roomId.value || networkConfig.value.defaultLobby;
-    CHAT_TOPIC = `${previewRoom}_lobby/chat_global`;
-    PRESENCE_TOPIC = getPresenceTopicPrefix(previewRoom);
+    const previewPresenceTopic = getPresenceTopicPrefix(previewRoom);
     isPresencePreviewReady.value = false;
     presencePreviewStatus.value = 'connecting';
     presencePreviewError.value = '';
@@ -209,7 +449,7 @@ export function useLobbyChat() {
 
     previewClient.on('connect', () => {
       presencePreviewStatus.value = 'checking-users';
-      previewClient?.subscribe(PRESENCE_TOPIC + '#', { qos: 1 }, (err) => {
+      previewClient?.subscribe(previewPresenceTopic + '#', { qos: 1 }, (err) => {
         if (err) {
           schedulePresencePreviewRetry(err.message || 'Failed to subscribe to presence topic');
           return;
@@ -224,7 +464,17 @@ export function useLobbyChat() {
     previewClient.on('message', (topic, payload) => {
       const raw = payload.toString();
       try {
-        handlePresenceMessage(topic, raw, { withAlerts: false });
+        const parsedTopic = parsePresenceTopic(topic);
+        if (!parsedTopic || parsedTopic.room !== previewRoom) {
+          return;
+        }
+
+        if (raw === '') {
+          delete previewUsers[parsedTopic.user];
+          return;
+        }
+
+        previewUsers[parsedTopic.user] = JSON.parse(raw) as UserPresence;
       } catch {
         // Ignore malformed presence payloads from third-party clients.
       }
@@ -240,16 +490,6 @@ export function useLobbyChat() {
       }
     });
   }
-
-  const config = ref<AudioConfig>(normalizeAudioConfig());
-
-  const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
-
-
-  const isTyping = ref(false);
-  const isAway = ref(false);
-  let awaySource: 'auto' | 'manual' | null = null;
-  let autoAwayTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearAutoAwayTimer() {
     if (autoAwayTimer) {
@@ -276,19 +516,12 @@ export function useLobbyChat() {
     }, delayMs);
   }
 
-  function buildPresencePayload(): UserPresence {
-    return {
-      username: username.value,
-      dmAvailable: config.value.dmEnabled && !isAway.value,
-      isTyping: isTyping.value,
-      isAway: isAway.value,
-    };
-  }
-
   function setTyping(typing: boolean) {
-    if (isTyping.value !== typing) {
-      isTyping.value = typing;
-      publishPresence();
+    ensureLobbyState(activeLobbyId.value);
+    const previousTyping = lobbyTyping[activeLobbyId.value] || false;
+    if (previousTyping !== typing) {
+      lobbyTyping[activeLobbyId.value] = typing;
+      publishPresenceForLobby(activeLobbyId.value);
     }
   }
 
@@ -320,16 +553,6 @@ export function useLobbyChat() {
     setAway(false, 'manual');
   }
 
-  function publishPresence() {
-    if (!client || !client.connected || !username.value || !PRESENCE_TOPIC) return;
-    client.publish(
-      PRESENCE_TOPIC + username.value,
-      JSON.stringify(buildPresencePayload()),
-      { retain: true }
-    );
-  }
-
-  // Initialize audio
   function initAudio() {
     const soundpack = config.value.soundpack;
     audio.value.numberStation = new Audio(getPublicAssetUrl(`sounds/${soundpack}/signal-station.mp3`));
@@ -345,7 +568,6 @@ export function useLobbyChat() {
     applyAudioSettings();
   }
 
-  // Apply audio settings
   function applyAudioSettings() {
     const vol = config.value.audioEnabled ? config.value.volume : 0;
     const numberStation = audio.value.numberStation as HTMLAudioElement;
@@ -359,14 +581,12 @@ export function useLobbyChat() {
     }
   }
 
-  // Update settings
   function updateSettings() {
     localStorage.setItem('agent_settings', JSON.stringify(config.value));
     applyAudioSettings();
     publishPresence();
   }
 
-  // Play alert sound
   function playAlert(type: string) {
     if (config.value.audioEnabled && audio.value.alerts && (audio.value.alerts as any)[type]) {
       const alert = (audio.value.alerts as any)[type];
@@ -375,14 +595,12 @@ export function useLobbyChat() {
     }
   }
 
-  // Scrub HTML
   function scrub(html: string): string {
     const tmp = document.createElement('DIV');
     tmp.innerHTML = html;
     return tmp.textContent || tmp.innerText || '';
   }
 
-  // Get user color
   function getUserColor(str: string): string {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -391,11 +609,10 @@ export function useLobbyChat() {
     return `hsl(${Math.abs(hash % 360)}, 80%, 60%)`;
   }
 
-  // Boot connection
   function boot(handle: string, customRoomId?: string) {
     if (!handle) return;
 
-    if (users[handle]) {
+    if (previewUsers[handle]) {
       authError.value = true;
       return;
     }
@@ -403,18 +620,27 @@ export function useLobbyChat() {
     username.value = handle;
     authError.value = false;
 
-    if (customRoomId) {
-      roomId.value = customRoomId.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    }
+    const normalizedCustomLobbyId = customRoomId ? normalizeLobbyId(customRoomId) : '';
+    const initialLobbyId = normalizedCustomLobbyId || networkConfig.value.defaultLobby;
+
+    roomId.value = initialLobbyId;
+    activeLobbyId.value = initialLobbyId;
+    joinedLobbies.value = [initialLobbyId];
+    clearMessagesRecord(lobbyMessages);
+    clearLobbyUsersRecord(lobbyUsers);
+    clearUnreadRecord(lobbyUnread);
+    ensureLobbyState(initialLobbyId);
+    syncActiveLobbyView();
 
     stopPresencePreview();
 
-    CHAT_TOPIC = `${roomId.value}_lobby/chat_global`;
-    PRESENCE_TOPIC = getPresenceTopicPrefix(roomId.value);
-    PRESENCE_OPTIONS = buildPresencePayload();
-
     const options = {
-      will: { topic: PRESENCE_TOPIC + username.value, payload: '', retain: true, qos: 1 as const }
+      will: {
+        topic: `${getPresenceTopicPrefix(initialLobbyId)}${username.value}`,
+        payload: '',
+        retain: true,
+        qos: 1 as const
+      }
     };
 
     client = mqtt.connect(networkConfig.value.mqttServer, options);
@@ -427,16 +653,18 @@ export function useLobbyChat() {
       }
       isConnected.value = true;
       playAlert('startup');
-      addMessage('SYSTEM', sysMsg, true);
-      client!.subscribe(CHAT_TOPIC);
-      client!.subscribe(PRESENCE_TOPIC + '#');
-      client!.publish(PRESENCE_TOPIC + username.value, JSON.stringify(PRESENCE_OPTIONS), { retain: true });
+      addMessageToLobby(activeLobbyId.value, 'SYSTEM', sysMsg, true);
+
+      joinedLobbies.value.forEach((lobbyId) => {
+        subscribeToLobby(lobbyId);
+        publishPresenceForLobby(lobbyId);
+      });
     });
 
     client.on('message', (topic, payload) => {
       const raw = payload.toString();
-      console.log(raw);
-      if (topic.startsWith(PRESENCE_TOPIC)) {
+
+      if (topic.includes('_lobby/presence/')) {
         try {
           handlePresenceMessage(topic, raw, { withAlerts: true });
         } catch {
@@ -444,29 +672,27 @@ export function useLobbyChat() {
         }
         return;
       }
-      if (topic === CHAT_TOPIC) {
+
+      const targetRoomId = parseRoomFromChatTopic(topic);
+      if (targetRoomId && joinedLobbies.value.includes(targetRoomId)) {
         const data = JSON.parse(raw);
-        if (data.u !== username.value) playAlert('message');
-        addMessage(data.u, data.m);
+        const isInbound = data.u !== username.value;
+
+        if (isInbound) {
+          playAlert('message');
+        }
+
+        addMessageToLobby(targetRoomId, data.u, data.m, false, isInbound);
       }
     });
   }
 
-  // Add message
-  function addMessage(user: string, message: string, isSystem = false) {
-    messages.value.push({ user, message, isSystem });
-  }
-
-  function addSystemMessage(message: string) {
-    addMessage('SYSTEM', message, true);
-  }
-
-  // Clear messages
   function clearMessages() {
-    messages.value = [];
+    ensureLobbyState(activeLobbyId.value);
+    lobbyMessages[activeLobbyId.value] = [];
+    syncActiveLobbyView();
   }
 
-  // Send message
   function sendMessage(msg: string) {
     if (!msg || !client || !isConnected.value) return;
     const cleanMsg = scrub(msg);
@@ -485,14 +711,104 @@ export function useLobbyChat() {
     if (isAway.value) {
       setAway(false, 'system');
     }
-    client.publish(CHAT_TOPIC, JSON.stringify({ u: username.value, m: cleanMsg }));
+
+    client.publish(getChatTopic(activeLobbyId.value), JSON.stringify({ u: username.value, m: cleanMsg }));
   }
 
-  // Disconnect
+  function switchLobby(targetLobbyId: string): boolean {
+    const normalizedLobbyId = normalizeLobbyId(targetLobbyId);
+    if (!normalizedLobbyId || !joinedLobbies.value.includes(normalizedLobbyId)) {
+      return false;
+    }
+
+    const previousLobbyId = activeLobbyId.value;
+    if (previousLobbyId && previousLobbyId !== normalizedLobbyId && lobbyTyping[previousLobbyId]) {
+      lobbyTyping[previousLobbyId] = false;
+      publishPresenceForLobby(previousLobbyId);
+    }
+
+    activeLobbyId.value = normalizedLobbyId;
+    roomId.value = normalizedLobbyId;
+    lobbyUnread[normalizedLobbyId] = 0;
+    syncActiveLobbyView();
+    return true;
+  }
+
+  async function joinLobby(rawLobbyId: string): Promise<JoinLobbyResult> {
+    const normalizedLobbyId = normalizeLobbyId(rawLobbyId);
+    if (!normalizedLobbyId) {
+      return { ok: false, reason: 'invalid' };
+    }
+
+    if (!isConnected.value || !client) {
+      return { ok: false, reason: 'disconnected' };
+    }
+
+    if (joinedLobbies.value.includes(normalizedLobbyId)) {
+      return { ok: false, reason: 'duplicate' };
+    }
+
+    const isHandleAvailable = await probeLobbyHandleAvailability(normalizedLobbyId, username.value);
+    if (!isHandleAvailable) {
+      return { ok: false, reason: 'username-taken' };
+    }
+
+    ensureLobbyState(normalizedLobbyId);
+    joinedLobbies.value = [...joinedLobbies.value, normalizedLobbyId];
+    subscribeToLobby(normalizedLobbyId);
+    publishPresenceForLobby(normalizedLobbyId);
+    switchLobby(normalizedLobbyId);
+    return { ok: true, lobbyId: normalizedLobbyId };
+  }
+
+  function leaveLobby(rawLobbyId: string): LeaveLobbyResult {
+    const normalizedLobbyId = normalizeLobbyId(rawLobbyId);
+    const normalizedDefaultLobby = normalizeLobbyId(networkConfig.value.defaultLobby);
+
+    if (!isConnected.value || !client) {
+      return { ok: false, reason: 'disconnected' };
+    }
+
+    if (!joinedLobbies.value.includes(normalizedLobbyId)) {
+      return { ok: false, reason: 'missing' };
+    }
+
+    if (normalizedLobbyId === normalizedDefaultLobby) {
+      return { ok: false, reason: 'default' };
+    }
+
+    if (joinedLobbies.value.length <= 1) {
+      return { ok: false, reason: 'last-lobby' };
+    }
+
+    client.unsubscribe(getChatTopic(normalizedLobbyId));
+    client.unsubscribe(`${getPresenceTopicPrefix(normalizedLobbyId)}#`);
+    client.publish(`${getPresenceTopicPrefix(normalizedLobbyId)}${username.value}`, '', { retain: true });
+
+    joinedLobbies.value = joinedLobbies.value.filter((lobbyId) => lobbyId !== normalizedLobbyId);
+    delete lobbyMessages[normalizedLobbyId];
+    delete lobbyUsers[normalizedLobbyId];
+    delete lobbyUnread[normalizedLobbyId];
+    delete lobbyTyping[normalizedLobbyId];
+
+    if (activeLobbyId.value === normalizedLobbyId) {
+      const fallbackLobby = joinedLobbies.value.includes(normalizedDefaultLobby)
+        ? normalizedDefaultLobby
+        : joinedLobbies.value[0];
+      if (fallbackLobby) {
+        switchLobby(fallbackLobby);
+      }
+    }
+
+    return { ok: true, lobbyId: normalizedLobbyId };
+  }
+
   function disconnect() {
     clearAutoAwayTimer();
     if (client && isConnected.value) {
-      client.publish(PRESENCE_TOPIC + username.value, '', { retain: true });
+      joinedLobbies.value.forEach((lobbyId) => {
+        client!.publish(`${getPresenceTopicPrefix(lobbyId)}${username.value}`, '', { retain: true });
+      });
       client.end();
     }
     isConnected.value = false;
@@ -500,20 +816,25 @@ export function useLobbyChat() {
     resetUI();
   }
 
-  // Reset UI
   function resetUI() {
     username.value = '';
     messages.value = [];
-    isTyping.value = false;
+    joinedLobbies.value = [];
+    activeLobbyId.value = networkConfig.value.defaultLobby;
+    roomId.value = networkConfig.value.defaultLobby;
     isAway.value = false;
     awaySource = null;
     clearAutoAwayTimer();
     clearUsers();
+    clearUserRecord(previewUsers);
+    clearMessagesRecord(lobbyMessages);
+    clearLobbyUsersRecord(lobbyUsers);
+    clearUnreadRecord(lobbyUnread);
+    clearTypingRecord(lobbyTyping);
     client = null;
     startPresencePreview();
   }
 
-  // Load network config
   function loadNetworkConfig() {
     const saved = localStorage.getItem('agent_network_config');
     if (saved) {
@@ -524,21 +845,21 @@ export function useLobbyChat() {
           defaultLobby: parsed.defaultLobby || DEFAULT_LOBBY
         };
         roomId.value = networkConfig.value.defaultLobby;
+        activeLobbyId.value = networkConfig.value.defaultLobby;
       } catch {
         // Invalid JSON, use defaults
       }
     }
   }
 
-  // Save network config
   function setNetworkConfig(config: NetworkConfig) {
     networkConfig.value = config;
     roomId.value = config.defaultLobby;
+    activeLobbyId.value = config.defaultLobby;
     localStorage.setItem('agent_network_config', JSON.stringify(config));
     startPresencePreview();
   }
 
-  // Load settings
   function loadSettings() {
     const saved = localStorage.getItem('agent_settings');
     if (saved) {
@@ -550,7 +871,6 @@ export function useLobbyChat() {
     }
   }
 
-  // Try play ambience
   function tryPlayAmbience() {
     const numberStation = audio.value.numberStation as HTMLAudioElement;
     if (config.value.audioEnabled && numberStation) {
@@ -558,15 +878,13 @@ export function useLobbyChat() {
     }
   }
 
-  // Change soundpack and reload audio
   function setSoundpack(newSoundpack: string) {
     config.value.soundpack = newSoundpack;
     initAudio();
     localStorage.setItem('agent_settings', JSON.stringify(config.value));
   }
 
-  // Get available soundpacks using import.meta.glob
-  let availableSoundpacks = ref<string[]>(['default']);
+  const availableSoundpacks = ref<string[]>(['default']);
 
   async function loadAvailableSoundpacks() {
     try {
@@ -577,13 +895,11 @@ export function useLobbyChat() {
       if (packs.length > 0) {
         availableSoundpacks.value = packs;
       }
-    } catch (e) {
-      // Fallback to default if glob fails
+    } catch {
       availableSoundpacks.value = ['default'];
     }
   }
 
-  // Initialize on load
   loadNetworkConfig();
   loadSettings();
   loadAvailableSoundpacks();
@@ -641,8 +957,15 @@ export function useLobbyChat() {
   });
 
   const onlineAgentCount = computed(() =>
-    Object.values(users).filter((u) => Boolean(u?.username)).length
+    Object.values(isConnected.value ? users : previewUsers).filter((u) => Boolean(u?.username)).length
   );
+
+  const lobbyTabs = computed(() => joinedLobbies.value.map((lobbyId) => ({
+    id: lobbyId,
+    label: lobbyId === normalizeLobbyId(networkConfig.value.defaultLobby) ? 'MAIN' : lobbyId,
+    unreadCount: lobbyUnread[lobbyId] || 0,
+    isDefault: lobbyId === normalizeLobbyId(networkConfig.value.defaultLobby),
+  })));
 
   const presencePreviewStatusMessage = computed(() => {
     if (presencePreviewStatus.value === 'error') {
@@ -666,8 +989,11 @@ export function useLobbyChat() {
   return {
     username: computed(() => username.value),
     messages: computed(() => messages.value),
-    users: users,
+    users,
     onlineAgentCount,
+    activeLobbyId: computed(() => activeLobbyId.value),
+    joinedLobbies: computed(() => joinedLobbies.value),
+    lobbyTabs,
     isPresencePreviewReady: computed(() => isPresencePreviewReady.value),
     presencePreviewStatus: computed(() => presencePreviewStatus.value),
     presencePreviewStatusMessage,
@@ -678,6 +1004,9 @@ export function useLobbyChat() {
     availableSoundpacks,
     getUserColor,
     boot,
+    joinLobby,
+    leaveLobby,
+    switchLobby,
     sendMessage,
     disconnect,
     updateSettings,
@@ -688,11 +1017,11 @@ export function useLobbyChat() {
     clearMessages,
     addSystemMessage,
     getMqttClient: () => client,
-    getRoomId: () => roomId.value,
+    getRoomId: () => activeLobbyId.value,
     setTyping,
     setAway,
     toggleAway,
-    isTyping,
+    isTyping: computed(() => lobbyTyping[activeLobbyId.value] || false),
     isAway,
   };
 }

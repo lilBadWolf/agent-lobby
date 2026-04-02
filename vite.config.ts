@@ -10,6 +10,39 @@ export default defineConfig(async () => ({
   define: {
     global: 'globalThis'
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+
+          if (id.includes('node_modules/vue')) {
+            return 'vue-vendor';
+          }
+
+          if (id.includes('node_modules/@tauri-apps')) {
+            return 'tauri-vendor';
+          }
+
+          if (id.includes('node_modules/mqtt')) {
+            return 'mqtt-vendor';
+          }
+
+          if (id.includes('node_modules/peerjs')) {
+            return 'rtc-vendor';
+          }
+
+          if (id.includes('node_modules/node-emoji')) {
+            return 'emoji-vendor';
+          }
+
+          return 'vendor';
+        },
+      },
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

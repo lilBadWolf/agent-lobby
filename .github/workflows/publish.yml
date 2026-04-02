@@ -43,7 +43,7 @@ jobs:
             librsvg2-dev
       - name: install frontend dependencies
         run: npm install # or yarn install / pnpm install
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -54,4 +54,6 @@ jobs:
           releaseBody: 'See the assets below to download.'
           releaseDraft: true
           prerelease: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
           args: ${{ matrix.args }}

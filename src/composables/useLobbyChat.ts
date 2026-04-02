@@ -7,6 +7,7 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   audioEnabled: true,
   volume: 0.5,
   autoAwayMinutes: 10,
+  autoUpdatePulseMinutes: 30,
   soundpack: 'default',
   theme: 'retro-terminal',
   dmChatEffect: 'matrix',
@@ -25,6 +26,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
 
   if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
     normalized.autoAwayMinutes = 10;
+  }
+
+  if (![0, 15, 30, 60, 120].includes(normalized.autoUpdatePulseMinutes ?? 30)) {
+    normalized.autoUpdatePulseMinutes = 30;
   }
 
   return normalized;

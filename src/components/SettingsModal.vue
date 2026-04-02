@@ -76,6 +76,20 @@
               <option :value="0">OFF</option>
             </select>
           </div>
+          <div class="setting-row">
+            <label>UPDATE PULSE</label>
+            <select
+              v-model.number="localConfig.autoUpdatePulseMinutes"
+              id="set-update-pulse"
+              @change="handleChange"
+            >
+              <option :value="15">15M</option>
+              <option :value="30">30M</option>
+              <option :value="60">1HR</option>
+              <option :value="120">2HR</option>
+              <option :value="0">OFF</option>
+            </select>
+          </div>
         </div>
 
         <div v-if="activeTab === 'dm'" class="tab-panel">
@@ -245,6 +259,7 @@ const emit = defineEmits<{
 function normalizeConfig(config: AudioConfig): AudioConfig {
   return {
     autoAwayMinutes: 10,
+    autoUpdatePulseMinutes: 30,
     ...config,
   };
 }

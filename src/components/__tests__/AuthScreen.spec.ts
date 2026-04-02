@@ -13,6 +13,7 @@ describe('AuthScreen', () => {
     const wrapper = mount(AuthScreen, {
       props: {
         showAuth: true,
+        appVersion: '0.1.7',
         authError: false,
         onlineAgentCount: 0,
         presenceReady: false,
@@ -34,6 +35,7 @@ describe('AuthScreen', () => {
     const wrapper = mount(AuthScreen, {
       props: {
         showAuth: true,
+        appVersion: '0.1.7',
         authError: false,
         onlineAgentCount: 3,
         presenceReady: true,
@@ -59,6 +61,7 @@ describe('AuthScreen', () => {
     const wrapper = mount(AuthScreen, {
       props: {
         showAuth: true,
+        appVersion: '0.1.7',
         authError: false,
         onlineAgentCount: 1,
         presenceReady: true,
@@ -77,5 +80,27 @@ describe('AuthScreen', () => {
 
     expect(wrapper.emitted('ambience')).toBeTruthy();
     expect(wrapper.emitted('config-clicked')).toBeTruthy();
+  });
+
+  it('shows app version in auth header label', () => {
+    const wrapper = mount(AuthScreen, {
+      props: {
+        showAuth: true,
+        appVersion: '0.1.7',
+        authError: false,
+        onlineAgentCount: 1,
+        presenceReady: true,
+        presenceStatus: 'ready',
+        presenceStatusMessage: '1 AGENT ONLINE',
+      },
+      global: {
+        stubs: {
+          SinewaveBackground: true,
+        },
+      },
+    });
+
+    expect(wrapper.find('.app-version-label').text()).toBe('APP_VER:');
+    expect(wrapper.find('.app-version-number').text()).toBe('0.1.7');
   });
 });

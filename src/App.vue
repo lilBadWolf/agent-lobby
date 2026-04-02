@@ -1,6 +1,13 @@
 <template>
   <div data-tauri-drag-region class="custom-titlebar">
     {{ pageTitle }}
+    <button
+      v-if="isUpdateAvailable"
+      class="titlebar-update-btn"
+      @click="handleInstallUpdate"
+    >
+      {{ isInstallingUpdate ? 'Installing...' : `Download ${availableVersion || 'Update'}` }}
+    </button>
     <button class="minimize-btn" @click="minimize">—</button>
     <button class="maximize-btn" @click="toggleMaximize">
       <span class="window-icon" :class="{ maximized: isMaximized }" aria-hidden="true"></span>
@@ -21,6 +28,7 @@
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
           config.autoAwayMinutes = newConfig.autoAwayMinutes ?? 10;
+          config.autoUpdatePulseMinutes = newConfig.autoUpdatePulseMinutes ?? 30;
           config.dmChatEffect = newConfig.dmChatEffect;
           config.audioInputDeviceId = newConfig.audioInputDeviceId;
           config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
@@ -83,6 +91,7 @@
 
     <AuthScreen
       :show-auth="showAuth"
+      :app-version="appVersion"
       :auth-error="authError"
       :online-agent-count="onlineAgentCount"
       :presence-ready="isPresencePreviewReady"
@@ -161,6 +170,26 @@
   opacity: 1;
 }
 
+.titlebar-update-btn {
+  position: absolute;
+  right: 90px;
+  height: 16px;
+  border: 1px solid var(--neon-green);
+  background: transparent;
+  color: var(--neon-green);
+  font-size: 10px;
+  line-height: 1;
+  padding: 0 6px;
+  opacity: 0.85;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.titlebar-update-btn:hover {
+  opacity: 1;
+}
+
 .maximize-btn {
   position: absolute;
   right: 35px;
@@ -228,10 +257,12 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted } from 'vue';
+import packageJson from '../package.json';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
+import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
 import AuthScreen from './components/AuthScreen.vue';
 import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
@@ -277,6 +308,12 @@ const {
   isAway,
 } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
+const {
+  isUpdateAvailable,
+  availableVersion,
+  isInstallingUpdate,
+} = useAutoUpdaterState();
+const appVersion = packageJson.version;
 
 // DM system
 const showDM = ref(false);
@@ -393,6 +430,20 @@ watch(pageTitle, (newTitle) => {
   document.title = newTitle ?? "LOBBY // AUTH";
 });
 
+watch(
+  () => config.value.autoUpdatePulseMinutes ?? 30,
+  (pulseMinutes) => {
+    stopAutoUpdaterPulse();
+
+    if (pulseMinutes <= 0) {
+      return;
+    }
+
+    startAutoUpdaterPulse(pulseMinutes * 60 * 1000);
+  },
+  { immediate: true }
+);
+
 function minimize() {
   if (!hasTauriWindow) {
     return;
@@ -443,6 +494,14 @@ function quit() {
     const appWindow = getCurrentWindow();
     await appWindow.close();
   }, 600);
+}
+
+function handleInstallUpdate() {
+  if (isInstallingUpdate.value) {
+    return;
+  }
+
+  void installAvailableUpdate();
 }
 
 function handleDisconnect() {
@@ -746,3 +805,4 @@ function handleRemoveFile(user: string, fileId: string) {
   }
 }
 </script>
+

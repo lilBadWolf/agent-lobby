@@ -275,6 +275,7 @@ describe('useLobbyChat', () => {
     expect(chat.config.value.dmEnabled).toBe(false);
     expect(chat.config.value.dmChatEffect).toBe('glitch');
     expect(chat.config.value.autoAwayMinutes).toBe(10);
+    expect(chat.config.value.autoUpdatePulseMinutes).toBe(30);
   });
 
   it('starts auto-away on blur and cancels it on focus', () => {

@@ -6,6 +6,10 @@
       :class="systemStatusClass"
       :data-system-status="systemStatusLabel"
     >
+      <div class="app-version-badge">
+        <span class="app-version-label">APP_VER:</span>
+        <span class="app-version-number">{{ appVersion }}</span>
+      </div>
       <button class="config-btn" @click="handleConfigClick">π</button>
       <h2 class="glitch-text">AGENT LOBBY</h2>
       <div class="input-group">
@@ -49,6 +53,7 @@ function isTauriRuntime(): boolean {
 
 const props = defineProps<{
   showAuth: boolean;
+  appVersion: string;
   authError: boolean;
   onlineAgentCount: number;
   presenceReady: boolean;
@@ -140,15 +145,23 @@ const quit = async () => {
   text-align: center;
 }
 
-.login-box::before {
-  content: 'SYS_MSG: AUTH_PENDING';
+.app-version-badge {
   position: absolute;
   top: -10px;
   left: 10px;
   background: #020a02;
   padding: 0 5px;
   font-size: 10px;
+  letter-spacing: 0;
+}
+
+.app-version-label {
   color: var(--neon-green);
+}
+
+.app-version-number {
+  color: var(--text-white);
+  font-weight: 700;
 }
 
 .login-box::after {

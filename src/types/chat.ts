@@ -19,6 +19,7 @@ export interface AudioConfig {
   audioEnabled: boolean;
   volume: number;
   autoAwayMinutes?: number;
+  autoUpdatePulseMinutes?: number;
   dmEnabled: boolean;
   soundpack: string;
   theme: string;

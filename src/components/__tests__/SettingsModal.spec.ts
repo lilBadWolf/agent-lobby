@@ -33,6 +33,7 @@ describe('SettingsModal', () => {
     audioEnabled: true,
     volume: 0.5,
     autoAwayMinutes: 10,
+    autoUpdatePulseMinutes: 30,
     soundpack: 'default',
     theme: 'retro-terminal',
     dmChatEffect: 'matrix' as const,
@@ -65,6 +66,10 @@ describe('SettingsModal', () => {
     expect(wrapper.emitted('update')).toBeTruthy();
     const payload = wrapper.emitted('update')?.slice(-1)?.[0]?.[0] as typeof baseConfig;
     expect(payload.autoAwayMinutes).toBe(30);
+
+    await wrapper.find('#set-update-pulse').setValue('60');
+    const updatedPayload = wrapper.emitted('update')?.slice(-1)?.[0]?.[0] as typeof baseConfig;
+    expect(updatedPayload.autoUpdatePulseMinutes).toBe(60);
   });
 
   it('shows audio controls in media tab with divider', async () => {

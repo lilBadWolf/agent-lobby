@@ -1,5 +1,102 @@
 <template>
-  <section id="chat-area">
+  <section id="chat-area" ref="chatAreaEl">
+    <div v-if="pinnedYouTubeEmbed" class="pinned-video-panel">
+      <div class="pinned-video-header">
+        <span class="pinned-video-title">{{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
+        <div class="pinned-video-actions">
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
+            &lt;
+          </button>
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">
+            &gt;
+          </button>
+          <button class="video-control-btn" type="button" @click="unpinYouTubeEmbed">
+            UNPIN
+          </button>
+        </div>
+      </div>
+      <div
+        class="video-player-shell pinned-video-shell"
+        :style="{
+          '--pinned-video-height': `${pinnedVideoHeight}px`,
+          '--pinned-control-scale': pinnedControlScale.toString(),
+        }"
+        :ref="(el) => registerYouTubeShell(PINNED_YOUTUBE_KEY, el)"
+        @mousemove="handleFullscreenPointerActivity(PINNED_YOUTUBE_KEY)"
+      >
+        <button
+          v-if="isYouTubeFullscreen(PINNED_YOUTUBE_KEY)"
+          class="video-fullscreen-exit"
+          :class="{ hidden: !isFullscreenOverlayVisible(PINNED_YOUTUBE_KEY) }"
+          type="button"
+          @click="exitYouTubeFullscreen(PINNED_YOUTUBE_KEY)"
+          aria-label="Exit fullscreen"
+          title="Exit fullscreen"
+        >
+          EXIT FULLSCREEN
+        </button>
+        <div class="youtube-player-host">
+          <div
+            class="youtube-player-mount"
+            :ref="(el) => registerYouTubeContainer(PINNED_YOUTUBE_KEY, el)"
+          ></div>
+        </div>
+        <div class="video-custom-controls">
+          <button
+            class="video-control-btn"
+            type="button"
+            :disabled="!getPlayerState(PINNED_YOUTUBE_KEY).ready"
+            @click="toggleYouTubePlayback(PINNED_YOUTUBE_KEY)"
+          >
+            {{ getPlayerState(PINNED_YOUTUBE_KEY).isPlaying ? 'PAUSE' : 'PLAY' }}
+          </button>
+          <span class="video-timecode">
+            {{ formatYouTubeTime(getPlayerState(PINNED_YOUTUBE_KEY).currentTime) }}
+            /
+            {{ formatYouTubeTime(getPlayerState(PINNED_YOUTUBE_KEY).duration) }}
+          </span>
+          <input
+            class="video-range video-progress"
+            type="range"
+            min="0"
+            :max="Math.max(1, getPlayerState(PINNED_YOUTUBE_KEY).duration)"
+            :value="getPlayerState(PINNED_YOUTUBE_KEY).currentTime"
+            :disabled="!getPlayerState(PINNED_YOUTUBE_KEY).ready"
+            @input="seekYouTubePlayer(PINNED_YOUTUBE_KEY, $event)"
+          />
+          <label class="video-volume-wrap">
+            <span>VOL</span>
+            <input
+              class="video-range video-volume"
+              type="range"
+              min="0"
+              max="100"
+              :value="getPlayerState(PINNED_YOUTUBE_KEY).volume"
+              :disabled="!getPlayerState(PINNED_YOUTUBE_KEY).ready"
+              @input="setYouTubeVolume(PINNED_YOUTUBE_KEY, $event)"
+            />
+          </label>
+          <button
+            class="video-control-btn"
+            type="button"
+            :disabled="!getPlayerState(PINNED_YOUTUBE_KEY).ready"
+            @click="toggleYouTubeFullscreen(PINNED_YOUTUBE_KEY)"
+          >
+            {{ isYouTubeFullscreen(PINNED_YOUTUBE_KEY) ? 'EXIT' : 'FULL' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    <div
+      v-if="pinnedYouTubeEmbed"
+      class="pinned-video-divider"
+      role="separator"
+      aria-label="Resize pinned video"
+      aria-orientation="horizontal"
+      @mousedown.prevent="startPinnedResize"
+    >
+      <span class="pinned-video-divider-grip" aria-hidden="true"></span>
+    </div>
     <div ref="messagesContainer" id="messages">
       <div v-for="(msg, index) in messages" :key="index">
         <div v-if="msg.isSystem" class="system-msg">
@@ -48,11 +145,21 @@
               <details
                 v-if="embed.videoId"
                 class="video-expandable"
+                :class="{ 'is-pinned-in-feed': isYouTubeEmbedPinned(index, embed.url, embedIndex) }"
+                :ref="(el) => registerYouTubeDetails(getEmbedKey(index, embed.url, embedIndex), el)"
                 @toggle="handleYouTubeEmbedToggle(getEmbedKey(index, embed.url, embedIndex), $event)"
               >
                 <summary class="video-header">
                   <span class="video-header-title">{{ getYouTubeEmbedHeader(embed.url) }}</span>
                   <span class="video-header-control" aria-hidden="true">
+                    <button
+                      class="video-pin-btn"
+                      type="button"
+                      :aria-pressed="isYouTubeEmbedPinned(index, embed.url, embedIndex)"
+                      @click.stop="togglePinYouTubeEmbed(index, embed.url, embedIndex)"
+                    >
+                      {{ isYouTubeEmbedPinned(index, embed.url, embedIndex) ? 'UNPIN' : 'PIN' }}
+                    </button>
                     <span class="video-control-show">SHOW</span>
                     <span class="video-control-hide">HIDE</span>
                     <span class="video-control-indicator"></span>
@@ -174,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import type { ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
@@ -284,8 +391,10 @@ const externalLinkTitleCache = ref<Record<string, string>>({});
 const youtubeTitleRequests = new Set<string>();
 const externalLinkTitleRequests = new Set<string>();
 const youtubePlayers = new Map<string, YouTubePlayerLike>();
+const youtubePlayerVideoIds = new Map<string, string>();
 const youtubeContainers = new Map<string, HTMLElement>();
 const youtubeShells = new Map<string, HTMLElement>();
+const youtubeDetails = new Map<string, HTMLDetailsElement>();
 const youtubePlayerStates = ref<Record<string, YouTubePlayerState>>({});
 let youtubeApiPromise: Promise<YouTubeApiLike> | null = null;
 let tauriOpenerPromise: Promise<TauriOpenerModule | null> | null = null;
@@ -293,6 +402,25 @@ let youtubeSyncInterval: ReturnType<typeof setInterval> | null = null;
 const fullscreenChangeTick = ref(0);
 const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
 const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const PINNED_YOUTUBE_KEY = 'pinned:top';
+const PINNED_VIDEO_DEFAULT_HEIGHT = 190;
+const PINNED_VIDEO_MIN_HEIGHT = 140;
+const MIN_CHAT_VISIBLE_HEIGHT = 180;
+const NEAR_BOTTOM_THRESHOLD_PX = 48;
+const PINNED_SPLIT_RATIO = 0.5;
+const PINNED_PANEL_OVERHEAD_ESTIMATE = 24;
+const WINDOW_LAYOUT_CHANGED_EVENT = 'agent-lobby-window-layout-changed';
+const pinnedYouTubeEmbed = ref<{ sourceKey: string; url: string; videoId: string } | null>(null);
+const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
+const shouldAutoplayPinnedOnReady = ref(false);
+const pinnedControlScale = computed(() => {
+  const rawScale = pinnedVideoHeight.value / PINNED_VIDEO_DEFAULT_HEIGHT;
+  return Math.max(0.78, Math.min(1.2, rawScale));
+});
+const chatAreaEl = ref<HTMLElement | null>(null);
+const activePinnedResize = ref<{ startY: number; startHeight: number } | null>(null);
+const stickToBottomWhileResizing = ref(false);
+let chatAreaResizeObserver: ResizeObserver | null = null;
 const emojiSuggestions = ref<{ name: string; emoji: string }[]>([]);
 const emojiSelectedIndex = ref(0);
 const mentionSuggestions = ref<string[]>([]);
@@ -344,6 +472,15 @@ function registerYouTubeShell(key: string, element: Element | ComponentPublicIns
   }
 }
 
+function registerYouTubeDetails(key: string, element: Element | ComponentPublicInstance | null) {
+  const candidate = element && '$el' in element ? element.$el : element;
+  if (candidate instanceof HTMLDetailsElement) {
+    youtubeDetails.set(key, candidate);
+  } else {
+    youtubeDetails.delete(key);
+  }
+}
+
 function getAllYouTubeEmbeds(): Array<{ key: string; videoId: string }> {
   const embeds: Array<{ key: string; videoId: string }> = [];
   props.messages.forEach((message, messageIndex) => {
@@ -355,7 +492,284 @@ function getAllYouTubeEmbeds(): Array<{ key: string; videoId: string }> {
       .filter((item): item is { key: string; videoId: string } => Boolean(item.videoId));
     embeds.push(...msgEmbeds);
   });
+
+  if (pinnedYouTubeEmbed.value?.videoId) {
+    embeds.push({ key: PINNED_YOUTUBE_KEY, videoId: pinnedYouTubeEmbed.value.videoId });
+  }
+
   return embeds;
+}
+
+function getFeedYouTubeEmbeds(): Array<{ key: string; url: string; videoId: string }> {
+  const embeds: Array<{ key: string; url: string; videoId: string }> = [];
+
+  props.messages.forEach((message, messageIndex) => {
+    extractYouTubeUrls(message.message).forEach((url, embedIndex) => {
+      const videoId = getYouTubeVideoId(url);
+      if (!videoId) {
+        return;
+      }
+
+      embeds.push({
+        key: getEmbedKey(messageIndex, url, embedIndex),
+        url,
+        videoId,
+      });
+    });
+  });
+
+  return embeds;
+}
+
+function isYouTubeEmbedPinned(messageIndex: number, embedUrl: string, embedIndex: number): boolean {
+  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
+  return pinnedYouTubeEmbed.value?.sourceKey === sourceKey;
+}
+
+function isPinnedEmbedKey(key: string): boolean {
+  return pinnedYouTubeEmbed.value?.sourceKey === key;
+}
+
+function collapseEmbedInChatFeed(key: string) {
+  const details = youtubeDetails.get(key);
+  if (details?.open) {
+    details.open = false;
+  }
+
+  const player = youtubePlayers.get(key);
+  if (player) {
+    player.pauseVideo();
+    patchPlayerState(key, { isPlaying: false });
+  }
+}
+
+function pinEmbedBySource(sourceKey: string, url: string, videoId: string) {
+  pinnedYouTubeEmbed.value = {
+    sourceKey,
+    url,
+    videoId,
+  };
+
+  collapseEmbedInChatFeed(sourceKey);
+}
+
+function cyclePinnedVideo(direction: 1 | -1, { autoplay = false }: { autoplay?: boolean } = {}) {
+  const currentPinned = pinnedYouTubeEmbed.value;
+  if (!currentPinned) {
+    return;
+  }
+
+  const feedEmbeds = getFeedYouTubeEmbeds();
+  if (feedEmbeds.length <= 1) {
+    return;
+  }
+
+  const currentIndex = feedEmbeds.findIndex((embed) => embed.key === currentPinned.sourceKey);
+  if (currentIndex < 0) {
+    return;
+  }
+
+  const nextIndex = (currentIndex + direction + feedEmbeds.length) % feedEmbeds.length;
+  const nextEmbed = feedEmbeds[nextIndex];
+  if (!nextEmbed || nextEmbed.key === currentPinned.sourceKey) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+  shouldAutoplayPinnedOnReady.value = autoplay;
+  pinEmbedBySource(nextEmbed.key, nextEmbed.url, nextEmbed.videoId);
+  scrollMessagesToBottomAfterLayout(shouldStickToBottom);
+  void initializeYouTubePlayers();
+}
+
+function advancePinnedVideo() {
+  cyclePinnedVideo(1, { autoplay: true });
+}
+
+function goToNextPinnedVideo() {
+  cyclePinnedVideo(1, { autoplay: true });
+}
+
+function goToPreviousPinnedVideo() {
+  cyclePinnedVideo(-1, { autoplay: true });
+}
+
+function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedIndex: number) {
+  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
+
+  if (pinnedYouTubeEmbed.value?.sourceKey === sourceKey) {
+    unpinYouTubeEmbed();
+    return;
+  }
+
+  const videoId = getYouTubeVideoId(embedUrl);
+  if (!videoId) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+  shouldAutoplayPinnedOnReady.value = true;
+  pinEmbedBySource(sourceKey, embedUrl, videoId);
+
+  resetPinnedSplitToHalf();
+  scrollMessagesToBottomAfterLayout(shouldStickToBottom);
+
+  void initializeYouTubePlayers();
+}
+
+function unpinYouTubeEmbed() {
+  const pinnedPlayer = youtubePlayers.get(PINNED_YOUTUBE_KEY);
+  if (pinnedPlayer) {
+    pinnedPlayer.destroy();
+    youtubePlayers.delete(PINNED_YOUTUBE_KEY);
+    youtubePlayerVideoIds.delete(PINNED_YOUTUBE_KEY);
+  }
+
+  youtubeContainers.delete(PINNED_YOUTUBE_KEY);
+  youtubeShells.delete(PINNED_YOUTUBE_KEY);
+  clearFullscreenOverlayHideTimer(PINNED_YOUTUBE_KEY);
+
+  const { [PINNED_YOUTUBE_KEY]: _removedOverlay, ...overlayRest } = fullscreenOverlayVisible.value;
+  fullscreenOverlayVisible.value = overlayRest;
+
+  const { [PINNED_YOUTUBE_KEY]: _removedState, ...stateRest } = youtubePlayerStates.value;
+  youtubePlayerStates.value = stateRest;
+
+  pinnedYouTubeEmbed.value = null;
+  shouldAutoplayPinnedOnReady.value = false;
+
+  if (youtubePlayers.size === 0) {
+    stopYouTubeSync();
+  }
+}
+
+function getPinnedHeightBounds() {
+  const areaHeight = chatAreaEl.value?.clientHeight || 0;
+  if (areaHeight <= 0) {
+    return {
+      min: PINNED_VIDEO_MIN_HEIGHT,
+      max: PINNED_VIDEO_DEFAULT_HEIGHT,
+    };
+  }
+
+  const maxByReservedChat = areaHeight - MIN_CHAT_VISIBLE_HEIGHT;
+  const maxByRatio = Math.floor(areaHeight * 0.65);
+  const max = Math.max(PINNED_VIDEO_MIN_HEIGHT, Math.min(maxByReservedChat, maxByRatio));
+
+  return {
+    min: PINNED_VIDEO_MIN_HEIGHT,
+    max,
+  };
+}
+
+function clampPinnedVideoHeight(nextHeight: number) {
+  const bounds = getPinnedHeightBounds();
+  return Math.max(bounds.min, Math.min(bounds.max, nextHeight));
+}
+
+function scrollMessagesToBottom() {
+  if (!messagesContainer.value) {
+    return;
+  }
+
+  const container = messagesContainer.value;
+  container.scrollTop = container.scrollHeight;
+}
+
+function isMessagesNearBottom(): boolean {
+  if (!messagesContainer.value) {
+    return true;
+  }
+
+  const container = messagesContainer.value;
+  const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+  return distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX;
+}
+
+function scrollMessagesToBottomAfterLayout(shouldStickToBottom: boolean) {
+  if (!shouldStickToBottom) {
+    return;
+  }
+
+  void nextTick(() => {
+    scrollMessagesToBottom();
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        scrollMessagesToBottom();
+      });
+    }
+  });
+}
+
+function resetPinnedSplitToHalf() {
+  if (!pinnedYouTubeEmbed.value) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+
+  const areaHeight = chatAreaEl.value?.clientHeight || 0;
+  if (areaHeight <= 0) {
+    pinnedVideoHeight.value = clampPinnedVideoHeight(PINNED_VIDEO_DEFAULT_HEIGHT);
+    if (shouldStickToBottom) {
+      scrollMessagesToBottom();
+    }
+    return;
+  }
+
+  const targetVideoHeight = Math.floor(areaHeight * PINNED_SPLIT_RATIO) - PINNED_PANEL_OVERHEAD_ESTIMATE;
+  pinnedVideoHeight.value = clampPinnedVideoHeight(targetVideoHeight);
+  if (shouldStickToBottom) {
+    scrollMessagesToBottom();
+  }
+}
+
+function syncPinnedVideoToAvailableSpace() {
+  if (!pinnedYouTubeEmbed.value) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+  pinnedVideoHeight.value = clampPinnedVideoHeight(pinnedVideoHeight.value);
+  if (shouldStickToBottom) {
+    scrollMessagesToBottom();
+  }
+}
+
+function handlePinnedResizeMove(event: MouseEvent) {
+  if (!activePinnedResize.value) {
+    return;
+  }
+
+  const deltaY = event.clientY - activePinnedResize.value.startY;
+  pinnedVideoHeight.value = clampPinnedVideoHeight(activePinnedResize.value.startHeight + deltaY);
+  if (stickToBottomWhileResizing.value) {
+    scrollMessagesToBottom();
+  }
+}
+
+function stopPinnedResize() {
+  activePinnedResize.value = null;
+  stickToBottomWhileResizing.value = false;
+  window.removeEventListener('mousemove', handlePinnedResizeMove);
+  window.removeEventListener('mouseup', stopPinnedResize);
+}
+
+function startPinnedResize(event: MouseEvent) {
+  if (!pinnedYouTubeEmbed.value) {
+    return;
+  }
+
+  stickToBottomWhileResizing.value = isMessagesNearBottom();
+
+  activePinnedResize.value = {
+    startY: event.clientY,
+    startHeight: pinnedVideoHeight.value,
+  };
+
+  window.addEventListener('mousemove', handlePinnedResizeMove);
+  window.addEventListener('mouseup', stopPinnedResize);
 }
 
 async function ensureYouTubeApi(): Promise<YouTubeApiLike> {
@@ -432,12 +846,23 @@ async function initializeYouTubePlayers() {
     if (!activeKeys.has(key)) {
       player.destroy();
       youtubePlayers.delete(key);
+      youtubePlayerVideoIds.delete(key);
       const { [key]: _removed, ...rest } = youtubePlayerStates.value;
       youtubePlayerStates.value = rest;
     }
   });
 
   activeEmbeds.forEach(({ key, videoId }) => {
+    const existingVideoId = youtubePlayerVideoIds.get(key);
+    if (youtubePlayers.has(key) && existingVideoId !== videoId) {
+      const existingPlayer = youtubePlayers.get(key);
+      existingPlayer?.destroy();
+      youtubePlayers.delete(key);
+      youtubePlayerVideoIds.delete(key);
+      const { [key]: _removedState, ...restStates } = youtubePlayerStates.value;
+      youtubePlayerStates.value = restStates;
+    }
+
     if (youtubePlayers.has(key)) {
       return;
     }
@@ -462,8 +887,19 @@ async function initializeYouTubePlayers() {
             duration: Number(player.getDuration()) || 0,
             volume: Number(player.getVolume()) || 70,
           });
+
+          if (key === PINNED_YOUTUBE_KEY && shouldAutoplayPinnedOnReady.value) {
+            shouldAutoplayPinnedOnReady.value = false;
+            player.playVideo();
+            patchPlayerState(key, { isPlaying: true });
+          }
         },
         onStateChange: (event) => {
+          if (key === PINNED_YOUTUBE_KEY && event.data === 0) {
+            advancePinnedVideo();
+            return;
+          }
+
           patchPlayerState(key, {
             isPlaying: event.data === api.PlayerState.PLAYING,
           });
@@ -472,6 +908,7 @@ async function initializeYouTubePlayers() {
     });
 
     youtubePlayers.set(key, player);
+    youtubePlayerVideoIds.set(key, videoId);
     patchPlayerState(key, createDefaultPlayerState());
   });
 
@@ -485,8 +922,10 @@ async function initializeYouTubePlayers() {
 function destroyAllYouTubePlayers() {
   youtubePlayers.forEach((player) => player.destroy());
   youtubePlayers.clear();
+  youtubePlayerVideoIds.clear();
   youtubeContainers.clear();
   youtubeShells.clear();
+  youtubeDetails.clear();
   youtubePlayerStates.value = {};
   fullscreenOverlayVisible.value = {};
   fullscreenOverlayHideTimers.forEach((timerId) => clearTimeout(timerId));
@@ -507,6 +946,12 @@ function toggleYouTubePlayback(key: string) {
 
 function handleYouTubeEmbedToggle(key: string, event: Event) {
   const details = event.target as HTMLDetailsElement;
+
+  if (details.open && isPinnedEmbedKey(key)) {
+    details.open = false;
+    return;
+  }
+
   if (details.open) {
     return;
   }
@@ -1237,12 +1682,35 @@ function handleFullscreenChange() {
   }
 }
 
+function handleWindowLayoutChanged() {
+  resetPinnedSplitToHalf();
+}
+
 onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
+  window.addEventListener('resize', syncPinnedVideoToAvailableSpace);
+  window.addEventListener(WINDOW_LAYOUT_CHANGED_EVENT, handleWindowLayoutChanged);
+  pinnedVideoHeight.value = clampPinnedVideoHeight(PINNED_VIDEO_DEFAULT_HEIGHT);
+
+  if (typeof ResizeObserver !== 'undefined' && chatAreaEl.value) {
+    chatAreaResizeObserver = new ResizeObserver(() => {
+      syncPinnedVideoToAvailableSpace();
+    });
+    chatAreaResizeObserver.observe(chatAreaEl.value);
+  }
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  window.removeEventListener('resize', syncPinnedVideoToAvailableSpace);
+  window.removeEventListener(WINDOW_LAYOUT_CHANGED_EVENT, handleWindowLayoutChanged);
+
+  if (chatAreaResizeObserver) {
+    chatAreaResizeObserver.disconnect();
+    chatAreaResizeObserver = null;
+  }
+
+  stopPinnedResize();
   destroyAllYouTubePlayers();
 });
 </script>
@@ -1484,6 +1952,30 @@ onBeforeUnmount(() => {
   letter-spacing: 0.3px;
 }
 
+.video-pin-btn {
+  border: 1px solid var(--dim-green);
+  background: transparent;
+  color: var(--system-dim);
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  font-weight: 700;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.video-pin-btn:hover {
+  color: var(--neon-green);
+  border-color: var(--neon-green);
+}
+
+.video-pin-btn[aria-pressed="true"] {
+  color: #000;
+  background: var(--neon-green);
+  border-color: var(--neon-green);
+}
+
 .video-header:hover .video-header-control {
   color: var(--neon-green);
 }
@@ -1546,6 +2038,159 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.pinned-video-panel {
+  position: relative;
+  border-bottom: 1px solid var(--neon-green);
+  background: rgba(0, 0, 0, 0.88);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pinned-video-header {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  transform: translateY(-10px) scale(0.985);
+  filter: blur(3px);
+  box-shadow: 0 0 0 rgba(74, 225, 255, 0);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.26s linear, background 0.22s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), filter 0.3s ease, box-shadow 0.24s ease;
+  transition-delay: 0.03s;
+}
+
+.pinned-video-panel:hover .pinned-video-header,
+.pinned-video-panel:focus-within .pinned-video-header {
+  background: linear-gradient(180deg, rgba(10, 14, 28, 0.9), rgba(20, 8, 30, 0.62));
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  box-shadow: 0 0 18px rgba(74, 225, 255, 0.16), 0 0 24px rgba(255, 77, 181, 0.1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.pinned-video-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pinned-video-nav-btn {
+  min-width: 28px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.pinned-video-title {
+  color: var(--text-white);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pinned-video-shell {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: var(--pinned-video-height);
+}
+
+.pinned-video-shell .youtube-player-host {
+  height: 100%;
+  min-height: 0;
+  padding-top: 0;
+  border-bottom: none;
+}
+
+.pinned-video-shell .video-custom-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  background: transparent;
+  transform: translateY(12px) scale(0.992);
+  filter: blur(3px);
+  box-shadow: 0 0 0 rgba(255, 77, 181, 0);
+  transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.26s linear, background 0.24s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), filter 0.3s ease, box-shadow 0.24s ease;
+  transition-delay: 0s;
+}
+
+.pinned-video-shell:hover .video-custom-controls,
+.pinned-video-shell:focus-within .video-custom-controls {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(24, 8, 36, 0.74) 35%, rgba(6, 16, 30, 0.9));
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  box-shadow: 0 -10px 24px rgba(255, 77, 181, 0.12), 0 -6px 16px rgba(74, 225, 255, 0.1);
+  transition-delay: 0.07s;
+}
+
+.pinned-video-shell .video-custom-controls {
+  gap: calc(10px * var(--pinned-control-scale));
+  padding: calc(8px * var(--pinned-control-scale)) calc(10px * var(--pinned-control-scale));
+  font-size: calc(11px * var(--pinned-control-scale));
+}
+
+.pinned-video-shell .video-control-btn {
+  font-size: calc(11px * var(--pinned-control-scale));
+  padding: calc(4px * var(--pinned-control-scale)) calc(8px * var(--pinned-control-scale));
+}
+
+.pinned-video-shell .video-timecode {
+  min-width: calc(76px * var(--pinned-control-scale));
+}
+
+.pinned-video-shell .video-volume {
+  width: calc(82px * var(--pinned-control-scale));
+}
+
+.pinned-video-divider {
+  height: 14px;
+  border-bottom: 1px solid var(--neon-green);
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+}
+
+.pinned-video-divider-grip {
+  width: 64px;
+  height: 6px;
+  border: 1px solid var(--dim-green);
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(57, 255, 20, 0.18) 0,
+    rgba(57, 255, 20, 0.18) 8px,
+    rgba(57, 255, 20, 0.06) 8px,
+    rgba(57, 255, 20, 0.06) 16px
+  );
+}
+
+.pinned-video-divider:hover .pinned-video-divider-grip {
+  border-color: var(--neon-green);
+}
+
 .youtube-player-host {
   position: relative;
   width: 100%;
@@ -1570,6 +2215,10 @@ onBeforeUnmount(() => {
   max-width: 100% !important;
   display: block;
   border: 0;
+}
+
+.pinned-video-shell .youtube-player-host :deep(iframe) {
+  pointer-events: none;
 }
 
 .video-fullscreen-exit {
@@ -1607,6 +2256,17 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
   color: var(--text-white);
   font-size: 11px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.16s ease, visibility 0.16s ease;
+}
+
+.video-player-shell:hover .video-custom-controls,
+.video-player-shell:focus-within .video-custom-controls {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .video-control-btn {

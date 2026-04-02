@@ -42,6 +42,7 @@ jobs:
       - name: install frontend dependencies
         run: npm install # or yarn install / pnpm install
       - uses: tauri-apps/tauri-action@action-v0.6.2
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -53,6 +54,28 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+      - name: upload updater artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="app-v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
+            PATTERN="*.app.tar.gz *.app.tar.gz.sig"
+          elif [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
+            BUNDLE_DIR="src-tauri/target/release/bundle/appimage"
+            PATTERN="*.AppImage.tar.gz *.AppImage.tar.gz.sig"
+          else
+            BUNDLE_DIR="src-tauri/target/release/bundle/nsis"
+            PATTERN="*.nsis.zip *.nsis.zip.sig"
+          fi
+          FILES=$(find "$BUNDLE_DIR" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.tar.gz.sig" -o -name "*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) 2>/dev/null)
+          if [[ -n "$FILES" ]]; then
+            gh release upload "$TAG" $FILES --repo "${{ github.repository }}" --clobber
+          else
+            echo "No updater artifacts found in $BUNDLE_DIR — skipping upload"
+          fi
 
   publish-updater-json:
     needs: publish-tauri

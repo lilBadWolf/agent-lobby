@@ -2,7 +2,7 @@
   <section id="chat-area" ref="chatAreaEl">
     <div v-if="pinnedYouTubeEmbed" class="pinned-video-panel">
       <div class="pinned-video-header">
-        <span class="pinned-video-title">PINNED: {{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
+        <span class="pinned-video-title">{{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
         <div class="pinned-video-actions">
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
             &lt;
@@ -89,7 +89,7 @@
     </div>
     <div v-if="pinnedTwitchEmbed" class="pinned-video-panel">
       <div class="pinned-video-header">
-        <span class="pinned-video-title">PINNED: {{ getTwitchEmbedHeader(pinnedTwitchEmbed.url) }}</span>
+        <span class="pinned-video-title">{{ getTwitchEmbedHeader(pinnedTwitchEmbed.url) }}</span>
         <div class="pinned-video-actions">
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
             &lt;

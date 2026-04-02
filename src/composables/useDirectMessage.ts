@@ -34,6 +34,7 @@ export function useDirectMessage(
   const pendingVideoCalls = ref<VideoCallRequest[]>([]);
   const activeChats = ref<Map<string, DMChat>>(new Map());
   const outgoingRequests = ref<string[]>([]);
+  const deniedRequests = ref<string[]>([]);
   const notices = ref<DMNotice[]>([]);
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
@@ -41,6 +42,25 @@ export function useDirectMessage(
   const pendingOutgoingFiles = new Map<string, { user: string; file: File }>();
   let messageHandlerRegistered = false;
   let noticeIdCounter = 0;
+  const deniedRequestTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function flashDeniedRequest(user: string, timeout = 1800) {
+    if (!deniedRequests.value.includes(user)) {
+      deniedRequests.value = [...deniedRequests.value, user];
+    }
+
+    const existingTimeout = deniedRequestTimeouts.get(user);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+    }
+
+    const nextTimeout = setTimeout(() => {
+      deniedRequests.value = deniedRequests.value.filter((entry) => entry !== user);
+      deniedRequestTimeouts.delete(user);
+    }, timeout);
+
+    deniedRequestTimeouts.set(user, nextTimeout);
+  }
 
   function pushNotice(
     message: string,
@@ -171,6 +191,7 @@ export function useDirectMessage(
       void startDMAsInitiator(fromUser);
     } else if (data.type === 'reject') {
       outgoingRequests.value = outgoingRequests.value.filter((user) => user !== fromUser);
+      flashDeniedRequest(fromUser);
       pushNotice(`${fromUser} denied your DM request.`);
       closeDM(fromUser, false);
     } else if (data.type === 'cancel') {
@@ -740,6 +761,7 @@ export function useDirectMessage(
 
     // Clear stale state, then send a DM request notice.
     closeDM(targetUser, false);
+    deniedRequests.value = deniedRequests.value.filter((user) => user !== targetUser);
     if (!outgoingRequests.value.includes(targetUser)) {
       outgoingRequests.value = [...outgoingRequests.value, targetUser];
     }
@@ -1423,7 +1445,10 @@ export function useDirectMessage(
     pendingOutgoingFiles.clear();
     activeChats.value.clear();
     outgoingRequests.value = [];
+    deniedRequests.value = [];
     pendingRequests.value = [];
+    deniedRequestTimeouts.forEach((timeout) => clearTimeout(timeout));
+    deniedRequestTimeouts.clear();
     messageHandlerRegistered = false;
   }
 
@@ -1438,6 +1463,7 @@ export function useDirectMessage(
     pendingVideoCalls: computed(() => pendingVideoCalls.value),
     activeChats: computed(() => activeChats.value),
     outgoingRequests: computed(() => outgoingRequests.value),
+    deniedRequests: computed(() => deniedRequests.value),
     notices: computed(() => notices.value),
     requestDM,
     cancelDMRequest,

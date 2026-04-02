@@ -32,10 +32,27 @@
         >
           {{ user.username }}
         </button>
-        <button v-if="user.dmAvailable && !user.isAway" class="dm-btn" @click="emit('dmRequest', user.username)">💬</button>
+        <button
+          v-if="user.dmAvailable && !user.isAway"
+          class="dm-btn"
+          :class="getDMBubbleClass(user.username)"
+          :title="getDMBubbleTitle(user.username)"
+          :aria-label="getDMBubbleTitle(user.username)"
+          @click="emit('dmRequest', user.username)"
+        >
+          {{ getDMBubbleIcon(user.username) }}
+        </button>
         <span v-else class="dm-btn-placeholder" aria-hidden="true"></span>
       </div>
     </div>
+    <button
+      v-if="props.showDmLauncher"
+      id="show-dm-btn"
+      type="button"
+      @click="emit('showDmWindow')"
+    >
+      SHOW DM
+    </button>
     <button id="disconnect-btn" @click="emit('disconnect')">TERMINATE</button>
   </aside>
 </template>
@@ -49,15 +66,20 @@ const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
   currentUsername?: string;
   isAway?: boolean;
+  dmBubbleStates?: Record<string, 'active' | 'pending' | 'denied'>;
+  showDmLauncher?: boolean;
 }>(), {
   users: () => ({}), // Default to an empty object
   isAway: false,
+  dmBubbleStates: () => ({}),
+  showDmLauncher: false,
 });
 
 const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
   mentionRequest: [user: string];
+  showDmWindow: [];
   toggleAway: [];
 }>();
 
@@ -74,6 +96,31 @@ const userList = computed(() => {
   const nonBotUsers = filteredUsers.filter((user) => !user.isBot);
   return [...botUsers, ...nonBotUsers];
 });
+
+function getDMBubbleState(user: string): 'active' | 'pending' | 'denied' | 'idle' {
+  return props.dmBubbleStates?.[user] ?? 'idle';
+}
+
+function getDMBubbleClass(user: string) {
+  const state = getDMBubbleState(user);
+  return {
+    'dm-btn-active': state === 'active',
+    'dm-btn-pending': state === 'pending',
+    'dm-btn-denied': state === 'denied',
+  };
+}
+
+function getDMBubbleIcon(user: string): string {
+  return getDMBubbleState(user) === 'denied' ? '✕' : '💬';
+}
+
+function getDMBubbleTitle(user: string): string {
+  const state = getDMBubbleState(user);
+  if (state === 'active') return `Active DM with ${user}`;
+  if (state === 'pending') return `DM request pending with ${user}`;
+  if (state === 'denied') return `${user} denied your DM request`;
+  return `Send direct message to ${user}`;
+}
 </script>
 
 <style scoped>
@@ -202,18 +249,54 @@ const userList = computed(() => {
 
 .dm-btn {
   background: none;
-  border: none;
+  border: 1px solid transparent;
   color: inherit;
   cursor: pointer;
   font-size: 12px;
   opacity: 0.6;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   padding: 2px 4px;
+  border-radius: 999px;
+  min-width: 24px;
 }
 
 .dm-btn:hover {
   opacity: 1;
   text-shadow: 0 0 5px currentColor;
+}
+
+.dm-btn-active {
+  color: #6dff8f;
+  border-color: rgba(109, 255, 143, 0.55);
+  box-shadow: 0 0 10px rgba(109, 255, 143, 0.45);
+  opacity: 1;
+}
+
+.dm-btn-pending {
+  color: #ffd84a;
+  border-color: rgba(255, 216, 74, 0.55);
+  box-shadow: 0 0 10px rgba(255, 216, 74, 0.4);
+  opacity: 1;
+}
+
+.dm-btn-denied {
+  color: var(--alert-red);
+  border-color: rgba(255, 57, 57, 0.65);
+  box-shadow: 0 0 10px rgba(255, 57, 57, 0.42);
+  opacity: 1;
+  animation: dm-denied-flash 0.22s step-end 6;
+}
+
+@keyframes dm-denied-flash {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(0.92);
+  }
 }
 
 .dm-btn-placeholder {
@@ -255,6 +338,25 @@ const userList = computed(() => {
 
 #disconnect-btn:hover {
   background: var(--alert-red);
+  color: #000;
+}
+
+#show-dm-btn {
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid var(--neon-green);
+  color: var(--neon-green);
+  padding: 10px;
+  width: 100%;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.2s;
+  text-transform: uppercase;
+  font-family: inherit;
+}
+
+#show-dm-btn:hover {
+  background: var(--neon-green);
   color: #000;
 }
 

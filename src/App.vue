@@ -54,8 +54,23 @@
       @close="toggleNetworkConfig"
     />
 
+    <DMRequestStack
+      v-if="!showAuth"
+      :pending-requests="dmPendingRequests"
+      :pending-audio-calls="dmPendingAudioCalls"
+      :pending-video-calls="dmPendingVideoCalls"
+      :notices="dmNotices"
+      @accept-dm="handleAcceptDM"
+      @reject-dm="handleRejectDM"
+      @accept-audio="handleAcceptAudio"
+      @reject-audio="handleRejectAudio"
+      @accept-video="handleAcceptVideo"
+      @reject-video="handleRejectVideo"
+      @cancel-request="handleCancelDMRequest"
+    />
+
     <DMChatModal
-      :show-modal="showDM"
+      :show-modal="showDM && !dmWindowOpen"
       :active-chats="dmActiveChats"
       :pending-requests="dmPendingRequests"
       :pending-audio-calls="dmPendingAudioCalls"
@@ -125,8 +140,11 @@
         :users="users"
         :current-username="username"
         :is-away="isAway"
+        :dm-bubble-states="dmBubbleStates"
+        :show-dm-launcher="hasDMActivity"
         @disconnect="handleDisconnect"
         @dm-request="handleDMRequest"
+        @show-dm-window="handleShowDMWindow"
         @mention-request="handleMentionRequest"
         @toggle-away="handleToggleAway"
       />
@@ -256,12 +274,14 @@
 </style>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted } from 'vue';
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import packageJson from '../package.json';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
+import type { FileTransferState } from './types/directMessage';
+import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
 import AuthScreen from './components/AuthScreen.vue';
 import ChatArea from './components/ChatArea.vue';
@@ -269,6 +289,7 @@ import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMChatModal from './components/DMChatModal.vue';
+import DMRequestStack from './components/DMRequestStack.vue';
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
@@ -314,9 +335,18 @@ const {
   isInstallingUpdate,
 } = useAutoUpdaterState();
 const appVersion = packageJson.version;
+const DM_WINDOW_LABEL = 'dm-window';
+const DM_WINDOW_STATE_EVENT = 'dm-window-state';
+const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
+const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
 
 // DM system
 const showDM = ref(false);
+const dmWindowOpen = ref(false);
+let dmPopupWindow: Window | null = null;
+let dmPopupWatchIntervalId: number | null = null;
+let dmWebChannel: BroadcastChannel | null = null;
+let cleanupDMActionListener: (() => void) | null = null;
 const focusedDMUser = ref<string | null>(null);
 const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
 type DMType = ReturnType<typeof useDirectMessage>;
@@ -327,31 +357,48 @@ const dmPendingRequests = computed(() => dm.value?.pendingRequests.value || []);
 const dmPendingAudioCalls = computed(() => dm.value?.pendingAudioCalls.value || []);
 const dmPendingVideoCalls = computed(() => dm.value?.pendingVideoCalls.value || []);
 const dmOutgoingRequests = computed(() => dm.value?.outgoingRequests.value || []);
+const dmDeniedRequests = computed(() => dm.value?.deniedRequests.value || []);
 const dmNotices = computed(() => dm.value?.notices.value || []);
-
-watch(
-  () => dmPendingRequests.value.length,
-  (pendingCount) => {
-    if (pendingCount > 0) {
-      showDM.value = true;
-    }
-  }
+const connectedDMUsers = computed(() =>
+  Array.from(dmActiveChats.value.values())
+    .filter((chat) => chat.isConnected)
+    .map((chat) => chat.user)
+    .sort()
 );
+const hasDMActivity = computed(() => connectedDMUsers.value.length > 0);
+const dmBubbleStates = computed<Record<string, 'active' | 'pending' | 'denied'>>(() => {
+  const states: Record<string, 'active' | 'pending' | 'denied'> = {};
 
-watch(
-  () => dmPendingAudioCalls.value.length,
-  (pendingCount) => {
-    if (pendingCount > 0) {
-      showDM.value = true;
-    }
+  for (const user of dmDeniedRequests.value) {
+    states[user] = 'denied';
   }
-);
+
+  for (const user of dmOutgoingRequests.value) {
+    states[user] = 'pending';
+  }
+
+  for (const user of dmActiveChats.value.keys()) {
+    states[user] = 'active';
+  }
+
+  return states;
+});
 
 watch(
-  () => dmPendingVideoCalls.value.length,
-  (pendingCount) => {
-    if (pendingCount > 0) {
-      showDM.value = true;
+  () => connectedDMUsers.value.join('|'),
+  (nextJoined, previousJoined) => {
+    const nextUsers = nextJoined ? nextJoined.split('|').filter(Boolean) : [];
+    const previousUsers = previousJoined ? previousJoined.split('|').filter(Boolean) : [];
+    const newlyConnectedUser = nextUsers.find((user) => !previousUsers.includes(user));
+
+    if (!newlyConnectedUser) {
+      return;
+    }
+
+    focusedDMUser.value = newlyConnectedUser;
+
+    if (!dmWindowOpen.value) {
+      void openDetachedDMWindow();
     }
   }
 );
@@ -361,15 +408,9 @@ watch(
 watch(
   () => dmActiveChats.value.size,
   (newCount, oldCount) => {
-    const hasPendingSurface =
-      dmPendingRequests.value.length > 0 ||
-      dmPendingAudioCalls.value.length > 0 ||
-      dmPendingVideoCalls.value.length > 0 ||
-      dmOutgoingRequests.value.length > 0;
-
-    if (showDM.value && oldCount > 0 && newCount === 0 && !hasPendingSurface) {
-      showDM.value = false;
+    if ((showDM.value || dmWindowOpen.value) && oldCount > 0 && newCount === 0) {
       focusedDMUser.value = null;
+      void closeDetachedDMWindow();
     }
   }
 );
@@ -418,6 +459,9 @@ const pageTitle = computed(() => {
 onMounted(async () => {
   // window.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  initializeWebDMBridge();
+  await initializeDetachedDMActionListener();
+
   if (!hasTauriWindow) {
     return;
   }
@@ -425,6 +469,37 @@ onMounted(async () => {
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();
 });
+
+onBeforeUnmount(() => {
+  if (dmPopupWatchIntervalId !== null) {
+    window.clearInterval(dmPopupWatchIntervalId);
+    dmPopupWatchIntervalId = null;
+  }
+  dmWebChannel?.close();
+  dmWebChannel = null;
+  cleanupDMActionListener?.();
+  cleanupDMActionListener = null;
+});
+
+watch(
+  [
+    dmActiveChats,
+    dmPendingRequests,
+    dmPendingAudioCalls,
+    dmPendingVideoCalls,
+    dmOutgoingRequests,
+    dmNotices,
+    focusedDMUser,
+    () => username.value,
+    () => config.value.dmChatEffect,
+  ],
+  () => {
+    if (dmWindowOpen.value) {
+      void emitDMWindowState();
+    }
+  },
+  { deep: true }
+);
 
 watch(pageTitle, (newTitle) => {
   document.title = newTitle ?? "LOBBY // AUTH";
@@ -532,7 +607,38 @@ function toggleNetworkConfig() {
 }
 
 function toggleDM() {
-  showDM.value = !showDM.value;
+  if (showDM.value) {
+    showDM.value = false;
+    return;
+  }
+
+  if (dmWindowOpen.value) {
+    void focusDetachedDMWindow().then((focused) => {
+      if (!focused) {
+        void openDetachedDMWindow();
+      }
+    });
+    return;
+  }
+
+  void openDetachedDMWindow();
+}
+
+function handleShowDMWindow() {
+  if (!isConnected.value) {
+    return;
+  }
+
+  if (dmWindowOpen.value) {
+    void focusDetachedDMWindow().then((focused) => {
+      if (!focused) {
+        void openDetachedDMWindow();
+      }
+    });
+    return;
+  }
+
+  void openDetachedDMWindow();
 }
 
 function handleAmbience() {
@@ -653,23 +759,28 @@ async function handleDMRequest(user: string) {
       return;
     }
 
+    // Clicking a yellow (pending) DM bubble cancels that outgoing request.
+    if (dmOutgoingRequests.value.includes(user)) {
+      dm.value.cancelDMRequest(user);
+      return;
+    }
+
     // Check if chat already exists
     if (dm.value.activeChats.value.has(user)) {
       // Jump to existing chat
       focusedDMUser.value = user;
-      showDM.value = true;
+      await openDetachedDMWindow();
     } else {
       // Start new DM request
       await dm.value.requestDM(user);
-      showDM.value = true;
     }
   }
 }
 
 function handleAcceptDM(user: string) {
   if (dm.value) {
+    focusedDMUser.value = user;
     dm.value.acceptDM(user);
-    showDM.value = true;
   }
 }
 
@@ -681,7 +792,9 @@ function handleRejectDM(user: string) {
 
 function handleAcceptAudio(user: string) {
   if (dm.value) {
+    focusedDMUser.value = user;
     dm.value.acceptAudioCall(user);
+    void openDetachedDMWindow();
   }
 }
 
@@ -693,7 +806,9 @@ function handleRejectAudio(user: string) {
 
 function handleAcceptVideo(user: string) {
   if (dm.value) {
+    focusedDMUser.value = user;
     dm.value.acceptVideoCall(user);
+    void openDetachedDMWindow();
   }
 }
 
@@ -729,18 +844,11 @@ function handleStopTyping(user: string) {
 
 function handleCloseDM(user: string) {
   if (dm.value) {
-    const isClosingLastActiveDM = dm.value.activeChats.value.size === 1 && dm.value.activeChats.value.has(user);
-    const hasPendingSurface =
-      dm.value.pendingRequests.value.length > 0 ||
-      dm.value.pendingAudioCalls.value.length > 0 ||
-      dm.value.pendingVideoCalls.value.length > 0 ||
-      dm.value.outgoingRequests.value.length > 0;
-
     dm.value.closeDM(user);
 
-    if (isClosingLastActiveDM && !hasPendingSurface) {
-      showDM.value = false;
+    if (dm.value.activeChats.value.size === 0) {
       focusedDMUser.value = null;
+      void closeDetachedDMWindow();
     }
   }
 }
@@ -802,6 +910,360 @@ function handleFileSaved(user: string, fileId: string) {
 function handleRemoveFile(user: string, fileId: string) {
   if (dm.value) {
     dm.value.removeFileTransfer(user, fileId);
+  }
+}
+
+function initializeWebDMBridge() {
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  dmWebChannel = new BroadcastChannel(DM_WEB_CHANNEL);
+  dmWebChannel.onmessage = (event: MessageEvent) => {
+    const message = event.data as { type?: string; payload?: unknown };
+    if (message?.type !== 'action') {
+      return;
+    }
+
+    handleDetachedDMAction(message.payload as DMWindowAction);
+  };
+}
+
+function startWebPopupHeartbeat() {
+  if (dmPopupWatchIntervalId !== null) {
+    return;
+  }
+
+  dmPopupWatchIntervalId = window.setInterval(() => {
+    if (dmPopupWindow?.closed) {
+      dmPopupWindow = null;
+      dmWindowOpen.value = false;
+      window.clearInterval(dmPopupWatchIntervalId!);
+      dmPopupWatchIntervalId = null;
+    }
+  }, 750);
+}
+
+async function initializeDetachedDMActionListener() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
+  const { listen } = await import('@tauri-apps/api/event');
+  cleanupDMActionListener = await listen<DMWindowAction>(DM_WINDOW_ACTION_EVENT, (event) => {
+    handleDetachedDMAction(event.payload);
+  });
+}
+
+async function emitDMWindowState() {
+  const payload = buildDMWindowStatePayload();
+
+  if (hasTauriWindow) {
+    const { emitTo } = await import('@tauri-apps/api/event');
+    await emitTo(DM_WINDOW_LABEL, DM_WINDOW_STATE_EVENT, payload);
+    return;
+  }
+
+  dmWebChannel?.postMessage({
+    type: 'state',
+    payload,
+  });
+}
+
+async function bringDetachedDMWindowToFront(windowHandle: import('@tauri-apps/api/webviewWindow').WebviewWindow) {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const wasRaised = await invoke<boolean>('raise_dm_window');
+    if (wasRaised) {
+      return;
+    }
+  } catch (error) {
+    console.debug('Rust-side DM raise failed, falling back to frontend focus path:', error);
+  }
+
+  const { UserAttentionType } = await import('@tauri-apps/api/window');
+
+  if (await windowHandle.isMinimized()) {
+    await windowHandle.unminimize();
+  }
+
+  await windowHandle.show();
+
+  try {
+    await windowHandle.setAlwaysOnTop(true);
+  } catch (error) {
+    console.debug('Unable to temporarily set DM window always-on-top:', error);
+  }
+
+  try {
+    await windowHandle.requestUserAttention(UserAttentionType.Critical);
+  } catch (error) {
+    console.debug('Unable to request DM window attention:', error);
+  }
+
+  await windowHandle.setFocus();
+
+  window.setTimeout(() => {
+    void windowHandle.setAlwaysOnTop(false).catch((error) => {
+      console.debug('Unable to clear DM window always-on-top:', error);
+    });
+    void windowHandle.requestUserAttention(null).catch((error) => {
+      console.debug('Unable to clear DM window attention request:', error);
+    });
+  }, 250);
+}
+
+function toSerializedChats(): SerializedDMChat[] {
+  const chats: SerializedDMChat[] = [];
+
+  for (const chat of dmActiveChats.value.values()) {
+    chats.push({
+      user: chat.user,
+      messages: chat.messages,
+      isConnected: chat.isConnected,
+      pendingDisplayMessages: chat.pendingDisplayMessages,
+      isTyping: chat.isTyping,
+      audioEnabled: chat.audioEnabled,
+      videoEnabled: chat.videoEnabled,
+      callStartTime: chat.callStartTime,
+      callDuration: chat.callDuration,
+      videoCallActive: chat.videoCallActive,
+      fileTransfers: Array.from(chat.fileTransfers.values() as Iterable<FileTransferState>).map((transfer) => ({
+        id: transfer.id,
+        filename: transfer.filename,
+        mimeType: transfer.mimeType,
+        totalSize: transfer.totalSize,
+        receivedSize: transfer.receivedSize,
+        totalChunks: transfer.totalChunks,
+        progress: transfer.progress,
+        direction: transfer.direction,
+        status: transfer.status,
+        savedToDisk: transfer.savedToDisk,
+      })),
+    });
+  }
+
+  return chats;
+}
+
+function buildDMWindowStatePayload(): DMWindowStatePayload {
+  return {
+    activeChats: toSerializedChats(),
+    pendingRequests: dmPendingRequests.value,
+    pendingAudioCalls: dmPendingAudioCalls.value,
+    pendingVideoCalls: dmPendingVideoCalls.value,
+    outgoingRequests: dmOutgoingRequests.value,
+    notices: dmNotices.value,
+    username: username.value,
+    dmChatEffect: config.value.dmChatEffect,
+    focusedDMUser: focusedDMUser.value,
+  };
+}
+
+async function focusDetachedDMWindow(): Promise<boolean> {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
+    if (existingWindow) {
+      await bringDetachedDMWindowToFront(existingWindow);
+      dmWindowOpen.value = true;
+      await emitDMWindowState();
+      return true;
+    }
+
+    dmWindowOpen.value = false;
+    return false;
+  }
+
+  if (dmPopupWindow && !dmPopupWindow.closed) {
+    dmPopupWindow.focus();
+    dmWindowOpen.value = true;
+    await emitDMWindowState();
+    return true;
+  }
+
+  dmWindowOpen.value = false;
+  return false;
+}
+
+async function closeDetachedDMWindow() {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
+    if (existingWindow) {
+      try {
+        await existingWindow.close();
+      } catch (error) {
+        console.debug('Unable to close detached DM window:', error);
+      }
+    }
+
+    dmWindowOpen.value = false;
+    showDM.value = false;
+    return;
+  }
+
+  if (dmPopupWindow && !dmPopupWindow.closed) {
+    dmPopupWindow.close();
+  }
+
+  dmPopupWindow = null;
+  dmWindowOpen.value = false;
+  showDM.value = false;
+
+  if (dmPopupWatchIntervalId !== null) {
+    window.clearInterval(dmPopupWatchIntervalId);
+    dmPopupWatchIntervalId = null;
+  }
+}
+
+async function openDetachedDMWindow() {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
+    if (existingWindow) {
+      await bringDetachedDMWindowToFront(existingWindow);
+      dmWindowOpen.value = true;
+      await emitDMWindowState();
+      return;
+    }
+
+    const dmWindowUrl = `${window.location.origin}${window.location.pathname}?view=dm`;
+    const dmWindow = new WebviewWindow(DM_WINDOW_LABEL, {
+      url: dmWindowUrl,
+      title: 'AGENT // DM',
+      width: 720,
+      height: 780,
+      resizable: true,
+      decorations: false,
+      transparent: true,
+      dragDropEnabled: false,
+    });
+
+    dmWindow.once('tauri://created', () => {
+      dmWindowOpen.value = true;
+      showDM.value = false;
+      void emitDMWindowState();
+    });
+
+    dmWindow.once('tauri://destroyed', () => {
+      dmWindowOpen.value = false;
+    });
+
+    dmWindow.once('tauri://error', (error) => {
+      console.error('Failed to create detached DM window:', error);
+      dmWindowOpen.value = false;
+      showDM.value = true;
+    });
+
+    return;
+  }
+
+  const dmWindowUrl = `${window.location.pathname}?view=dm`;
+  const popupFeatures = [
+    'popup=yes',
+    'width=720',
+    'height=780',
+    'toolbar=no',
+    'menubar=no',
+    'location=no',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+  ].join(',');
+
+  const popup = window.open(dmWindowUrl, 'agent-lobby-dm', popupFeatures);
+  if (!popup) {
+    showDM.value = true;
+    return;
+  }
+
+  dmPopupWindow = popup;
+  dmWindowOpen.value = true;
+  showDM.value = false;
+  startWebPopupHeartbeat();
+  await emitDMWindowState();
+}
+
+function handleDetachedDMAction(action: DMWindowAction | undefined) {
+  if (!action || !dm.value) {
+    return;
+  }
+
+  switch (action.type) {
+    case 'windowReady':
+      dmWindowOpen.value = true;
+      void emitDMWindowState();
+      break;
+    case 'focusUser':
+      focusedDMUser.value = action.user;
+      break;
+    case 'requestDm':
+      void handleDMRequest(action.user);
+      break;
+    case 'acceptDm':
+      handleAcceptDM(action.user);
+      break;
+    case 'rejectDm':
+      handleRejectDM(action.user);
+      break;
+    case 'acceptAudio':
+      handleAcceptAudio(action.user);
+      break;
+    case 'rejectAudio':
+      handleRejectAudio(action.user);
+      break;
+    case 'acceptVideo':
+      handleAcceptVideo(action.user);
+      break;
+    case 'rejectVideo':
+      handleRejectVideo(action.user);
+      break;
+    case 'cancelRequest':
+      handleCancelDMRequest(action.user);
+      break;
+    case 'sendMessage':
+      handleSendDMMessage(action.user, action.message, action.effect);
+      break;
+    case 'typing':
+      handleTyping(action.user);
+      break;
+    case 'stopTyping':
+      handleStopTyping(action.user);
+      break;
+    case 'closeDm':
+      handleCloseDM(action.user);
+      break;
+    case 'cancelPendingMessages':
+      handleCancelPendingMessages(action.user);
+      break;
+    case 'requestAudio':
+      handleRequestAudio(action.user);
+      break;
+    case 'toggleAudio':
+      handleToggleAudio(action.user, action.enabled);
+      break;
+    case 'requestVideo':
+      handleRequestVideo(action.user);
+      break;
+    case 'toggleVideo':
+      handleToggleVideo(action.user, action.enabled);
+      break;
+    case 'acceptFile':
+      handleAcceptFile(action.user, action.fileId);
+      break;
+    case 'rejectFile':
+      handleRejectFile(action.user, action.fileId);
+      break;
+    case 'fileSaved':
+      handleFileSaved(action.user, action.fileId);
+      break;
+    case 'removeFile':
+      handleRemoveFile(action.user, action.fileId);
+      break;
+    case 'windowClosed':
+      dmWindowOpen.value = false;
+      break;
   }
 }
 </script>

@@ -3,30 +3,9 @@
     <audio ref="audioElement" autoplay playsinline></audio>
     <div class="modal-box">
       <!-- Header -->
-      <div class="modal-header">
-        <h3 style="margin: 0">DIRECT MESSAGE</h3>
-        <button class="close-btn" @click="handleClose">✕</button>
-      </div>
-
-      <div v-if="visibleNotices.length > 0" class="notice-stack" role="status" aria-live="polite">
-        <div v-for="notice in visibleNotices" :key="notice.id" :class="['notice-item', notice.type]">
-          {{ notice.message }}
-          <div v-if="notice.type === 'audio-call' && notice.from" class="notice-buttons">
-            <button class="btn-accept" @click="handleAcceptAudio(notice.from)">ACCEPT</button>
-            <button class="btn-reject" @click="handleRejectAudio(notice.from)">DENY</button>
-          </div>
-          <div v-if="notice.type === 'video-call' && notice.from" class="notice-buttons">
-            <button class="btn-accept" @click="handleAcceptVideo(notice.from)">ACCEPT</button>
-            <button class="btn-reject" @click="handleRejectVideo(notice.from)">DENY</button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="outgoingRequests.length > 0" class="notice-stack" role="status" aria-live="polite">
-        <div v-for="requestUser in outgoingRequests" :key="requestUser" class="notice-item info outgoing-item">
-          <span>Awaiting approval from {{ requestUser }}...</span>
-          <button class="btn-cancel-request" @click="handleCancelRequest(requestUser)">CANCEL</button>
-        </div>
+      <div v-if="showHeaderBar" class="modal-header">
+        <h3 v-if="showHeaderTitle" style="margin: 0">DIRECT MESSAGE</h3>
+        <button v-if="showHeaderClose" class="close-btn" @click="handleClose">✕</button>
       </div>
 
       <!-- Tab Bar -->
@@ -37,11 +16,7 @@
           :class="['tab', { active: currentTab === tab }]"
           @click="selectTab(tab)"
         >
-          <span v-if="tab === 'requests'" class="tab-label">
-            REQUESTS
-            <span v-if="pendingRequests.length > 0" class="badge">{{ pendingRequests.length }}</span>
-          </span>
-          <span v-else class="tab-label" :style="{ color: getUserColor(tab) }">
+          <span class="tab-label" :style="{ color: getUserColor(tab) }">
             {{ tab }}
             <span v-if="audioEnabledMap.get(tab)" class="audio-indicator">☎</span>
             <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
@@ -50,21 +25,21 @@
               ⏱ {{ formatDuration(props.activeChats.get(tab)?.callDuration || 0) }}
             </span>
             <button
-              v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
+              v-if="isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn phone-btn"
               @click.stop="handleRequestAudio"
             >
               ☎
             </button>
             <button
-              v-if="tab !== 'requests' && isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
+              v-if="isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn camera-btn"
               @click.stop="handleRequestVideo"
             >
               📹
             </button>
             <button
-              v-if="tab !== 'requests' && props.activeChats.get(tab)?.callStartTime"
+              v-if="props.activeChats.get(tab)?.callStartTime"
               class="tab-action-btn end-call-btn"
               @click.stop="handleEndCall(tab)"
             >
@@ -75,7 +50,6 @@
             </span>
           </span>
           <button
-            v-if="tab !== 'requests'"
             class="tab-close"
             @click.stop="closeTab(tab)"
           >
@@ -87,58 +61,7 @@
 
       <!-- Content Area -->
       <div class="modal-content">
-        <!-- Pending Requests Tab -->
-        <div v-if="currentTab === 'requests'" class="requests-section">
-          <!-- DM Requests -->
-          <div v-if="pendingRequests.length === 0 && pendingAudioCalls.length === 0 && pendingVideoCalls.length === 0" class="empty-state">
-            No pending requests
-          </div>
-
-          <!-- DM Requests -->
-          <div v-if="pendingRequests.length > 0">
-            <div class="request-header">DM REQUESTS</div>
-            <div v-for="request in pendingRequests" :key="`dm-${request.from}`" class="request-item">
-              <div class="request-user" :style="{ color: getUserColor(request.from) }">
-                {{ request.from }}
-              </div>
-              <div class="request-actions">
-                <button class="btn-accept" @click="handleAccept(request.from)">ACCEPT</button>
-                <button class="btn-reject" @click="handleReject(request.from)">DENY</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Audio Call Requests -->
-          <div v-if="pendingAudioCalls.length > 0">
-            <div class="request-header">AUDIO CALLS ☎</div>
-            <div v-for="request in pendingAudioCalls" :key="`audio-${request.from}`" class="request-item">
-              <div class="request-user" :style="{ color: getUserColor(request.from) }">
-                {{ request.from }}
-              </div>
-              <div class="request-actions">
-                <button class="btn-accept" @click="handleAcceptAudio(request.from)">ACCEPT</button>
-                <button class="btn-reject" @click="handleRejectAudio(request.from)">DENY</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Video Call Requests -->
-          <div v-if="pendingVideoCalls.length > 0">
-            <div class="request-header">VIDEO CALLS 📹</div>
-            <div v-for="request in pendingVideoCalls" :key="`video-${request.from}`" class="request-item">
-              <div class="request-user" :style="{ color: getUserColor(request.from) }">
-                {{ request.from }}
-              </div>
-              <div class="request-actions">
-                <button class="btn-accept" @click="handleAcceptVideo(request.from)">ACCEPT</button>
-                <button class="btn-reject" @click="handleRejectVideo(request.from)">DENY</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat Tab -->
-        <div v-else-if="currentTab !== 'requests'" class="chat-section">
+        <div v-if="currentTab" class="chat-section">
           <!-- Messages: Displayed via animations only (ephemeral) -->
           <div
             ref="messagesContainer"
@@ -246,6 +169,8 @@
             </button>
           </div>
         </div>
+
+        <div v-else class="empty-state">No active direct messages</div>
       </div>
 
       <!-- Video Window Overlay -->
@@ -290,7 +215,13 @@ const props = defineProps<{
   username: string;
   dmChatEffect: string;
   focusedDMUser?: string | null;
+  showHeaderClose?: boolean;
+  showHeaderTitle?: boolean;
 }>();
+
+const showHeaderClose = computed(() => props.showHeaderClose ?? true);
+const showHeaderTitle = computed(() => props.showHeaderTitle ?? true);
+const showHeaderBar = computed(() => showHeaderClose.value || showHeaderTitle.value);
 
 const emit = defineEmits<{
   close: [];
@@ -319,7 +250,7 @@ const emit = defineEmits<{
 
 const { getUserColor } = useTheme();
 const { playAnimation } = useMessageAnimations();
-const currentTab = ref<string>('requests'); // 'requests' or username
+const currentTab = ref<string>('');
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const audioElement = ref<HTMLAudioElement>();
@@ -403,7 +334,7 @@ function visibleTransferCount(): number {
 }
 
 function removeFileTransfer(fileId: string) {
-  if (currentTab.value === 'requests') return;
+  if (!currentTab.value) return;
 
   savedFileIds.value.delete(fileId);
   savingFileIds.value.delete(fileId);
@@ -411,19 +342,7 @@ function removeFileTransfer(fileId: string) {
   emit('removeFile', currentTab.value, fileId);
 }
 
-// Computed list of all tabs (requests + active chats)
-const allTabs = computed(() => {
-  const tabs: string[] = [];
-  if (props.pendingRequests.length > 0) {
-    tabs.push('requests');
-  }
-  tabs.push(...Array.from(props.activeChats.keys()));
-  return tabs;
-});
-
-const visibleNotices = computed(() =>
-  props.notices.filter((notice) => notice.type !== 'file-offer')
-);
+const allTabs = computed(() => Array.from(props.activeChats.keys()));
 
 // Default to first available tab
 watch(allTabs, (newTabs) => {
@@ -453,10 +372,7 @@ watch(
     return pendingIncoming;
   },
   (pendingIncoming, previousPendingIncoming) => {
-    if (
-      currentTab.value !== 'requests' &&
-      pendingIncoming > (previousPendingIncoming ?? 0)
-    ) {
+    if (currentTab.value && pendingIncoming > (previousPendingIncoming ?? 0)) {
       expandFilesPanelForTab(currentTab.value);
     }
   }
@@ -465,7 +381,7 @@ watch(
 // Watch for input changes and send typing indicators (debounced)
 watch(messageInput, (newVal) => {
   const user = currentTab.value;
-  if (user === 'requests' || !props.activeChats.has(user)) return;
+  if (!user || !props.activeChats.has(user)) return;
 
   // Clear existing timeout
   if (typingTimeouts.has(user)) {
@@ -549,37 +465,8 @@ function closeTab(user: string) {
   }
 }
 
-function handleAccept(user: string) {
-  emit('acceptDm', user);
-  currentTab.value = user;
-}
-
-function handleReject(user: string) {
-  emit('rejectDm', user);
-}
-
-function handleAcceptAudio(user: string) {
-  emit('acceptAudio', user);
-}
-
-function handleRejectAudio(user: string) {
-  emit('rejectAudio', user);
-}
-
-function handleAcceptVideo(user: string) {
-  emit('acceptVideo', user);
-}
-
-function handleRejectVideo(user: string) {
-  emit('rejectVideo', user);
-}
-
-function handleCancelRequest(user: string) {
-  emit('cancelRequest', user);
-}
-
 function sendMessage() {
-  if (!messageInput.value.trim() || currentTab.value === 'requests') return;
+  if (!messageInput.value.trim() || !currentTab.value) return;
 
   const chat = getCurrentChat();
   if (!chat) {
@@ -603,12 +490,12 @@ function isTabConnected(tab: string): boolean {
 }
 
 function handleRequestAudio() {
-  if (currentTab.value === 'requests') return;
+  if (!currentTab.value) return;
   emit('requestAudio', currentTab.value);
 }
 
 function handleRequestVideo() {
-  if (currentTab.value === 'requests') return;
+  if (!currentTab.value) return;
   emit('requestVideo', currentTab.value);
 }
 
@@ -629,7 +516,7 @@ function handleEndCall(user: string) {
 }
 
 function handleVideoWindowClose() {
-  if (currentTab.value !== 'requests') {
+  if (currentTab.value) {
     // Close the entire DM, which will clean up all resources
     emit('closeDm', currentTab.value);
   }
@@ -673,7 +560,7 @@ function handleDrop(e: DragEvent) {
   e.preventDefault();
   dragOverZone.value = false;
 
-  if (currentTab.value === 'requests' || !e.dataTransfer?.files.length) return;
+  if (!currentTab.value || !e.dataTransfer?.files.length) return;
 
   const files = e.dataTransfer.files;
   for (let i = 0; i < files.length; i++) {
@@ -696,12 +583,12 @@ function formatBytes(bytes: number): string {
 }
 
 function acceptFileTransfer(fileId: string) {
-  if (currentTab.value === 'requests') return;
+  if (!currentTab.value) return;
   emit('acceptFile', currentTab.value, fileId);
 }
 
 function rejectFileTransfer(fileId: string) {
-  if (currentTab.value === 'requests') return;
+  if (!currentTab.value) return;
   emit('rejectFile', currentTab.value, fileId);
 }
 
@@ -840,7 +727,7 @@ async function downloadFile(transfer: FileTransferState) {
 
     savedFileIds.value.add(transfer.id);
 
-    if (currentTab.value !== 'requests') {
+    if (currentTab.value) {
       emit('fileSaved', currentTab.value, transfer.id);
     }
   } catch (error) {
@@ -857,7 +744,7 @@ watch(
     return chat?.messages.length ?? 0;
   },
   async (newLen) => {
-    if (!newLen || currentTab.value === 'requests') return;
+    if (!newLen || !currentTab.value) return;
 
     const chat = getCurrentChat();
     if (!chat || chat.messages.length === 0) return;

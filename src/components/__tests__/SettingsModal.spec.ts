@@ -32,6 +32,7 @@ describe('SettingsModal', () => {
     dmEnabled: true,
     audioEnabled: true,
     volume: 0.5,
+    autoAwayMinutes: 10,
     soundpack: 'default',
     theme: 'retro-terminal',
     dmChatEffect: 'matrix' as const,
@@ -59,11 +60,30 @@ describe('SettingsModal', () => {
       },
     });
 
-    await wrapper.find('#set-audio-toggle').setValue(false);
+    await wrapper.find('#set-auto-away').setValue('30');
 
     expect(wrapper.emitted('update')).toBeTruthy();
     const payload = wrapper.emitted('update')?.slice(-1)?.[0]?.[0] as typeof baseConfig;
-    expect(payload.audioEnabled).toBe(false);
+    expect(payload.autoAwayMinutes).toBe(30);
+  });
+
+  it('shows audio controls in media tab with divider', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        showModal: true,
+        config: baseConfig,
+        availableSoundpacks: ['default'],
+        availableThemes: ['retro-terminal'],
+      },
+    });
+
+    expect(wrapper.find('#set-audio-toggle').exists()).toBe(false);
+
+    await wrapper.findAll('.tab-btn')[2].trigger('click');
+
+    expect(wrapper.find('#set-audio-toggle').exists()).toBe(true);
+    expect(wrapper.find('#set-volume').exists()).toBe(true);
+    expect(wrapper.find('.settings-divider').exists()).toBe(true);
   });
 
   it('emits clearLog and close events from buttons', async () => {

@@ -1,8 +1,36 @@
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig } from '../types/chat';
 import mqtt from 'mqtt';
 
 const users = reactive<Record<string, UserPresence>>({});
+
+const DEFAULT_AUDIO_CONFIG: AudioConfig = {
+  dmEnabled: true,
+  audioEnabled: true,
+  volume: 0.5,
+  autoAwayMinutes: 10,
+  soundpack: 'default',
+  theme: 'retro-terminal',
+  dmChatEffect: 'matrix',
+  audioInputDeviceId: '',
+  audioOutputDeviceId: '',
+  videoInputDeviceId: ''
+};
+
+let activeAutoAwayListenerCleanup: (() => void) | null = null;
+
+function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioConfig {
+  const normalized = {
+    ...DEFAULT_AUDIO_CONFIG,
+    ...(savedConfig || {}),
+  };
+
+  if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
+    normalized.autoAwayMinutes = 10;
+  }
+
+  return normalized;
+}
 
 function getPublicAssetUrl(path: string): string {
   const baseUrl = new URL(import.meta.env.BASE_URL, window.location.href);
@@ -213,23 +241,40 @@ export function useLobbyChat() {
     });
   }
 
-  const config = ref<AudioConfig>({
-    dmEnabled: true,
-    audioEnabled: true,
-    volume: 0.5,
-    soundpack: 'default',
-    theme: 'retro-terminal',
-    dmChatEffect: 'matrix',
-    audioInputDeviceId: '',
-    audioOutputDeviceId: '',
-    videoInputDeviceId: ''
-  });
+  const config = ref<AudioConfig>(normalizeAudioConfig());
 
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
 
 
   const isTyping = ref(false);
   const isAway = ref(false);
+  let awaySource: 'auto' | 'manual' | null = null;
+  let autoAwayTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearAutoAwayTimer() {
+    if (autoAwayTimer) {
+      clearTimeout(autoAwayTimer);
+      autoAwayTimer = null;
+    }
+  }
+
+  function getAutoAwayDelayMs(): number {
+    return (config.value.autoAwayMinutes ?? 0) * 60 * 1000;
+  }
+
+  function scheduleAutoAwayTimer() {
+    const delayMs = getAutoAwayDelayMs();
+    if (!isConnected.value || isAway.value || delayMs <= 0) {
+      clearAutoAwayTimer();
+      return;
+    }
+
+    clearAutoAwayTimer();
+    autoAwayTimer = setTimeout(() => {
+      autoAwayTimer = null;
+      setAway(true, 'auto');
+    }, delayMs);
+  }
 
   function buildPresencePayload(): UserPresence {
     return {
@@ -247,7 +292,19 @@ export function useLobbyChat() {
     }
   }
 
-  function setAway(away: boolean) {
+  function setAway(away: boolean, source: 'auto' | 'manual' | 'system' = 'system') {
+    if (away) {
+      clearAutoAwayTimer();
+    }
+
+    awaySource = away
+      ? source === 'manual'
+        ? 'manual'
+        : source === 'auto'
+          ? 'auto'
+          : awaySource
+      : null;
+
     if (isAway.value !== away) {
       isAway.value = away;
       publishPresence();
@@ -255,7 +312,12 @@ export function useLobbyChat() {
   }
 
   function toggleAway() {
-    setAway(!isAway.value);
+    if (!isAway.value) {
+      setAway(true, 'manual');
+      return;
+    }
+
+    setAway(false, 'manual');
   }
 
   function publishPresence() {
@@ -411,7 +473,7 @@ export function useLobbyChat() {
     const normalized = cleanMsg.trim().toLowerCase();
 
     if (normalized === '/away') {
-      setAway(true);
+      setAway(true, 'manual');
       return;
     }
 
@@ -421,13 +483,14 @@ export function useLobbyChat() {
     }
 
     if (isAway.value) {
-      setAway(false);
+      setAway(false, 'system');
     }
     client.publish(CHAT_TOPIC, JSON.stringify({ u: username.value, m: cleanMsg }));
   }
 
   // Disconnect
   function disconnect() {
+    clearAutoAwayTimer();
     if (client && isConnected.value) {
       client.publish(PRESENCE_TOPIC + username.value, '', { retain: true });
       client.end();
@@ -443,6 +506,8 @@ export function useLobbyChat() {
     messages.value = [];
     isTyping.value = false;
     isAway.value = false;
+    awaySource = null;
+    clearAutoAwayTimer();
     clearUsers();
     client = null;
     startPresencePreview();
@@ -477,7 +542,11 @@ export function useLobbyChat() {
   function loadSettings() {
     const saved = localStorage.getItem('agent_settings');
     if (saved) {
-      config.value = JSON.parse(saved);
+      try {
+        config.value = normalizeAudioConfig(JSON.parse(saved));
+      } catch {
+        config.value = normalizeAudioConfig();
+      }
     }
   }
 
@@ -520,6 +589,56 @@ export function useLobbyChat() {
   loadAvailableSoundpacks();
   initAudio();
   startPresencePreview();
+
+  if (typeof window !== 'undefined') {
+    activeAutoAwayListenerCleanup?.();
+
+    const handleWindowBlur = () => {
+      scheduleAutoAwayTimer();
+    };
+
+    const handleWindowFocus = () => {
+      clearAutoAwayTimer();
+
+      if (isAway.value && awaySource === 'auto') {
+        setAway(false, 'system');
+      }
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
+    activeAutoAwayListenerCleanup = () => {
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      clearAutoAwayTimer();
+    };
+  }
+
+  watch(
+    () => config.value.autoAwayMinutes ?? 0,
+    (autoAwayMinutes) => {
+      if (autoAwayMinutes <= 0) {
+        clearAutoAwayTimer();
+        return;
+      }
+
+      if (typeof document !== 'undefined' && !document.hasFocus() && isConnected.value && !isAway.value) {
+        scheduleAutoAwayTimer();
+      }
+    }
+  );
+
+  watch(isConnected, (connected) => {
+    if (!connected) {
+      clearAutoAwayTimer();
+      return;
+    }
+
+    if (typeof document !== 'undefined' && !document.hasFocus() && !isAway.value) {
+      scheduleAutoAwayTimer();
+    }
+  });
 
   const onlineAgentCount = computed(() =>
     Object.values(users).filter((u) => Boolean(u?.username)).length

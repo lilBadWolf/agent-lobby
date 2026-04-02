@@ -60,12 +60,14 @@ import { useLobbyChat } from '../useLobbyChat';
 
 describe('useLobbyChat', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     vi.useRealTimers();
     clients.length = 0;
     MockAudio.instances.length = 0;
     vi.stubGlobal('Audio', MockAudio as any);
     localStorage.clear();
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
 
   it('boots, connects, sends message, and disconnects cleanly', () => {
@@ -272,6 +274,81 @@ describe('useLobbyChat', () => {
     expect(chat.config.value.theme).toBe('light-blue');
     expect(chat.config.value.dmEnabled).toBe(false);
     expect(chat.config.value.dmChatEffect).toBe('glitch');
+    expect(chat.config.value.autoAwayMinutes).toBe(10);
+  });
+
+  it('starts auto-away on blur and cancels it on focus', () => {
+    vi.useFakeTimers();
+    const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const chat = useLobbyChat();
+
+    chat.boot('FOXTROT', 'intel');
+    const activeClient = clients[1];
+    activeClient.emit('connect');
+
+    chat.config.value.autoAwayMinutes = 10;
+    chat.updateSettings();
+
+    hasFocusSpy.mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+
+    vi.advanceTimersByTime(10 * 60 * 1000 - 1);
+    expect(chat.isAway.value).toBe(false);
+
+    window.dispatchEvent(new Event('focus'));
+    hasFocusSpy.mockReturnValue(true);
+    vi.advanceTimersByTime(1);
+    expect(chat.isAway.value).toBe(false);
+
+    hasFocusSpy.mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(chat.isAway.value).toBe(true);
+
+    vi.useRealTimers();
+  });
+
+  it('returns from auto-away when app regains focus', () => {
+    vi.useFakeTimers();
+    const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const chat = useLobbyChat();
+
+    chat.boot('GOLF', 'intel');
+    const activeClient = clients[1];
+    activeClient.emit('connect');
+
+    chat.config.value.autoAwayMinutes = 10;
+    chat.updateSettings();
+
+    hasFocusSpy.mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(chat.isAway.value).toBe(true);
+
+    hasFocusSpy.mockReturnValue(true);
+    window.dispatchEvent(new Event('focus'));
+    expect(chat.isAway.value).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  it('keeps manual away state when app regains focus', () => {
+    vi.useFakeTimers();
+    const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const chat = useLobbyChat();
+
+    chat.boot('HOTEL', 'intel');
+    const activeClient = clients[1];
+    activeClient.emit('connect');
+
+    chat.setAway(true, 'manual');
+    expect(chat.isAway.value).toBe(true);
+
+    hasFocusSpy.mockReturnValue(true);
+    window.dispatchEvent(new Event('focus'));
+    expect(chat.isAway.value).toBe(true);
+
+    vi.useRealTimers();
   });
 
   it('enters terminal presence preview error state after max retries', () => {

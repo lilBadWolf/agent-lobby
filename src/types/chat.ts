@@ -18,6 +18,7 @@ export interface ChatMessage {
 export interface AudioConfig {
   audioEnabled: boolean;
   volume: number;
+  autoAwayMinutes?: number;
   dmEnabled: boolean;
   soundpack: string;
   theme: string;

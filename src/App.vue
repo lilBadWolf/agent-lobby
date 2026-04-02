@@ -20,6 +20,7 @@
           config.dmEnabled = newConfig.dmEnabled;
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
+          config.autoAwayMinutes = newConfig.autoAwayMinutes ?? 10;
           config.dmChatEffect = newConfig.dmChatEffect;
           config.audioInputDeviceId = newConfig.audioInputDeviceId;
           config.audioOutputDeviceId = newConfig.audioOutputDeviceId;

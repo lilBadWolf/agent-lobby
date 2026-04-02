@@ -40,27 +40,6 @@
 
         <div v-if="activeTab === 'general'" class="tab-panel">
           <div class="setting-row">
-            <label>AUDIO ENABLED</label>
-            <input
-              v-model="localConfig.audioEnabled"
-              type="checkbox"
-              id="set-audio-toggle"
-              @change="handleChange"
-            />
-          </div>
-          <div class="setting-row">
-            <label>MASTER VOL</label>
-            <input
-              v-model.number="localConfig.volume"
-              type="range"
-              id="set-volume"
-              min="0"
-              max="1"
-              step="0.1"
-              @change="handleChange"
-            />
-          </div>
-          <div class="setting-row">
             <label>SOUNDPACK</label>
             <select
               v-model="localConfig.soundpack"
@@ -84,7 +63,19 @@
               </option>
             </select>
           </div>
-          <button class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
+          <div class="setting-row">
+            <label>AUTO-AWAY</label>
+            <select
+              v-model.number="localConfig.autoAwayMinutes"
+              id="set-auto-away"
+              @change="handleChange"
+            >
+              <option :value="10">10M</option>
+              <option :value="30">30M</option>
+              <option :value="60">1HR</option>
+              <option :value="0">OFF</option>
+            </select>
+          </div>
         </div>
 
         <div v-if="activeTab === 'dm'" class="tab-panel">
@@ -116,6 +107,28 @@
         </div>
 
         <div v-if="activeTab === 'media'" class="tab-panel media-panel">
+          <div class="setting-row">
+            <label>AUDIO ENABLED</label>
+            <input
+              v-model="localConfig.audioEnabled"
+              type="checkbox"
+              id="set-audio-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
+            <label>MASTER VOL</label>
+            <input
+              v-model.number="localConfig.volume"
+              type="range"
+              id="set-volume"
+              min="0"
+              max="1"
+              step="0.1"
+              @change="handleChange"
+            />
+          </div>
+          <hr class="settings-divider" />
           <div class="setting-row">
             <label>DM AUDIO OUT</label>
             <select
@@ -201,6 +214,7 @@
           </div>
         </div>
       </div>
+      <button v-if="activeTab === 'general'" class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
     </div>
     <div v-if="showEffectPreview" class="effect-preview">
@@ -228,7 +242,14 @@ const emit = defineEmits<{
   clearLog: [];
 }>();
 
-const localConfig = ref<AudioConfig>({ ...props.config });
+function normalizeConfig(config: AudioConfig): AudioConfig {
+  return {
+    autoAwayMinutes: 10,
+    ...config,
+  };
+}
+
+const localConfig = ref<AudioConfig>(normalizeConfig(props.config));
 const activeTab = ref<'general' | 'dm' | 'media' | 'help'>('general');
 const hasInitializedMediaForOpen = ref(false);
 const showEffectPreview = ref(false);
@@ -279,7 +300,7 @@ watch(
 watch(
   () => props.config,
   (newConfig) => {
-    localConfig.value = { ...newConfig };
+    localConfig.value = normalizeConfig(newConfig);
   }
 );
 
@@ -390,6 +411,12 @@ async function previewEffect() {
 
 .tab-panel {
   margin-top: 8px;
+}
+
+.settings-divider {
+  border: 0;
+  border-top: 1px solid rgba(57, 255, 20, 0.35);
+  margin: 10px 0 4px;
 }
 
 .media-panel .setting-row {

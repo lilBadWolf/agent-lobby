@@ -57,25 +57,52 @@ jobs:
       - name: upload updater artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
-          TAG="app-v$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-            BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
-            PATTERN="*.app.tar.gz *.app.tar.gz.sig"
-          elif [[ "${{ matrix.platform }}" == "ubuntu-22.04" ]]; then
-            BUNDLE_DIR="src-tauri/target/release/bundle/appimage"
-            PATTERN="*.AppImage.tar.gz *.AppImage.tar.gz.sig"
-          else
-            BUNDLE_DIR="src-tauri/target/release/bundle/nsis"
-            PATTERN="*.nsis.zip *.nsis.zip.sig"
-          fi
-          FILES=$(find "$BUNDLE_DIR" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.tar.gz.sig" -o -name "*.AppImage.tar.gz" -o -name "*.AppImage.tar.gz.sig" -o -name "*.nsis.zip" -o -name "*.nsis.zip.sig" \) 2>/dev/null)
-          if [[ -n "$FILES" ]]; then
-            gh release upload "$TAG" $FILES --repo "${{ github.repository }}" --clobber
-          else
-            echo "No updater artifacts found in $BUNDLE_DIR — skipping upload"
-          fi
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const { execSync } = require('child_process');
+            
+            const config = JSON.parse(fs.readFileSync('./src-tauri/tauri.conf.json', 'utf8'));
+            const tag = 'app-v' + config.version;
+            const platform = '${{ matrix.platform }}';
+            
+            let bundleDir;
+            let patterns;
+            
+            if (platform.includes('macos')) {
+              bundleDir = 'src-tauri/target/aarch64-apple-darwin/release/bundle/macos';
+              patterns = ['*.app.tar.gz', '*.app.tar.gz.sig'];
+            } else if (platform.includes('ubuntu')) {
+              bundleDir = 'src-tauri/target/release/bundle/appimage';
+              patterns = ['*.AppImage.tar.gz', '*.AppImage.tar.gz.sig'];
+            } else {
+              bundleDir = 'src-tauri/target/release/bundle/nsis';
+              patterns = ['*.nsis.zip', '*.nsis.zip.sig'];
+            }
+            
+            if (!fs.existsSync(bundleDir)) {
+              console.log('Bundle directory not found:', bundleDir);
+              process.exit(0);
+            }
+            
+            const files = fs.readdirSync(bundleDir).filter(f => 
+              patterns.some(pattern => {
+                const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+                return regex.test(f);
+              })
+            );
+            
+            if (files.length === 0) {
+              console.log('No updater artifacts found in', bundleDir);
+              process.exit(0);
+            }
+            
+            const filePaths = files.map(f => path.join(bundleDir, f));
+            console.log('Uploading:', filePaths.join(', '));
+            
+            execSync(\`gh release upload \${tag} \${filePaths.join(' ')} --repo ${{ github.repository }} --clobber\`, { stdio: 'inherit' });
+          "
 
   publish-updater-json:
     needs: publish-tauri

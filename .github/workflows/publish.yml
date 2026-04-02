@@ -101,7 +101,8 @@ jobs:
             const filePaths = files.map(f => path.join(bundleDir, f));
             console.log('Uploading:', filePaths.join(', '));
             
-            execSync(\`gh release upload \${tag} \${filePaths.join(' ')} --repo ${{ github.repository }} --clobber\`, { stdio: 'inherit' });
+            const cmd = 'gh release upload ' + tag + ' ' + filePaths.join(' ') + ' --repo ${{ github.repository }} --clobber';
+            execSync(cmd, { stdio: 'inherit' });
           "
 
   publish-updater-json:

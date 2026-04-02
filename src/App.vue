@@ -1128,15 +1128,17 @@ async function openDetachedDMWindow() {
       return;
     }
 
-    const dmWindowUrl = `${window.location.origin}${window.location.pathname}?view=dm`;
+    const dmWindowUrl = new URL(window.location.href);
+    dmWindowUrl.searchParams.set('view', 'dm');
     const dmWindow = new WebviewWindow(DM_WINDOW_LABEL, {
-      url: dmWindowUrl,
+      url: dmWindowUrl.toString(),
       title: 'AGENT // DM',
       width: 720,
       height: 780,
       resizable: true,
       decorations: false,
       transparent: true,
+      useHttpsScheme: true,
       dragDropEnabled: false,
     });
 

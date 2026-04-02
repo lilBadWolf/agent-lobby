@@ -21,6 +21,7 @@ export interface AudioConfig {
   autoAwayMinutes?: number;
   autoUpdatePulseMinutes?: number;
   dmEnabled: boolean;
+  agentAmpEnabled: boolean;
   soundpack: string;
   theme: string;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';

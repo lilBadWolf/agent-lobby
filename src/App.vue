@@ -35,6 +35,7 @@
       @update="
         (newConfig) => {
           config.dmEnabled = newConfig.dmEnabled;
+          config.agentAmpEnabled = newConfig.agentAmpEnabled;
           config.audioEnabled = newConfig.audioEnabled;
           config.volume = newConfig.volume;
           config.autoAwayMinutes = newConfig.autoAwayMinutes ?? 10;
@@ -127,38 +128,43 @@
       @config-clicked="toggleNetworkConfig"
     />
 
-    <div
-      v-if="!showAuth"
-      class="main-view"
-      :class="{ 'sidebar-compact': !isSidebarVisible }"
-    >
-      <ChatArea
-        :messages="messages"
-        :username="username"
-        :is-connected="isConnected"
-        :users="users"
-        :lobby-tabs="lobbyTabs"
-        :active-lobby-id="activeLobbyId"
-        :default-lobby-id="networkConfig.defaultLobby"
-        :mention-request="mentionRequest"
-        @send="handleChatSend"
-        @join-lobby="handleJoinLobby"
-        @switch-lobby="handleSwitchLobby"
-        @close-lobby="handleCloseLobby"
-        @typing="(typing) => setTyping(typing)"
-      />
-      <Sidebar
-        :users="users"
-        :current-username="username"
-        :is-away="isAway"
-        :dm-bubble-states="dmBubbleStates"
-        :show-dm-launcher="hasDMActivity"
-        :is-compact="!isSidebarVisible"
-        @disconnect="handleDisconnect"
-        @dm-request="handleDMRequest"
-        @show-dm-window="handleShowDMWindow"
-        @mention-request="handleMentionRequest"
-        @toggle-away="handleToggleAway"
+    <div v-if="!showAuth" class="workspace-shell">
+      <div
+        class="main-view"
+        :class="{ 'sidebar-compact': !isSidebarVisible }"
+      >
+        <ChatArea
+          :messages="messages"
+          :username="username"
+          :is-connected="isConnected"
+          :users="users"
+          :lobby-tabs="lobbyTabs"
+          :active-lobby-id="activeLobbyId"
+          :default-lobby-id="networkConfig.defaultLobby"
+          :mention-request="mentionRequest"
+          @send="handleChatSend"
+          @join-lobby="handleJoinLobby"
+          @switch-lobby="handleSwitchLobby"
+          @close-lobby="handleCloseLobby"
+          @typing="(typing) => setTyping(typing)"
+        />
+        <Sidebar
+          :users="users"
+          :current-username="username"
+          :is-away="isAway"
+          :dm-bubble-states="dmBubbleStates"
+          :show-dm-launcher="hasDMActivity"
+          :is-compact="!isSidebarVisible"
+          @disconnect="handleDisconnect"
+          @dm-request="handleDMRequest"
+          @show-dm-window="handleShowDMWindow"
+          @mention-request="handleMentionRequest"
+          @toggle-away="handleToggleAway"
+        />
+      </div>
+      <AgentAmpPlayer
+        v-if="config.agentAmpEnabled"
+        :enabled="config.agentAmpEnabled"
       />
     </div>
   </div>
@@ -283,6 +289,19 @@
   opacity: 1;
 }
 
+.workspace-shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-shell .main-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
 </style>
 
 <script setup lang="ts">
@@ -302,6 +321,7 @@ import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMChatModal from './components/DMChatModal.vue';
 import DMRequestStack from './components/DMRequestStack.vue';
+import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';

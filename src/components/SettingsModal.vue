@@ -90,6 +90,15 @@
               <option :value="0">OFF</option>
             </select>
           </div>
+          <div class="setting-row">
+            <label>AGENTAMP</label>
+            <input
+              v-model="localConfig.agentAmpEnabled"
+              type="checkbox"
+              id="set-agentamp-toggle"
+              @change="handleChange"
+            />
+          </div>
         </div>
 
         <div v-if="activeTab === 'dm'" class="tab-panel">
@@ -258,9 +267,10 @@ const emit = defineEmits<{
 
 function normalizeConfig(config: AudioConfig): AudioConfig {
   return {
-    autoAwayMinutes: 10,
-    autoUpdatePulseMinutes: 30,
     ...config,
+    autoAwayMinutes: config.autoAwayMinutes ?? 10,
+    autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
+    agentAmpEnabled: config.agentAmpEnabled ?? false,
   };
 }
 
@@ -369,7 +379,7 @@ async function previewEffect() {
 }
 
 .modal-box {
-  width: 340px;
+  width: min(460px, 92vw);
   border: 2px solid var(--neon-green);
   background: var(--dark-bg);
   padding: 20px;

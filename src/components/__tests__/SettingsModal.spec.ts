@@ -30,6 +30,7 @@ vi.mock('../../composables/useMessageAnimations', () => ({
 describe('SettingsModal', () => {
   const baseConfig = {
     dmEnabled: true,
+    agentAmpEnabled: false,
     audioEnabled: true,
     volume: 0.5,
     autoAwayMinutes: 10,
@@ -225,5 +226,22 @@ describe('SettingsModal', () => {
     await nextTick();
     expect(wrapper.find('.effect-preview').exists()).toBe(false);
     vi.useRealTimers();
+  });
+
+  it('updates agentAMP toggle from general tab', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        showModal: true,
+        config: baseConfig,
+        availableSoundpacks: ['default'],
+        availableThemes: ['retro-terminal'],
+      },
+    });
+
+    await wrapper.find('#set-agentamp-toggle').setValue(true);
+
+    const updates = wrapper.emitted('update') ?? [];
+    const lastPayload = updates.slice(-1)?.[0]?.[0] as typeof baseConfig;
+    expect(lastPayload.agentAmpEnabled).toBe(true);
   });
 });

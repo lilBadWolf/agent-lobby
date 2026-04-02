@@ -295,7 +295,7 @@ describe('useDirectMessage', () => {
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
-      }
+        agentAmpEnabled: false,      }
     );
 
     messageHandlers[0]('room_lobby/dm_signal/BRAVO/ME', { toString: () => JSON.stringify({ type: 'request' }) });
@@ -826,7 +826,7 @@ describe('useDirectMessage', () => {
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
-      }
+        agentAmpEnabled: false,      }
     );
 
     messageHandlers[0]('room_lobby/dm_signal/JULIET/ME', { toString: () => JSON.stringify({ type: 'request' }) });
@@ -1110,7 +1110,7 @@ describe('useDirectMessage', () => {
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
-      }
+        agentAmpEnabled: false,      }
     );
 
     messageHandlers[0]('room_lobby/dm_signal/ROMEO/ME', { toString: () => JSON.stringify({ type: 'request' }) });
@@ -1167,7 +1167,7 @@ describe('useDirectMessage', () => {
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
-      }
+        agentAmpEnabled: false,      }
     );
 
     messageHandlers[0]('room_lobby/dm_signal/SIERRA/ME', { toString: () => JSON.stringify({ type: 'request' }) });
@@ -1452,7 +1452,7 @@ describe('useDirectMessage', () => {
       audioInputDeviceId: '',
       audioOutputDeviceId: '',
       videoInputDeviceId: '',
-    });
+        agentAmpEnabled: false,    });
 
     messageHandlers[0]('room_lobby/dm_signal/USER/ME', { toString: () => JSON.stringify({ type: 'request' }) });
     dm.acceptDM('USER');
@@ -1563,7 +1563,7 @@ describe('useDirectMessage', () => {
       audioInputDeviceId: '',
       audioOutputDeviceId: '',
       videoInputDeviceId: '',
-    });
+        agentAmpEnabled: false,    });
 
     messageHandlers[0]('room_lobby/dm_signal/CHARLIE/ME', { toString: () => JSON.stringify({ type: 'request' }) });
     dm.acceptDM('CHARLIE');
@@ -1882,3 +1882,5 @@ describe('useDirectMessage', () => {
     remote.getTracks().forEach((track: any) => expect(track.stop).toHaveBeenCalled());
   });
 });
+
+

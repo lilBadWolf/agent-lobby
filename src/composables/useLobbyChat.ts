@@ -4,6 +4,7 @@ import mqtt from 'mqtt';
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
+  agentAmpEnabled: false,
   audioEnabled: true,
   volume: 0.5,
   autoAwayMinutes: 10,

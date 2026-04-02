@@ -584,6 +584,242 @@ describe('ChatArea', () => {
     expect(exitFullscreen).toHaveBeenCalled();
   });
 
+  it('pins a youtube embed to the top panel and unpins it', async () => {
+    const { player } = setupYouTubeMock();
+
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'clip https://youtu.be/AbCdEfGhI12' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    const feedDetails = wrapper.find('details.video-expandable');
+    (feedDetails.element as HTMLDetailsElement).open = true;
+    await feedDetails.trigger('toggle');
+    await nextTick();
+
+    const pinButton = wrapper.find('button.video-pin-btn');
+    expect(pinButton.exists()).toBe(true);
+    expect(pinButton.text()).toBe('PIN');
+
+    await pinButton.trigger('click');
+    await nextTick();
+    vi.advanceTimersByTime(10);
+    await nextTick();
+
+    expect(wrapper.find('.pinned-video-panel').exists()).toBe(true);
+    expect(wrapper.find('.pinned-video-title').text()).toContain('PINNED:');
+    expect(wrapper.find('button.video-pin-btn').attributes('aria-pressed')).toBe('true');
+  expect((wrapper.find('details.video-expandable').element as HTMLDetailsElement).open).toBe(false);
+    expect(player.playVideo).toHaveBeenCalled();
+
+    await wrapper.find('.pinned-video-header .video-control-btn').trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('.pinned-video-panel').exists()).toBe(false);
+    expect(wrapper.find('button.video-pin-btn').attributes('aria-pressed')).toBe('false');
+  });
+
+  it('toggles pin button label between pin and unpin states', async () => {
+    setupYouTubeMock();
+
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'clip https://youtu.be/AbCdEfGhI12' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    const pinButton = wrapper.find('button.video-pin-btn');
+    expect(pinButton.text()).toBe('PIN');
+
+    await pinButton.trigger('click');
+    await nextTick();
+    expect(wrapper.find('button.video-pin-btn').text()).toBe('UNPIN');
+
+    await wrapper.find('button.video-pin-btn').trigger('click');
+    await nextTick();
+    expect(wrapper.find('button.video-pin-btn').text()).toBe('PIN');
+  });
+
+  it('starts pinned video at a smaller default height', async () => {
+    setupYouTubeMock();
+
+    const wrapper = mount(ChatArea, {
+      attachTo: document.body,
+      props: {
+        messages: [{ user: 'BRAVO', message: 'clip https://youtu.be/AbCdEfGhI12' }],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    await wrapper.find('button.video-pin-btn').trigger('click');
+    await nextTick();
+
+    const pinnedShell = wrapper.find('.pinned-video-shell');
+    expect(pinnedShell.exists()).toBe(true);
+    expect(pinnedShell.attributes('style')).toContain('--pinned-video-height: 190px');
+  });
+
+  it('resizes pinned video with drag and clamps to preserve chat visibility', async () => {
+    setupYouTubeMock();
+
+    const wrapper = mount(ChatArea, {
+      attachTo: document.body,
+      props: {
+        messages: [{ user: 'BRAVO', message: 'clip https://youtu.be/AbCdEfGhI12' }],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    const chatArea = wrapper.find('#chat-area').element as HTMLElement;
+    Object.defineProperty(chatArea, 'clientHeight', {
+      configurable: true,
+      get: () => 500,
+    });
+
+    await wrapper.find('button.video-pin-btn').trigger('click');
+    await nextTick();
+
+    const handle = wrapper.find('.pinned-video-divider');
+    expect(handle.exists()).toBe(true);
+
+    await handle.trigger('mousedown', { clientY: 100 });
+    window.dispatchEvent(new MouseEvent('mousemove', { clientY: 500 }));
+    await nextTick();
+
+    const pinnedShell = wrapper.find('.pinned-video-shell');
+    // 500px chat area => max pinned height is clamped to 320px.
+    expect(pinnedShell.attributes('style')).toContain('--pinned-video-height: 320px');
+
+    window.dispatchEvent(new MouseEvent('mousemove', { clientY: -200 }));
+    await nextTick();
+    expect(pinnedShell.attributes('style')).toContain('--pinned-video-height: 140px');
+
+    window.dispatchEvent(new MouseEvent('mouseup'));
+  });
+
+  it('auto-advances pinned video to the next chat video when playback ends', async () => {
+    const stateChangeCallbacks: Array<(event: { data: number }) => void> = [];
+
+    const player = {
+      playVideo: vi.fn(),
+      pauseVideo: vi.fn(),
+      seekTo: vi.fn(),
+      setVolume: vi.fn(),
+      getCurrentTime: vi.fn(() => 0),
+      getDuration: vi.fn(() => 60),
+      getVolume: vi.fn(() => 70),
+      getPlayerState: vi.fn(() => 0),
+      destroy: vi.fn(),
+    };
+
+    (window as any).YT = {
+      Player: vi.fn(function (this: unknown, _element: HTMLElement, options: any) {
+        if (options?.events?.onStateChange) {
+          stateChangeCallbacks.push(options.events.onStateChange);
+        }
+        setTimeout(() => options?.events?.onReady?.(), 0);
+        return player;
+      }),
+      PlayerState: { PLAYING: 1 },
+    };
+
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'first https://youtu.be/AbCdEfGhI12' },
+          { user: 'CHARLIE', message: 'second https://youtu.be/ZyXwVuTsRq9' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    const pinButtons = wrapper.findAll('button.video-pin-btn');
+    await pinButtons[0].trigger('click');
+    await nextTick();
+
+    expect(wrapper.findAll('button.video-pin-btn')[0].attributes('aria-pressed')).toBe('true');
+    expect(wrapper.findAll('button.video-pin-btn')[1].attributes('aria-pressed')).toBe('false');
+
+    // Last state-change callback belongs to the pinned player instance.
+    const pinnedStateChange = stateChangeCallbacks[stateChangeCallbacks.length - 1];
+    pinnedStateChange({ data: 0 });
+    await nextTick();
+    vi.advanceTimersByTime(10);
+    await nextTick();
+
+    expect(wrapper.findAll('button.video-pin-btn')[0].attributes('aria-pressed')).toBe('false');
+    expect(wrapper.findAll('button.video-pin-btn')[1].attributes('aria-pressed')).toBe('true');
+    expect(player.playVideo).toHaveBeenCalled();
+  });
+
+  it('navigates pinned video with previous and next header buttons', async () => {
+    setupYouTubeMock();
+
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'first https://youtu.be/AbCdEfGhI12' },
+          { user: 'CHARLIE', message: 'second https://youtu.be/ZyXwVuTsRq9' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    await nextTick();
+    vi.advanceTimersByTime(400);
+    await nextTick();
+
+    await wrapper.findAll('button.video-pin-btn')[0].trigger('click');
+    await nextTick();
+
+    await wrapper.find('button[aria-label="Next video"]').trigger('click');
+    await nextTick();
+    expect(wrapper.findAll('button.video-pin-btn')[1].attributes('aria-pressed')).toBe('true');
+
+    await wrapper.find('button[aria-label="Previous video"]').trigger('click');
+    await nextTick();
+    expect(wrapper.findAll('button.video-pin-btn')[0].attributes('aria-pressed')).toBe('true');
+  });
+
   it('clamps youtube volume range before setting player volume', async () => {
     const { player } = setupYouTubeMock();
 

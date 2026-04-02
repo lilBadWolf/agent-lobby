@@ -402,6 +402,14 @@ async function toggleMaximize() {
     await appWindow.maximize();
   }
   isMaximized.value = !isMaximized.value;
+
+  window.dispatchEvent(
+    new CustomEvent('agent-lobby-window-layout-changed', {
+      detail: {
+        state: isMaximized.value ? 'maximized' : 'restored',
+      },
+    })
+  );
 }
 
 function handleLogin(handle: string) {

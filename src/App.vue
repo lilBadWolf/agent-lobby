@@ -416,7 +416,7 @@ const pageTitle = computed(() => {
 });
 
 onMounted(async () => {
-  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  // window.addEventListener('contextmenu', (e) => e.preventDefault());
 
   if (!hasTauriWindow) {
     return;

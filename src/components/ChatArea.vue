@@ -115,7 +115,6 @@
             class="twitch-player-frame"
             :src="getTwitchEmbedSrc(pinnedTwitchEmbed.channel)"
             allow="autoplay; fullscreen; picture-in-picture"
-            allowfullscreen
             scrolling="no"
           ></iframe>
         </div>
@@ -240,7 +239,7 @@
                       class="video-pin-btn"
                       type="button"
                       :aria-pressed="isYouTubeEmbedPinned(index, embed.url, embedIndex)"
-                      @click.stop="togglePinYouTubeEmbed(index, embed.url, embedIndex)"
+                      @click.stop="togglePinYouTubeEmbed(index, embed.url, embedIndex, $event)"
                     >
                       {{ isYouTubeEmbedPinned(index, embed.url, embedIndex) ? 'UNPIN' : 'PIN' }}
                     </button>
@@ -338,7 +337,7 @@
                       class="video-pin-btn"
                       type="button"
                       :aria-pressed="isTwitchEmbedPinned(index, embed.url, embedIndex)"
-                      @click.stop="togglePinTwitchEmbed(index, embed.url, embedIndex)"
+                      @click.stop="togglePinTwitchEmbed(index, embed.url, embedIndex, $event)"
                     >
                       {{ isTwitchEmbedPinned(index, embed.url, embedIndex) ? 'UNPIN' : 'PIN' }}
                     </button>
@@ -353,7 +352,6 @@
                       class="twitch-player-frame"
                       :src="getTwitchEmbedSrc(embed.channel)"
                       allow="autoplay; fullscreen; picture-in-picture"
-                      allowfullscreen
                       scrolling="no"
                     ></iframe>
                   </div>
@@ -903,7 +901,19 @@ function goToPreviousPinnedVideo() {
   cyclePinnedVideo(-1, { autoplay: true });
 }
 
-function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedIndex: number) {
+function collapsePinButtonDetails(event?: Event) {
+  const trigger = event?.currentTarget;
+  if (!(trigger instanceof HTMLElement)) {
+    return;
+  }
+
+  const details = trigger.closest('details');
+  if (details instanceof HTMLDetailsElement && details.open) {
+    details.open = false;
+  }
+}
+
+function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedIndex: number, event?: Event) {
   const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
 
   if (pinnedYouTubeEmbed.value?.sourceKey === sourceKey) {
@@ -921,6 +931,7 @@ function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedInde
   if (pinnedTwitchEmbed.value) {
     unpinTwitchEmbed();
   }
+  collapsePinButtonDetails(event);
   pinEmbedBySource(sourceKey, embedUrl, videoId);
 
   resetPinnedSplitToHalf();
@@ -929,7 +940,7 @@ function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedInde
   void initializeYouTubePlayers();
 }
 
-function togglePinTwitchEmbed(messageIndex: number, embedUrl: string, embedIndex: number) {
+function togglePinTwitchEmbed(messageIndex: number, embedUrl: string, embedIndex: number, event?: Event) {
   const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
 
   if (pinnedTwitchEmbed.value?.sourceKey === sourceKey) {
@@ -947,6 +958,8 @@ function togglePinTwitchEmbed(messageIndex: number, embedUrl: string, embedIndex
   if (pinnedYouTubeEmbed.value) {
     unpinYouTubeEmbed();
   }
+
+  collapsePinButtonDetails(event);
 
   pinnedTwitchEmbed.value = {
     sourceKey,

@@ -482,6 +482,58 @@ describe('ChatArea', () => {
     expect(fallback.text()).toBe('https://www.youtube.com/watch?v=ABCDEFGHIJK');
   });
 
+  it('renders twitch stream embed from channel url', async () => {
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'watch https://www.twitch.tv/ninja' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    const details = wrapper.find('details.video-expandable');
+    expect(details.exists()).toBe(true);
+
+    const iframe = wrapper.find('iframe.twitch-player-frame');
+    expect(iframe.exists()).toBe(true);
+    expect(iframe.attributes('src')).toContain('channel=ninja');
+  });
+
+  it('pins a twitch embed to the top panel and unpins it', async () => {
+    const wrapper = mount(ChatArea, {
+      props: {
+        messages: [
+          { user: 'BRAVO', message: 'live https://www.twitch.tv/summit1g' },
+        ],
+        username: 'ALPHA',
+        isConnected: true,
+        users: {},
+      },
+    });
+
+    const pinButton = wrapper.find('button.video-pin-btn');
+    expect(pinButton.exists()).toBe(true);
+    expect(pinButton.text()).toBe('PIN');
+
+    await pinButton.trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('.pinned-video-panel').exists()).toBe(true);
+    expect(wrapper.find('.pinned-video-title').text()).toContain('PINNED:');
+    expect(wrapper.find('button.video-pin-btn').attributes('aria-pressed')).toBe('true');
+
+    const unpinButton = wrapper.findAll('.pinned-video-header .video-control-btn').find((btn) => btn.text() === 'UNPIN');
+    expect(unpinButton).toBeTruthy();
+    await unpinButton!.trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('.pinned-video-panel').exists()).toBe(false);
+    expect(wrapper.find('button.video-pin-btn').attributes('aria-pressed')).toBe('false');
+  });
+
   it('initializes youtube player and supports play, pause, seek, volume, and teardown', async () => {
     const { player } = setupYouTubeMock();
 
@@ -622,7 +674,9 @@ describe('ChatArea', () => {
   expect((wrapper.find('details.video-expandable').element as HTMLDetailsElement).open).toBe(false);
     expect(player.playVideo).toHaveBeenCalled();
 
-    await wrapper.find('.pinned-video-header .video-control-btn').trigger('click');
+    const unpinButton = wrapper.findAll('.pinned-video-header .video-control-btn').find((btn) => btn.text() === 'UNPIN');
+    expect(unpinButton).toBeTruthy();
+    await unpinButton!.trigger('click');
     await nextTick();
 
     expect(wrapper.find('.pinned-video-panel').exists()).toBe(false);

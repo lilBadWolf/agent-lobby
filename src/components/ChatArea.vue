@@ -10,7 +10,7 @@
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">
             &gt;
           </button>
-          <button class="video-control-btn" type="button" @click="unpinYouTubeEmbed">
+          <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">
             UNPIN
           </button>
         </div>
@@ -87,8 +87,42 @@
         </div>
       </div>
     </div>
+    <div v-if="pinnedTwitchEmbed" class="pinned-video-panel">
+      <div class="pinned-video-header">
+        <span class="pinned-video-title">PINNED: {{ getTwitchEmbedHeader(pinnedTwitchEmbed.url) }}</span>
+        <div class="pinned-video-actions">
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
+            &lt;
+          </button>
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">
+            &gt;
+          </button>
+          <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">
+            UNPIN
+          </button>
+        </div>
+      </div>
+      <div
+        class="video-player-shell pinned-video-shell"
+        :style="{
+          '--pinned-video-height': `${pinnedVideoHeight}px`,
+          '--pinned-control-scale': pinnedControlScale.toString(),
+        }"
+      >
+        <div class="twitch-player-host pinned-twitch-player-host">
+          <iframe
+            :key="pinnedTwitchEmbed.channel"
+            class="twitch-player-frame"
+            :src="getTwitchEmbedSrc(pinnedTwitchEmbed.channel)"
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowfullscreen
+            scrolling="no"
+          ></iframe>
+        </div>
+      </div>
+    </div>
     <div
-      v-if="pinnedYouTubeEmbed"
+      v-if="hasPinnedVideo"
       class="pinned-video-divider"
       role="separator"
       aria-label="Resize pinned video"
@@ -286,6 +320,48 @@
               <span v-else class="video-fallback">{{ embed.url }}</span>
             </div>
           </div>
+          <div v-if="getMessageTwitchEmbeds(index).length > 0" class="message-videos">
+            <div
+              v-for="(embed, embedIndex) in getMessageTwitchEmbeds(index)"
+              :key="`${embed.url}-${embedIndex}`"
+              class="video-container"
+            >
+              <details
+                v-if="embed.channel"
+                class="video-expandable"
+                :class="{ 'is-pinned-in-feed': isTwitchEmbedPinned(index, embed.url, embedIndex) }"
+              >
+                <summary class="video-header">
+                  <span class="video-header-title">{{ getTwitchEmbedHeader(embed.url) }}</span>
+                  <span class="video-header-control" aria-hidden="true">
+                    <button
+                      class="video-pin-btn"
+                      type="button"
+                      :aria-pressed="isTwitchEmbedPinned(index, embed.url, embedIndex)"
+                      @click.stop="togglePinTwitchEmbed(index, embed.url, embedIndex)"
+                    >
+                      {{ isTwitchEmbedPinned(index, embed.url, embedIndex) ? 'UNPIN' : 'PIN' }}
+                    </button>
+                    <span class="video-control-show">SHOW</span>
+                    <span class="video-control-hide">HIDE</span>
+                    <span class="video-control-indicator"></span>
+                  </span>
+                </summary>
+                <div class="video-player-shell">
+                  <div class="twitch-player-host">
+                    <iframe
+                      class="twitch-player-frame"
+                      :src="getTwitchEmbedSrc(embed.channel)"
+                      allow="autoplay; fullscreen; picture-in-picture"
+                      allowfullscreen
+                      scrolling="no"
+                    ></iframe>
+                  </div>
+                </div>
+              </details>
+              <span v-else class="video-fallback">{{ embed.url }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -439,12 +515,86 @@ function getYouTubeVideoId(url: string): string | null {
   if (ybMatch) return ybMatch[1];
   return null;
 }
+
+const TWITCH_RESERVED_PATHS = new Set([
+  'clip',
+  'clips',
+  'collections',
+  'directory',
+  'downloads',
+  'drops',
+  'friends',
+  'inventory',
+  'jobs',
+  'p',
+  'search',
+  'settings',
+  'store',
+  'subscriptions',
+  'team',
+  'turbo',
+  'videos',
+  'wallet',
+]);
+
+const TWITCH_DEFAULT_PARENTS = ['localhost', '127.0.0.1', 'tauri.localhost'];
+
+function getTwitchChannelName(url: string): string | null {
+  try {
+    const parsed = new URL(normalizeUrlToken(url));
+    if (!/(^|\.)twitch\.tv$/i.test(parsed.hostname)) {
+      return null;
+    }
+
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length !== 1) {
+      return null;
+    }
+
+    const candidate = segments[0];
+    if (!candidate || TWITCH_RESERVED_PATHS.has(candidate.toLowerCase())) {
+      return null;
+    }
+
+    if (!/^[a-zA-Z0-9_]{4,25}$/.test(candidate)) {
+      return null;
+    }
+
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+function extractTwitchUrls(text: string): string[] {
+  const regex = /https?:\/\/(?:www\.)?twitch\.tv\/[\w-]+(?:\?[^\s]*)?/gi;
+  const candidates = Array.from(text.match(regex) ?? []).map(normalizeUrlToken);
+  return candidates.filter((url) => Boolean(getTwitchChannelName(url)));
+}
+
+function getTwitchEmbedParents(): string[] {
+  const hosts = new Set<string>(TWITCH_DEFAULT_PARENTS);
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    hosts.add(window.location.hostname);
+  }
+  return Array.from(hosts);
+}
+
+function getTwitchEmbedSrc(channel: string): string {
+  const params = new URLSearchParams();
+  params.set('channel', channel);
+  params.set('muted', 'true');
+  getTwitchEmbedParents().forEach((parent) => params.append('parent', parent));
+  return `https://player.twitch.tv/?${params.toString()}`;
+}
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const typingProgress = ref<Record<number, number>>({});
 const youtubeTitleCache = ref<Record<string, string>>({});
+const twitchTitleCache = ref<Record<string, string>>({});
 const externalLinkTitleCache = ref<Record<string, string>>({});
 const youtubeTitleRequests = new Set<string>();
+const twitchTitleRequests = new Set<string>();
 const externalLinkTitleRequests = new Set<string>();
 const youtubePlayers = new Map<string, YouTubePlayerLike>();
 const youtubePlayerVideoIds = new Map<string, string>();
@@ -467,8 +617,10 @@ const PINNED_SPLIT_RATIO = 0.5;
 const PINNED_PANEL_OVERHEAD_ESTIMATE = 24;
 const WINDOW_LAYOUT_CHANGED_EVENT = 'agent-lobby-window-layout-changed';
 const pinnedYouTubeEmbed = ref<{ sourceKey: string; url: string; videoId: string } | null>(null);
+const pinnedTwitchEmbed = ref<{ sourceKey: string; url: string; channel: string } | null>(null);
 const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
 const shouldAutoplayPinnedOnReady = ref(false);
+const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value));
 const pinnedControlScale = computed(() => {
   const rawScale = pinnedVideoHeight.value / PINNED_VIDEO_DEFAULT_HEIGHT;
   return Math.max(0.78, Math.min(1.2, rawScale));
@@ -611,6 +763,27 @@ function getFeedYouTubeEmbeds(): Array<{ key: string; url: string; videoId: stri
   return embeds;
 }
 
+function getFeedTwitchEmbeds(): Array<{ key: string; url: string; channel: string }> {
+  const embeds: Array<{ key: string; url: string; channel: string }> = [];
+
+  props.messages.forEach((message, messageIndex) => {
+    extractTwitchUrls(message.message).forEach((url, embedIndex) => {
+      const channel = getTwitchChannelName(url);
+      if (!channel) {
+        return;
+      }
+
+      embeds.push({
+        key: getEmbedKey(messageIndex, url, embedIndex),
+        url,
+        channel,
+      });
+    });
+  });
+
+  return embeds;
+}
+
 function isYouTubeEmbedPinned(messageIndex: number, embedUrl: string, embedIndex: number): boolean {
   const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
   return pinnedYouTubeEmbed.value?.sourceKey === sourceKey;
@@ -618,6 +791,11 @@ function isYouTubeEmbedPinned(messageIndex: number, embedUrl: string, embedIndex
 
 function isPinnedEmbedKey(key: string): boolean {
   return pinnedYouTubeEmbed.value?.sourceKey === key;
+}
+
+function isTwitchEmbedPinned(messageIndex: number, embedUrl: string, embedIndex: number): boolean {
+  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
+  return pinnedTwitchEmbed.value?.sourceKey === sourceKey;
 }
 
 function collapseEmbedInChatFeed(key: string) {
@@ -672,15 +850,56 @@ function cyclePinnedVideo(direction: 1 | -1, { autoplay = false }: { autoplay?: 
   void initializeYouTubePlayers();
 }
 
+function cyclePinnedTwitchStream(direction: 1 | -1) {
+  const currentPinned = pinnedTwitchEmbed.value;
+  if (!currentPinned) {
+    return;
+  }
+
+  const feedEmbeds = getFeedTwitchEmbeds();
+  if (feedEmbeds.length <= 1) {
+    return;
+  }
+
+  const currentIndex = feedEmbeds.findIndex((embed) => embed.key === currentPinned.sourceKey);
+  if (currentIndex < 0) {
+    return;
+  }
+
+  const nextIndex = (currentIndex + direction + feedEmbeds.length) % feedEmbeds.length;
+  const nextEmbed = feedEmbeds[nextIndex];
+  if (!nextEmbed || nextEmbed.key === currentPinned.sourceKey) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+  pinnedTwitchEmbed.value = {
+    sourceKey: nextEmbed.key,
+    url: nextEmbed.url,
+    channel: nextEmbed.channel,
+  };
+  scrollMessagesToBottomAfterLayout(shouldStickToBottom);
+}
+
 function advancePinnedVideo() {
   cyclePinnedVideo(1, { autoplay: true });
 }
 
 function goToNextPinnedVideo() {
+  if (pinnedTwitchEmbed.value) {
+    cyclePinnedTwitchStream(1);
+    return;
+  }
+
   cyclePinnedVideo(1, { autoplay: true });
 }
 
 function goToPreviousPinnedVideo() {
+  if (pinnedTwitchEmbed.value) {
+    cyclePinnedTwitchStream(-1);
+    return;
+  }
+
   cyclePinnedVideo(-1, { autoplay: true });
 }
 
@@ -699,12 +918,44 @@ function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedInde
 
   const shouldStickToBottom = isMessagesNearBottom();
   shouldAutoplayPinnedOnReady.value = true;
+  if (pinnedTwitchEmbed.value) {
+    unpinTwitchEmbed();
+  }
   pinEmbedBySource(sourceKey, embedUrl, videoId);
 
   resetPinnedSplitToHalf();
   scrollMessagesToBottomAfterLayout(shouldStickToBottom);
 
   void initializeYouTubePlayers();
+}
+
+function togglePinTwitchEmbed(messageIndex: number, embedUrl: string, embedIndex: number) {
+  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
+
+  if (pinnedTwitchEmbed.value?.sourceKey === sourceKey) {
+    unpinTwitchEmbed();
+    return;
+  }
+
+  const channel = getTwitchChannelName(embedUrl);
+  if (!channel) {
+    return;
+  }
+
+  const shouldStickToBottom = isMessagesNearBottom();
+
+  if (pinnedYouTubeEmbed.value) {
+    unpinYouTubeEmbed();
+  }
+
+  pinnedTwitchEmbed.value = {
+    sourceKey,
+    url: embedUrl,
+    channel,
+  };
+
+  resetPinnedSplitToHalf();
+  scrollMessagesToBottomAfterLayout(shouldStickToBottom);
 }
 
 function unpinYouTubeEmbed() {
@@ -731,6 +982,19 @@ function unpinYouTubeEmbed() {
   if (youtubePlayers.size === 0) {
     stopYouTubeSync();
   }
+}
+
+function unpinTwitchEmbed() {
+  pinnedTwitchEmbed.value = null;
+}
+
+function unpinPinnedEmbed() {
+  if (pinnedTwitchEmbed.value) {
+    unpinTwitchEmbed();
+    return;
+  }
+
+  unpinYouTubeEmbed();
 }
 
 function getPinnedHeightBounds() {
@@ -793,7 +1057,7 @@ function scrollMessagesToBottomAfterLayout(shouldStickToBottom: boolean) {
 }
 
 function resetPinnedSplitToHalf() {
-  if (!pinnedYouTubeEmbed.value) {
+  if (!hasPinnedVideo.value) {
     return;
   }
 
@@ -816,7 +1080,7 @@ function resetPinnedSplitToHalf() {
 }
 
 function syncPinnedVideoToAvailableSpace() {
-  if (!pinnedYouTubeEmbed.value) {
+  if (!hasPinnedVideo.value) {
     return;
   }
 
@@ -847,7 +1111,7 @@ function stopPinnedResize() {
 }
 
 function startPinnedResize(event: MouseEvent) {
-  if (!pinnedYouTubeEmbed.value) {
+  if (!hasPinnedVideo.value) {
     return;
   }
 
@@ -1198,6 +1462,10 @@ function getYouTubeEmbedHeader(url: string): string {
   return youtubeTitleCache.value[url] || url;
 }
 
+function getTwitchEmbedHeader(url: string): string {
+  return twitchTitleCache.value[url] || url;
+}
+
 function extractRawHttpUrls(text: string): string[] {
   const regex = /https?:\/\/[^\s]+/gi;
   return Array.from(text.match(regex) ?? []);
@@ -1226,6 +1494,32 @@ async function ensureYouTubeTitle(url: string): Promise<void> {
     // Ignore network and CORS failures; header falls back to URL.
   } finally {
     youtubeTitleRequests.delete(url);
+  }
+}
+
+async function ensureTwitchTitle(url: string): Promise<void> {
+  if (twitchTitleCache.value[url] || twitchTitleRequests.has(url)) {
+    return;
+  }
+
+  twitchTitleRequests.add(url);
+
+  try {
+    const endpoint = `https://api.twitch.tv/v5/oembed?url=${encodeURIComponent(url)}`;
+    const response = await fetch(endpoint);
+
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json() as { title?: unknown };
+    if (typeof data.title === 'string' && data.title.trim()) {
+      twitchTitleCache.value[url] = data.title.trim();
+    }
+  } catch {
+    // Ignore network and CORS failures; header falls back to URL.
+  } finally {
+    twitchTitleRequests.delete(url);
   }
 }
 
@@ -1315,11 +1609,19 @@ watch(
         }
       });
 
+      const twitchUris = extractTwitchUrls(msg.message);
+      twitchUris.forEach(uri => {
+        if (getTwitchChannelName(uri)) {
+          void ensureTwitchTitle(uri);
+        }
+      });
+
       const ytSet = new Set(extractYouTubeUrls(msg.message).map(normalizeUrlToken));
+      const twitchSet = new Set(extractTwitchUrls(msg.message).map(normalizeUrlToken));
       const imgSet = new Set(extractImageUris(msg.message).map(normalizeUrlToken));
       const externalLinks = extractRawHttpUrls(msg.message)
         .map(normalizeUrlToken)
-        .filter((url) => Boolean(url) && !ytSet.has(url) && !imgSet.has(url));
+        .filter((url) => Boolean(url) && !ytSet.has(url) && !twitchSet.has(url) && !imgSet.has(url));
 
       externalLinks.forEach((url) => {
         void ensureExternalLinkTitle(url);
@@ -1403,6 +1705,11 @@ function getDisplayedText(messageIndex: number): string {
     text = text.replace(uri, '').trim();
   });
 
+  const twitchUris = extractTwitchUrls(message.message);
+  twitchUris.forEach(uri => {
+    text = text.replace(uri, '').trim();
+  });
+
   // Remove CSS-like blocks from display text
   text = text.replace(/\.[\w-]+\s*\{[^}]+\}/g, '').trim();
   // Convert :emojiName: to emoji characters
@@ -1460,6 +1767,7 @@ function getDisplayedParts(messageIndex: number): DisplayPart[] {
 
   const excludedUrls = new Set([
     ...extractYouTubeUrls(sourceMessage?.message || '').map(normalizeUrlToken),
+    ...extractTwitchUrls(sourceMessage?.message || '').map(normalizeUrlToken),
     ...extractImageUris(sourceMessage?.message || '').map(normalizeUrlToken),
   ]);
 
@@ -1550,6 +1858,19 @@ function getMessageYouTubeEmbeds(messageIndex: number): Array<{ url: string; vid
   return getMessageYouTubeUrls(messageIndex).map(url => ({
     url,
     videoId: getYouTubeVideoId(url),
+  }));
+}
+
+function getMessageTwitchUrls(messageIndex: number): string[] {
+  const message = props.messages[messageIndex];
+  if (!message) return [];
+  return extractTwitchUrls(message.message);
+}
+
+function getMessageTwitchEmbeds(messageIndex: number): Array<{ url: string; channel: string | null }> {
+  return getMessageTwitchUrls(messageIndex).map(url => ({
+    url,
+    channel: getTwitchChannelName(url),
   }));
 }
 
@@ -2517,6 +2838,33 @@ onBeforeUnmount(() => {
 
 .pinned-video-shell .youtube-player-host :deep(iframe) {
   pointer-events: none;
+}
+
+.twitch-player-host {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  height: 0;
+  padding-top: 56.25%;
+  border-bottom: 1px solid var(--dim-green);
+  background: #000;
+  overflow: hidden;
+}
+
+.twitch-player-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.pinned-twitch-player-host {
+  height: 100%;
+  min-height: 0;
+  padding-top: 0;
+  border-bottom: none;
 }
 
 .video-fullscreen-exit {

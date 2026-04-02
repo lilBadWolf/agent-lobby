@@ -11,7 +11,6 @@ const repo = process.env.GITHUB_REPOSITORY;
 // Maps filename suffix patterns to tauri updater platform keys
 const PLATFORM_MAP = [
   { pattern: /_aarch64\.app\.tar\.gz$/, platform: 'darwin-aarch64' },
-  { pattern: /_x64\.app\.tar\.gz$/, platform: 'darwin-x86_64' },
   { pattern: /_amd64\.AppImage\.tar\.gz$/, platform: 'linux-x86_64' },
   { pattern: /_x64-setup\.nsis\.zip$/, platform: 'windows-x86_64' },
 ];

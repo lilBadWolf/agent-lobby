@@ -54,5 +54,19 @@ jobs:
           releaseBody: 'See the assets below to download.'
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  publish-updater-json:
+    needs: publish-tauri
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - name: generate and upload latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/generate-updater-json.mjs

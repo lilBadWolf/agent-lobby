@@ -57,6 +57,53 @@ import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './t
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
 const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
+const DM_WINDOW_MEDIA_EVENT = 'media-state';
+const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
+const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
+const DM_WINDOW_MEDIA_RELAY_ICE_EVENT = 'media-relay-ice';
+const DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT = 'media-relay-close';
+const DM_WINDOW_LOG_PREFIX = '[DMWindowApp]';
+
+type RelayStreamKind = 'local' | 'remote';
+
+interface DMWindowMediaState {
+  user: string;
+  localMediaStream: MediaStream | null;
+  remoteMediaStream: MediaStream | null;
+}
+
+interface MediaRelayOfferMessage {
+  type: typeof DM_WINDOW_MEDIA_RELAY_OFFER_EVENT;
+  user: string;
+  kind: RelayStreamKind;
+  sdp: RTCSessionDescriptionInit;
+}
+
+interface MediaRelayAnswerMessage {
+  type: typeof DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT;
+  user: string;
+  kind: RelayStreamKind;
+  sdp: RTCSessionDescriptionInit;
+}
+
+interface MediaRelayIceMessage {
+  type: typeof DM_WINDOW_MEDIA_RELAY_ICE_EVENT;
+  user: string;
+  kind: RelayStreamKind;
+  candidate: RTCIceCandidateInit;
+}
+
+interface MediaRelayCloseMessage {
+  type: typeof DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT;
+  user: string;
+  kind: RelayStreamKind;
+}
+
+interface RelayReceiverEntry {
+  user: string;
+  kind: RelayStreamKind;
+  pc: RTCPeerConnection;
+}
 
 const activeChats = ref<Map<string, DMChat>>(new Map());
 const pendingRequests = ref<DMWindowStatePayload['pendingRequests']>([]);
@@ -70,9 +117,188 @@ const focusedDMUser = ref<string | null>(null);
 const isMaximized = ref(false);
 
 let webChannel: BroadcastChannel | null = null;
+const relayReceivers = new Map<string, RelayReceiverEntry>();
 let cleanupTauriListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const hasTauriWindow = isTauriRuntime();
+
+function debugEnabled(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  try {
+    return window.localStorage.getItem('dm-window-debug') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function debugLog(message: string, details?: unknown) {
+  if (!debugEnabled()) {
+    return;
+  }
+
+  if (details === undefined) {
+    console.log(`${DM_WINDOW_LOG_PREFIX} ${message}`);
+    return;
+  }
+
+  console.log(`${DM_WINDOW_LOG_PREFIX} ${message}`, details);
+}
+
+function describeStream(stream: MediaStream | null | undefined) {
+  if (!stream) {
+    return null;
+  }
+
+  return {
+    id: stream.id,
+    active: stream.active,
+    tracks: stream.getTracks().map((track) => ({
+      id: track.id,
+      kind: track.kind,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    })),
+  };
+}
+
+function relayKey(user: string, kind: RelayStreamKind): string {
+  return `${user}::${kind}`;
+}
+
+function updateChatStream(user: string, kind: RelayStreamKind, stream: MediaStream | null) {
+  const current = activeChats.value.get(user);
+  if (!current) {
+    return;
+  }
+
+  const nextChats = new Map(activeChats.value);
+  const nextChat: DMChat = {
+    ...current,
+    localMediaStream: kind === 'local' ? stream : current.localMediaStream,
+    remoteMediaStream: kind === 'remote' ? stream : current.remoteMediaStream,
+  };
+  nextChats.set(user, nextChat);
+  activeChats.value = nextChats;
+
+  debugLog(`chat stream updated ${user}/${kind}`, {
+    stream: describeStream(stream),
+  });
+}
+
+function teardownRelayReceiver(user: string, kind: RelayStreamKind, clearStream = true) {
+  const key = relayKey(user, kind);
+  const existing = relayReceivers.get(key);
+  if (!existing) {
+    return;
+  }
+
+  try {
+    existing.pc.ontrack = null;
+    existing.pc.onicecandidate = null;
+    existing.pc.onconnectionstatechange = null;
+    existing.pc.close();
+  } catch (error) {
+    debugLog(`relay receiver close failed for ${user}/${kind}`, error);
+  }
+
+  relayReceivers.delete(key);
+
+  if (clearStream) {
+    updateChatStream(user, kind, null);
+  }
+}
+
+function teardownAllRelayReceivers(clearStreams = false) {
+  const keys = Array.from(relayReceivers.keys());
+  for (const key of keys) {
+    const existing = relayReceivers.get(key);
+    if (!existing) {
+      continue;
+    }
+
+    teardownRelayReceiver(existing.user, existing.kind, clearStreams);
+  }
+}
+
+async function handleMediaRelayOffer(message: MediaRelayOfferMessage) {
+  if (!webChannel) {
+    return;
+  }
+
+  teardownRelayReceiver(message.user, message.kind, true);
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  relayReceivers.set(relayKey(message.user, message.kind), {
+    user: message.user,
+    kind: message.kind,
+    pc,
+  });
+
+  pc.onconnectionstatechange = () => {
+    debugLog(`relay receiver state ${message.user}/${message.kind}`, {
+      state: pc.connectionState,
+      ice: pc.iceConnectionState,
+    });
+  };
+
+  pc.onicecandidate = (event) => {
+    if (!event.candidate || !webChannel) {
+      return;
+    }
+
+    const iceMessage: MediaRelayIceMessage = {
+      type: DM_WINDOW_MEDIA_RELAY_ICE_EVENT,
+      user: message.user,
+      kind: message.kind,
+      candidate: event.candidate.toJSON(),
+    };
+    webChannel.postMessage(iceMessage);
+  };
+
+  pc.ontrack = (event) => {
+    const stream = event.streams[0] ?? new MediaStream([event.track]);
+    debugLog(`relay track received ${message.user}/${message.kind}`, {
+      trackKind: event.track.kind,
+      stream: describeStream(stream),
+    });
+    updateChatStream(message.user, message.kind, stream);
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  const answerMessage: MediaRelayAnswerMessage = {
+    type: DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT,
+    user: message.user,
+    kind: message.kind,
+    sdp: answer,
+  };
+  webChannel.postMessage(answerMessage);
+  debugLog(`relay answer posted for ${message.user}/${message.kind}`);
+}
+
+async function handleMediaRelayIce(message: MediaRelayIceMessage) {
+  const entry = relayReceivers.get(relayKey(message.user, message.kind));
+  if (!entry) {
+    return;
+  }
+
+  try {
+    await entry.pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+  } catch (error) {
+    debugLog(`relay receiver ICE add failed for ${message.user}/${message.kind}`, error);
+  }
+}
+
+function handleMediaRelayClose(message: MediaRelayCloseMessage) {
+  debugLog(`relay close received for ${message.user}/${message.kind}`);
+  teardownRelayReceiver(message.user, message.kind, true);
+}
 
 const pageTitle = computed(() => {
   const activeUsers = Array.from(activeChats.value.keys());
@@ -121,12 +347,69 @@ function toChat(chat: SerializedDMChat): DMChat {
     fileTransfers: new Map(chat.fileTransfers.map((transfer) => [transfer.id, toFileTransferState(transfer)])),
     callStartTime: chat.callStartTime,
     callDuration: chat.callDuration,
-    videoCallActive: false,
+    videoCallActive: chat.videoCallActive,
   };
 }
 
+function applyMediaState(payload: DMWindowMediaState[]) {
+  if (!Array.isArray(payload) || payload.length === 0) {
+    debugLog('applyMediaState called with empty payload');
+    return;
+  }
+
+  debugLog('applyMediaState payload received', payload.map((entry) => ({
+    user: entry.user,
+    local: describeStream(entry.localMediaStream),
+    remote: describeStream(entry.remoteMediaStream),
+  })));
+
+  const nextChats = new Map(activeChats.value);
+
+  for (const mediaState of payload) {
+    const chat = nextChats.get(mediaState.user);
+    if (!chat) {
+      continue;
+    }
+
+    chat.localMediaStream = mediaState.localMediaStream;
+    chat.remoteMediaStream = mediaState.remoteMediaStream;
+    nextChats.set(mediaState.user, chat);
+
+    debugLog(`media applied for ${mediaState.user}`, {
+      local: describeStream(chat.localMediaStream),
+      remote: describeStream(chat.remoteMediaStream),
+      videoCallActive: chat.videoCallActive,
+      videoEnabled: chat.videoEnabled,
+      audioEnabled: chat.audioEnabled,
+    });
+  }
+
+  activeChats.value = nextChats;
+}
+
 function applyState(payload: DMWindowStatePayload) {
-  activeChats.value = new Map(payload.activeChats.map((chat) => [chat.user, toChat(chat)]));
+  debugLog('applyState payload received', {
+    activeChats: payload.activeChats.length,
+    pendingRequests: payload.pendingRequests.length,
+    pendingAudioCalls: payload.pendingAudioCalls.length,
+    pendingVideoCalls: payload.pendingVideoCalls.length,
+    notices: payload.notices.length,
+    focusedDMUser: payload.focusedDMUser,
+  });
+
+  const previousChats = activeChats.value;
+
+  activeChats.value = new Map(payload.activeChats.map((chat) => {
+    const nextChat = toChat(chat);
+    const existingChat = previousChats.get(chat.user);
+
+    if (existingChat) {
+      nextChat.localMediaStream = existingChat.localMediaStream;
+      nextChat.remoteMediaStream = existingChat.remoteMediaStream;
+    }
+
+    return [chat.user, nextChat];
+  }));
   pendingRequests.value = payload.pendingRequests;
   pendingAudioCalls.value = payload.pendingAudioCalls;
   pendingVideoCalls.value = payload.pendingVideoCalls;
@@ -172,7 +455,30 @@ function handleWebMessage(event: MessageEvent) {
 
   const message = event.data as { type?: string; payload?: unknown };
   if (message?.type === 'state') {
+    debugLog('window message state received');
     applyState(message.payload as DMWindowStatePayload);
+    return;
+  }
+
+  if (message?.type === DM_WINDOW_MEDIA_EVENT) {
+    debugLog('window message media-state received');
+    applyMediaState(message.payload as DMWindowMediaState[]);
+    return;
+  }
+
+  if (message?.type === DM_WINDOW_MEDIA_RELAY_OFFER_EVENT) {
+    debugLog('window message relay offer received');
+    void handleMediaRelayOffer(message as MediaRelayOfferMessage);
+    return;
+  }
+
+  if (message?.type === DM_WINDOW_MEDIA_RELAY_ICE_EVENT) {
+    void handleMediaRelayIce(message as MediaRelayIceMessage);
+    return;
+  }
+
+  if (message?.type === DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT) {
+    handleMediaRelayClose(message as MediaRelayCloseMessage);
   }
 }
 
@@ -215,8 +521,46 @@ async function toggleMaximize() {
 }
 
 onMounted(async () => {
+  debugLog('mounted', {
+    hasTauriWindow,
+    tauriRuntime: isTauriRuntime(),
+    location: window.location.href,
+  });
+
   if (typeof BroadcastChannel !== 'undefined') {
     webChannel = new BroadcastChannel(DM_WEB_CHANNEL);
+    debugLog('BroadcastChannel initialized', { channel: DM_WEB_CHANNEL });
+    webChannel.onmessage = (event: MessageEvent) => {
+      const message = event.data as { type?: string; payload?: unknown };
+      if (message?.type === 'state') {
+        debugLog('BroadcastChannel state received');
+        applyState(message.payload as DMWindowStatePayload);
+        return;
+      }
+
+      if (message?.type === DM_WINDOW_MEDIA_EVENT) {
+        debugLog('BroadcastChannel media-state received');
+        applyMediaState(message.payload as DMWindowMediaState[]);
+        return;
+      }
+
+      if (message?.type === DM_WINDOW_MEDIA_RELAY_OFFER_EVENT) {
+        debugLog('BroadcastChannel relay offer received');
+        void handleMediaRelayOffer(message as MediaRelayOfferMessage);
+        return;
+      }
+
+      if (message?.type === DM_WINDOW_MEDIA_RELAY_ICE_EVENT) {
+        void handleMediaRelayIce(message as MediaRelayIceMessage);
+        return;
+      }
+
+      if (message?.type === DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT) {
+        handleMediaRelayClose(message as MediaRelayCloseMessage);
+      }
+    };
+  } else {
+    debugLog('BroadcastChannel unavailable in this environment');
   }
 
   if (hasTauriWindow) {
@@ -227,9 +571,12 @@ onMounted(async () => {
   if (isTauriRuntime()) {
     const { listen } = await import('@tauri-apps/api/event');
     cleanupTauriListener = await listen<DMWindowStatePayload>(DM_WINDOW_STATE_EVENT, (event) => {
+      debugLog('Tauri event dm-window-state received');
       applyState(event.payload);
     });
+    debugLog('Tauri listener registered', { event: DM_WINDOW_STATE_EVENT });
     await sendAction({ type: 'windowReady' });
+    debugLog('windowReady sent');
     return;
   }
 
@@ -238,19 +585,15 @@ onMounted(async () => {
       window.addEventListener('message', handleWebMessage);
       webMessageListenerBound = true;
     }
-  } else if (webChannel) {
-    webChannel.onmessage = (event: MessageEvent) => {
-      const message = event.data as { type?: string; payload?: unknown };
-      if (message?.type === 'state') {
-        applyState(message.payload as DMWindowStatePayload);
-      }
-    };
   }
 
   await sendAction({ type: 'windowReady' });
+  debugLog('windowReady sent');
 });
 
 onBeforeUnmount(() => {
+  debugLog('before unmount');
+  teardownAllRelayReceivers(false);
   void sendAction({ type: 'windowClosed' });
   if (webMessageListenerBound) {
     window.removeEventListener('message', handleWebMessage);

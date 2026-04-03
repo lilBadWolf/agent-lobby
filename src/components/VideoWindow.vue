@@ -118,7 +118,90 @@ const lastAnimatedRemoteMessageKey = ref('');
 const fallbackLocalPreviewStream = ref<MediaStream | null>(null);
 const localPreviewUnavailable = ref(false);
 const remoteTrackRevision = ref(0);
+let remoteDiagnosticsIntervalId: number | null = null;
 const { playAnimation } = useMessageAnimations();
+
+function debugEnabled(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  try {
+    return window.localStorage.getItem('dm-window-debug') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function debugLog(message: string, details?: unknown) {
+  if (!debugEnabled()) {
+    return;
+  }
+
+  if (details === undefined) {
+    console.log(`[VideoWindow:${props.peerName}] ${message}`);
+    return;
+  }
+
+  console.log(`[VideoWindow:${props.peerName}] ${message}`, details);
+}
+
+function describeStream(stream: MediaStream | null | undefined) {
+  if (!stream) {
+    return null;
+  }
+
+  return {
+    id: stream.id,
+    active: stream.active,
+    tracks: stream.getTracks().map((track) => ({
+      id: track.id,
+      kind: track.kind,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    })),
+  };
+}
+
+function describeMediaElement(element: HTMLMediaElement | undefined) {
+  if (!element) {
+    return null;
+  }
+
+  return {
+    readyState: element.readyState,
+    networkState: element.networkState,
+    paused: element.paused,
+    currentTime: element.currentTime,
+    muted: element.muted,
+    volume: element.volume,
+    srcObjectKind: element.srcObject ? element.srcObject.constructor.name : null,
+  };
+}
+
+function startRemoteDiagnostics() {
+  if (remoteDiagnosticsIntervalId !== null) {
+    return;
+  }
+
+  remoteDiagnosticsIntervalId = window.setInterval(() => {
+    debugLog('remote diagnostics tick', {
+      remoteStream: describeStream(props.remoteStream),
+      remoteVideo: describeMediaElement(remoteVideoRef.value),
+      remoteAudio: describeMediaElement(remoteAudioRef.value),
+      hasRemoteVideoTrack: hasRemoteVideoTrack.value,
+      peerHasVideo: props.peerHasVideo ?? false,
+    });
+  }, 2000);
+}
+
+function stopRemoteDiagnostics() {
+  if (remoteDiagnosticsIntervalId !== null) {
+    window.clearInterval(remoteDiagnosticsIntervalId);
+    remoteDiagnosticsIntervalId = null;
+  }
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
@@ -149,7 +232,14 @@ const hasRemoteVideoTrack = computed(() => {
   // Depend on revision so addtrack/removetrack updates are reflected.
   remoteTrackRevision.value;
 
-  const streamHasVideo = (props.remoteStream?.getVideoTracks().length ?? 0) > 0;
+  const streamHasVideo = props.remoteStream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+
+  // If we have a stream object in this window but no live video tracks, prefer chat fallback
+  // over forcing an empty video pane from the peer metadata flag.
+  if (props.remoteStream) {
+    return streamHasVideo;
+  }
+
   return streamHasVideo || (props.peerHasVideo ?? false);
 });
 const activeLocalStream = computed<MediaStream | null>(() => props.localStream ?? fallbackLocalPreviewStream.value);
@@ -230,19 +320,43 @@ watch(fallbackLocalPreviewStream, async (stream) => {
 });
 
 watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
+  debugLog('remoteStream watcher fired', {
+    stream: describeStream(stream),
+    peerHasVideo: props.peerHasVideo ?? false,
+  });
+
   remoteTrackRevision.value += 1;
 
   let cleanupRemoteTrackListeners: (() => void) | null = null;
   if (stream) {
     const refreshTrackState = () => {
       remoteTrackRevision.value += 1;
+      debugLog('remote stream track topology changed', describeStream(stream));
     };
+
+    const trackTeardowns: Array<() => void> = [];
+    for (const track of stream.getTracks()) {
+      const onMute = () => debugLog(`remote ${track.kind} track muted`, { id: track.id, readyState: track.readyState });
+      const onUnmute = () => debugLog(`remote ${track.kind} track unmuted`, { id: track.id, readyState: track.readyState });
+      const onEnded = () => debugLog(`remote ${track.kind} track ended`, { id: track.id, readyState: track.readyState });
+      track.addEventListener('mute', onMute);
+      track.addEventListener('unmute', onUnmute);
+      track.addEventListener('ended', onEnded);
+      trackTeardowns.push(() => {
+        track.removeEventListener('mute', onMute);
+        track.removeEventListener('unmute', onUnmute);
+        track.removeEventListener('ended', onEnded);
+      });
+    }
 
     stream.addEventListener('addtrack', refreshTrackState);
     stream.addEventListener('removetrack', refreshTrackState);
     cleanupRemoteTrackListeners = () => {
       stream.removeEventListener('addtrack', refreshTrackState);
       stream.removeEventListener('removetrack', refreshTrackState);
+      for (const teardown of trackTeardowns) {
+        teardown();
+      }
     };
 
     // Ensure initial state is reflected after attaching listeners.
@@ -254,6 +368,7 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
   });
 
   if (!stream) {
+    debugLog('remote stream missing, clearing media elements');
     if (remoteVideoRef.value) setMediaElementStream(remoteVideoRef.value, null);
     if (remoteAudioRef.value) setMediaElementStream(remoteAudioRef.value, null);
     return;
@@ -261,12 +376,45 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
 
   await nextTick();
 
+  const wireElementEvents = (element: HTMLMediaElement | undefined, label: string) => {
+    if (!element) {
+      return () => undefined;
+    }
+
+    const eventNames = ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'pause', 'stalled', 'waiting', 'emptied', 'error'];
+    const handlers = eventNames.map((eventName) => {
+      const handler = () => {
+        debugLog(`${label} event: ${eventName}`, describeMediaElement(element));
+      };
+      element.addEventListener(eventName, handler);
+      return { eventName, handler };
+    });
+
+    return () => {
+      for (const { eventName, handler } of handlers) {
+        element.removeEventListener(eventName, handler);
+      }
+    };
+  };
+
+  const clearVideoEvents = wireElementEvents(remoteVideoRef.value, 'remoteVideo');
+  const clearAudioEvents = wireElementEvents(remoteAudioRef.value, 'remoteAudio');
+  onCleanup(() => {
+    clearVideoEvents();
+    clearAudioEvents();
+  });
+
   if (remoteVideoRef.value) {
     remoteVideoRef.value.muted = true;
     remoteVideoRef.value.defaultMuted = true;
     remoteVideoRef.value.volume = 0;
     setMediaElementStream(remoteVideoRef.value, stream);
+    debugLog('remote video srcObject set', {
+      stream: describeStream(stream),
+      element: describeMediaElement(remoteVideoRef.value),
+    });
     await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
+    debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
   }
 
   if (remoteAudioRef.value) {
@@ -274,9 +422,27 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
     remoteAudioRef.value.muted = false;
     remoteAudioRef.value.volume = 1;
     setMediaElementStream(remoteAudioRef.value, stream);
+    debugLog('remote audio srcObject set', {
+      stream: describeStream(stream),
+      element: describeMediaElement(remoteAudioRef.value),
+    });
     await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
+    debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
   }
-});
+}, { immediate: true });
+
+watch(() => props.peerHasVideo, (value) => {
+  debugLog('peerHasVideo changed', { peerHasVideo: value, remoteStream: describeStream(props.remoteStream) });
+}, { immediate: true });
+
+watch(hasRemoteVideoTrack, (value) => {
+  debugLog('hasRemoteVideoTrack changed', {
+    hasRemoteVideoTrack: value,
+    remoteStream: describeStream(props.remoteStream),
+  });
+}, { immediate: true });
+
+startRemoteDiagnostics();
 
 watch([hasRemoteVideoTrack, latestPeerMessage], async ([remoteHasVideo, message]) => {
   if (remoteHasVideo) {
@@ -319,6 +485,8 @@ function closeWindow() {
 }
 
 onBeforeUnmount(() => {
+  stopRemoteDiagnostics();
+  debugLog('before unmount, clearing media refs');
   clearFallbackPreviewStream();
 
   // Clear video element sources to release streams

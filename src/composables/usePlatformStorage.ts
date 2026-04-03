@@ -27,8 +27,16 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
 }
 
-function shouldMirrorToLocalStorage(): boolean {
-  return typeof window !== 'undefined' && import.meta.env.DEV;
+function canUseLocalStorage(): boolean {
+  return typeof window !== 'undefined';
+}
+
+function parseLocalStorageValue<T>(rawValue: string): T {
+  try {
+    return JSON.parse(rawValue) as T;
+  } catch {
+    return rawValue as T;
+  }
 }
 
 async function getAppStore(): Promise<Store | null> {
@@ -89,11 +97,33 @@ export async function getPersistedValue<T>(key: string): Promise<T | undefined> 
         found: value !== undefined,
         value,
       });
-      return value;
+      if (value !== undefined) {
+        return value;
+      }
     }
   } catch {
     // ignore store errors
     logPlatformStorage('error', 'read.failed', { key });
+  }
+
+  if (canUseLocalStorage()) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        const value = parseLocalStorageValue<T>(raw);
+        logPlatformStorage('info', 'read.local_storage', {
+          key,
+          found: true,
+          value,
+        });
+        return value;
+      }
+    } catch (error) {
+      logPlatformStorage('warn', 'read.local_storage.failed', {
+        key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   logPlatformStorage('warn', 'read.unavailable', { key });
@@ -126,7 +156,7 @@ export async function setPersistedValue<T>(key: string, value: T): Promise<void>
     });
   }
 
-  if (shouldMirrorToLocalStorage()) {
+  if (canUseLocalStorage()) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
       logPlatformStorage('info', 'write.mirror.local_storage', { key, value });
@@ -160,7 +190,7 @@ export async function removePersistedValue(key: string): Promise<void> {
     });
   }
 
-  if (shouldMirrorToLocalStorage()) {
+  if (canUseLocalStorage()) {
     try {
       localStorage.removeItem(key);
       logPlatformStorage('info', 'delete.mirror.local_storage', { key });

@@ -371,6 +371,10 @@ const DM_WINDOW_LABEL = 'dm-window';
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
 const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
+const DM_WINDOW_DEFAULT_WIDTH = 1280;
+const DM_WINDOW_DEFAULT_HEIGHT = 800;
+const DM_WINDOW_MIN_WIDTH = 960;
+const DM_WINDOW_MIN_HEIGHT = 600;
 const DM_WINDOW_MEDIA_EVENT = 'media-state';
 const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
@@ -411,6 +415,7 @@ interface RelaySenderEntry {
   user: string;
   kind: RelayStreamKind;
   streamId: string;
+  trackSignature: string;
   pc: RTCPeerConnection;
 }
 
@@ -1080,6 +1085,17 @@ function relayKey(user: string, kind: RelayStreamKind): string {
   return `${user}::${kind}`;
 }
 
+function getTrackSignature(stream: MediaStream | null | undefined): string {
+  if (!stream) {
+    return 'none';
+  }
+
+  return stream.getTracks()
+    .map((track) => `${track.kind}:${track.id}:${track.readyState}`)
+    .sort()
+    .join('|');
+}
+
 function teardownRelaySender(user: string, kind: RelayStreamKind, notifyPeer = true) {
   const key = relayKey(user, kind);
   const existing = relaySenders.get(key);
@@ -1160,8 +1176,15 @@ async function ensureRelaySenderForStream(user: string, kind: RelayStreamKind, s
   }
 
   const key = relayKey(user, kind);
+  const trackSignature = getTrackSignature(stream);
   const existing = relaySenders.get(key);
-  if (existing && existing.streamId === stream.id && existing.pc.connectionState !== 'failed' && existing.pc.connectionState !== 'closed') {
+  if (
+    existing
+    && existing.streamId === stream.id
+    && existing.trackSignature === trackSignature
+    && existing.pc.connectionState !== 'failed'
+    && existing.pc.connectionState !== 'closed'
+  ) {
     return;
   }
 
@@ -1172,6 +1195,7 @@ async function ensureRelaySenderForStream(user: string, kind: RelayStreamKind, s
     user,
     kind,
     streamId: stream.id,
+    trackSignature,
     pc,
   });
 
@@ -1531,8 +1555,11 @@ async function openDetachedDMWindow() {
     const dmWindow = new WebviewWindow(DM_WINDOW_LABEL, {
       url: dmWindowUrl.toString(),
       title: 'AGENT // DM',
-      width: 720,
-      height: 780,
+      width: DM_WINDOW_DEFAULT_WIDTH,
+      height: DM_WINDOW_DEFAULT_HEIGHT,
+      minWidth: DM_WINDOW_MIN_WIDTH,
+      minHeight: DM_WINDOW_MIN_HEIGHT,
+      center: true,
       resizable: true,
       decorations: false,
       transparent: false,
@@ -1562,8 +1589,8 @@ async function openDetachedDMWindow() {
   const dmWindowUrl = `${window.location.pathname}?view=dm`;
   const popupFeatures = [
     'popup=yes',
-    'width=720',
-    'height=780',
+    `width=${DM_WINDOW_DEFAULT_WIDTH}`,
+    `height=${DM_WINDOW_DEFAULT_HEIGHT}`,
     'toolbar=no',
     'menubar=no',
     'location=no',

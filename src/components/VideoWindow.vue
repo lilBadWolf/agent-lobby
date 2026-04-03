@@ -1,13 +1,5 @@
 <template>
   <div class="video-window">
-    <!-- Custom Titlebar -->
-    <div class="titlebar">
-      <div class="titlebar-title">
-        <span class="glyph">█</span>
-        VIDEO CALL // {{ peerName.toUpperCase() }}
-      </div>
-    </div>
-
     <!-- Video Container -->
     <div class="video-container">
       <!-- Remote Audio (hidden, just for audio output) -->
@@ -133,6 +125,18 @@ function debugEnabled(): boolean {
   }
 }
 
+function debugVerboseEnabled(): boolean {
+  if (!debugEnabled() || typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem('dm-window-debug-verbose') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function debugLog(message: string, details?: unknown) {
   if (!debugEnabled()) {
     return;
@@ -181,6 +185,10 @@ function describeMediaElement(element: HTMLMediaElement | undefined) {
 }
 
 function startRemoteDiagnostics() {
+  if (!debugVerboseEnabled()) {
+    return;
+  }
+
   if (remoteDiagnosticsIntervalId !== null) {
     return;
   }
@@ -504,8 +512,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .video-window {
+  flex: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--dark-bg);
@@ -515,86 +525,10 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-/* Titlebar */
-.titlebar {
-  background: rgba(10, 15, 10, 0.95);
-  border-bottom: 2px solid var(--neon-green);
-  padding: 8px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-  box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.titlebar-title {
-  font-size: 12px;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-shadow: 0 0 10px var(--neon-green);
-  flex: 1;
-}
-
-.glyph {
-  color: var(--alert-red);
-  animation: pulse-glyph 1s infinite;
-  font-size: 14px;
-}
-
-@keyframes pulse-glyph {
-  0%, 100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.titlebar-controls {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-
-.titlebar-btn {
-  background: none;
-  border: none;
-  color: var(--neon-green);
-  cursor: pointer;
-  padding: 4px 8px;
-  font-size: 14px;
-  transition: all 0.2s;
-  opacity: 0.7;
-  text-shadow: 0 0 5px var(--neon-green);
-}
-
-.titlebar-btn:hover {
-  opacity: 1;
-  box-shadow: 0 0 15px var(--neon-green);
-  text-shadow: 0 0 10px var(--neon-green);
-}
-
-.titlebar-btn.active {
-  color: var(--neon-green);
-  opacity: 1;
-  box-shadow: 0 0 15px var(--neon-green), inset 0 0 10px rgba(57, 255, 20, 0.3);
-}
-
-.titlebar-btn.close:hover {
-  color: var(--alert-red);
-  box-shadow: 0 0 15px var(--alert-red);
-  text-shadow: 0 0 10px var(--alert-red);
-}
-
 /* Video Container */
 .video-container {
   flex: 1;
+  min-height: 90%;
   position: relative;
   background: #000;
   display: flex;
@@ -664,7 +598,7 @@ onBeforeUnmount(() => {
 /* Local Video PiP (bottom-right) */
 .local-video-container {
   position: absolute;
-  bottom: 12px;
+  bottom: 40px;
   right: 20px;
   width: 220px;
   height: 150px;
@@ -737,7 +671,7 @@ onBeforeUnmount(() => {
 /* Bottom Controls */
 .bottom-controls {
   position: absolute;
-  bottom: 12px;
+  bottom: 40px;
   left: 20px;
   display: flex;
   gap: 12px;

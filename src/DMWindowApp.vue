@@ -11,6 +11,7 @@
 
     <DMChatModal
       :show-modal="true"
+      presentation="window"
       :show-header-close="false"
       :show-header-title="false"
       :active-chats="activeChats"
@@ -131,6 +132,18 @@ function debugEnabled(): boolean {
     return window.localStorage.getItem('dm-window-debug') !== '0';
   } catch {
     return true;
+  }
+}
+
+function debugVerboseEnabled(): boolean {
+  if (!debugEnabled() || typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem('dm-window-debug-verbose') === '1';
+  } catch {
+    return false;
   }
 }
 
@@ -300,19 +313,32 @@ function handleMediaRelayClose(message: MediaRelayCloseMessage) {
   teardownRelayReceiver(message.user, message.kind, true);
 }
 
+function hasVideoCallActivity(chat: DMChat): boolean {
+  if (chat.videoCallActive || chat.videoEnabled) {
+    return true;
+  }
+
+  const hasLocalVideoTrack = chat.localMediaStream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+  const hasRemoteVideoTrack = chat.remoteMediaStream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+  return hasLocalVideoTrack || hasRemoteVideoTrack;
+}
+
+const inVideo = computed(() => Array.from(activeChats.value.values()).some((chat) => hasVideoCallActivity(chat)));
+
 const pageTitle = computed(() => {
   const activeUsers = Array.from(activeChats.value.keys());
   const currentUser = username.value || 'AGENT';
+  const titleUser = inVideo.value ? `${currentUser} in video` : currentUser;
 
   if (activeUsers.length > 0) {
     if (activeUsers.length === 1) {
-      return `${currentUser} < - > ${activeUsers[0]}`;
+      return `${titleUser} < - > ${activeUsers[0]}`;
     }
 
-    return `${currentUser} < - > ${activeUsers.join(', ')}`;
+    return `${titleUser} < - > ${activeUsers.join(', ')}`;
   }
 
-  return `${currentUser} // DM`;
+  return `${titleUser} // DM`;
 });
 
 function isTauriRuntime(): boolean {
@@ -388,14 +414,16 @@ function applyMediaState(payload: DMWindowMediaState[]) {
 }
 
 function applyState(payload: DMWindowStatePayload) {
-  debugLog('applyState payload received', {
-    activeChats: payload.activeChats.length,
-    pendingRequests: payload.pendingRequests.length,
-    pendingAudioCalls: payload.pendingAudioCalls.length,
-    pendingVideoCalls: payload.pendingVideoCalls.length,
-    notices: payload.notices.length,
-    focusedDMUser: payload.focusedDMUser,
-  });
+  if (debugVerboseEnabled()) {
+    debugLog('applyState payload received', {
+      activeChats: payload.activeChats.length,
+      pendingRequests: payload.pendingRequests.length,
+      pendingAudioCalls: payload.pendingAudioCalls.length,
+      pendingVideoCalls: payload.pendingVideoCalls.length,
+      notices: payload.notices.length,
+      focusedDMUser: payload.focusedDMUser,
+    });
+  }
 
   const previousChats = activeChats.value;
 
@@ -565,13 +593,16 @@ onMounted(async () => {
 
   if (hasTauriWindow) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    isMaximized.value = await getCurrentWindow().isMaximized();
+    const appWindow = getCurrentWindow();
+    isMaximized.value = await appWindow.isMaximized();
   }
 
   if (isTauriRuntime()) {
     const { listen } = await import('@tauri-apps/api/event');
     cleanupTauriListener = await listen<DMWindowStatePayload>(DM_WINDOW_STATE_EVENT, (event) => {
-      debugLog('Tauri event dm-window-state received');
+      if (debugVerboseEnabled()) {
+        debugLog('Tauri event dm-window-state received');
+      }
       applyState(event.payload);
     });
     debugLog('Tauri listener registered', { event: DM_WINDOW_STATE_EVENT });
@@ -611,60 +642,79 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(57, 255, 20, 0.08), transparent 28%),
+    linear-gradient(180deg, #081008 0%, #020402 100%);
+  color: var(--neon-green);
 }
 
 .custom-titlebar {
   width: 100%;
-  height: 16px;
-  background: #222;
+  height: 28px;
+  padding: 0 92px 0 18px;
+  box-sizing: border-box;
+  background: linear-gradient(180deg, rgba(17, 25, 17, 0.98), rgba(7, 11, 7, 0.94));
+  border-bottom: 1px solid rgba(57, 255, 20, 0.16);
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   user-select: none;
   z-index: 1000;
   position: relative;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.45);
 }
 
 .minimize-btn {
   position: absolute;
-  right: 60px;
+  top: 4px;
+  right: 66px;
   background: none;
-  border: none;
+  border: 1px solid rgba(57, 255, 20, 0.18);
   color: var(--neon-green);
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
+  opacity: 0.8;
+  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+  width: 22px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
 }
 
 .minimize-btn:hover {
   opacity: 1;
+  background: rgba(57, 255, 20, 0.08);
+  border-color: rgba(57, 255, 20, 0.4);
 }
 
 .maximize-btn {
   position: absolute;
-  right: 35px;
+  top: 4px;
+  right: 38px;
   background: none;
-  border: none;
+  border: 1px solid rgba(57, 255, 20, 0.18);
   color: var(--neon-green);
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
+  opacity: 0.8;
+  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+  width: 22px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
 }
 
 .maximize-btn:hover {
   opacity: 1;
+  background: rgba(57, 255, 20, 0.08);
+  border-color: rgba(57, 255, 20, 0.4);
 }
 
 .window-icon {
@@ -690,28 +740,32 @@ onBeforeUnmount(() => {
 
 .titlebar-close-btn {
   position: absolute;
+  top: 4px;
   right: 10px;
   background: none;
-  border: none;
+  border: 1px solid rgba(255, 59, 59, 0.18);
   color: var(--alert-red);
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
-  opacity: 0.7;
-  transition: opacity 0.3s;
-  width: 20px;
-  height: 16px;
+  opacity: 0.82;
+  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+  width: 22px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
 }
 
 .titlebar-close-btn:hover {
   opacity: 1;
+  background: rgba(255, 59, 59, 0.12);
+  border-color: rgba(255, 59, 59, 0.45);
 }
 
 .dm-window-root :deep(#dm-modal) {
-  position: fixed;
-  top: 16px;
+  position: absolute;
+  top: 28px;
   left: 0;
   right: 0;
   bottom: 0;

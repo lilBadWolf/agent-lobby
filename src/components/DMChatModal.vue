@@ -1,7 +1,12 @@
 <template>
-  <div v-if="showModal" id="dm-modal" @click="(e) => e.target === $el && handleClose()">
+  <div
+    v-if="showModal"
+    id="dm-modal"
+    :class="`presentation-${presentationMode}`"
+    @click="(e) => e.target === $el && handleClose()"
+  >
     <audio ref="audioElement" autoplay playsinline></audio>
-    <div class="modal-box">
+    <div class="modal-box" :class="`presentation-${presentationMode}`">
       <!-- Header -->
       <div v-if="showHeaderBar" class="modal-header">
         <h3 v-if="showHeaderTitle" style="margin: 0">DIRECT MESSAGE</h3>
@@ -61,7 +66,7 @@
 
       <!-- Content Area -->
       <div class="modal-content">
-        <div v-if="currentTab" class="chat-section">
+        <div v-if="currentTab" class="chat-section" :class="{ 'has-video-call': !!activeVideoCallUser }">
           <div v-if="chatToastNotices.length > 0 || outgoingRequestsForCurrentTab.length > 0" class="notice-stack notice-stack-inline">
             <div
               v-for="notice in chatToastNotices"
@@ -86,21 +91,22 @@
             </div>
           </div>
 
-          <VideoWindow
-            v-if="activeVideoCallUser"
-            :key="activeVideoCallUser"
-            :peer-name="activeVideoCallUser"
-            :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
-            :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
-            :dm-messages="props.activeChats.get(activeVideoCallUser)?.messages || []"
-            :can-send-messages="props.activeChats.get(activeVideoCallUser)?.isConnected ?? false"
-            :username="props.username"
-            :peer-has-video="props.activeChats.get(activeVideoCallUser)?.videoEnabled ?? false"
-            @close="handleVideoWindowClose"
-            @toggle-audio="handleVideoWindowToggleAudio"
-            @toggle-video="handleVideoWindowToggleVideo"
-            @send-message="handleVideoWindowSendMessage"
-          />
+          <div v-if="activeVideoCallUser" class="video-call-pane">
+            <VideoWindow
+              :key="activeVideoCallUser"
+              :peer-name="activeVideoCallUser"
+              :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
+              :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
+              :dm-messages="props.activeChats.get(activeVideoCallUser)?.messages || []"
+              :can-send-messages="props.activeChats.get(activeVideoCallUser)?.isConnected ?? false"
+              :username="props.username"
+              :peer-has-video="props.activeChats.get(activeVideoCallUser)?.videoEnabled ?? false"
+              @close="handleVideoWindowClose"
+              @toggle-audio="handleVideoWindowToggleAudio"
+              @toggle-video="handleVideoWindowToggleVideo"
+              @send-message="handleVideoWindowSendMessage"
+            />
+          </div>
 
           <template v-else>
             <!-- Messages: Displayed via animations only (ephemeral) -->
@@ -243,11 +249,13 @@ const props = defineProps<{
   focusedDMUser?: string | null;
   showHeaderClose?: boolean;
   showHeaderTitle?: boolean;
+  presentation?: 'modal' | 'window';
 }>();
 
 const showHeaderClose = computed(() => props.showHeaderClose ?? true);
 const showHeaderTitle = computed(() => props.showHeaderTitle ?? true);
 const showHeaderBar = computed(() => showHeaderClose.value || showHeaderTitle.value);
+const presentationMode = computed(() => props.presentation ?? 'modal');
 
 const emit = defineEmits<{
   close: [];
@@ -936,15 +944,40 @@ watch(
   z-index: 500;
 }
 
+#dm-modal.presentation-window {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  justify-content: stretch;
+  align-items: stretch;
+  background:
+    radial-gradient(circle at top, rgba(57, 255, 20, 0.09), transparent 34%),
+    linear-gradient(180deg, rgba(4, 8, 4, 0.98), rgba(0, 0, 0, 1));
+}
+
 .modal-box {
   background: #000;
   border: 2px solid var(--neon-green);
   width: 100%;
   height: calc(100% - 16px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
   position: relative;
+}
+
+.modal-box.presentation-window {
+  width: 100%;
+  height: 100%;
+  border: none;
+  box-shadow:
+    inset 0 1px 0 rgba(57, 255, 20, 0.16),
+    inset 0 0 36px rgba(57, 255, 20, 0.08);
+  background:
+    linear-gradient(180deg, rgba(5, 10, 5, 0.98), rgba(0, 0, 0, 1) 24%),
+    linear-gradient(135deg, rgba(57, 255, 20, 0.04), transparent 42%);
 }
 
 :deep(.video-window) {
@@ -1106,6 +1139,11 @@ watch(
   flex-shrink: 0;
 }
 
+#dm-modal.presentation-window .tab-bar {
+  border-bottom: 1px solid rgba(57, 255, 20, 0.16);
+  background: linear-gradient(180deg, rgba(10, 18, 10, 0.96), rgba(5, 10, 5, 0.92));
+}
+
 .tab {
   flex: 1;
   min-width: 120px;
@@ -1124,6 +1162,12 @@ watch(
   background: transparent;
 }
 
+#dm-modal.presentation-window .tab {
+  min-width: 144px;
+  padding: 12px 16px;
+  border-right: 1px solid rgba(57, 255, 20, 0.1);
+}
+
 .tab:hover {
   background: rgba(57, 255, 20, 0.05);
 }
@@ -1132,6 +1176,11 @@ watch(
   background: rgba(57, 255, 20, 0.1);
   color: var(--neon-green);
   border-bottom: 2px solid var(--neon-green);
+}
+
+#dm-modal.presentation-window .tab.active {
+  background: linear-gradient(180deg, rgba(57, 255, 20, 0.14), rgba(57, 255, 20, 0.04));
+  box-shadow: inset 0 1px 0 rgba(57, 255, 20, 0.16);
 }
 
 .tab-label {
@@ -1200,9 +1249,16 @@ watch(
 /* Content Area */
 .modal-content {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+#dm-modal.presentation-window .modal-content {
+  background:
+    radial-gradient(circle at top right, rgba(57, 255, 20, 0.05), transparent 32%),
+    linear-gradient(180deg, rgba(2, 5, 2, 0.18), transparent 20%);
 }
 
 .requests-section {
@@ -1284,7 +1340,31 @@ watch(
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
+}
+
+.chat-section.has-video-call {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.video-call-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.chat-section.has-video-call .notice-stack-inline {
+  max-height: 96px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.chat-section.has-video-call .video-call-pane {
+  min-height: 0;
+  height: 100%;
 }
 
 .chat-header {
@@ -1379,6 +1459,10 @@ watch(
   transition: background-color 0.2s;
 }
 
+#dm-modal.presentation-window .messages {
+  padding: 20px 22px;
+}
+
 .messages.drag-over {
   background-color: rgba(57, 255, 20, 0.1);
 }
@@ -1423,6 +1507,15 @@ watch(
   flex-shrink: 0;
   align-items: center;
   position: relative;
+}
+
+#dm-modal.presentation-window .input-bar {
+  border-top: 1px solid rgba(57, 255, 20, 0.16);
+  background: linear-gradient(180deg, rgba(6, 10, 6, 0.96), rgba(2, 4, 2, 0.98));
+}
+
+#dm-modal.presentation-window .input-bar input {
+  padding: 0 18px;
 }
 
 .waiting-indicator {
@@ -1556,6 +1649,12 @@ watch(
   border-top: 1px solid var(--dim-green);
   max-height: 200px;
   overflow-y: auto;
+}
+
+#dm-modal.presentation-window .files-section {
+  padding: 12px 18px;
+  background: linear-gradient(180deg, rgba(57, 255, 20, 0.04), rgba(57, 255, 20, 0.015));
+  border-top: 1px solid rgba(57, 255, 20, 0.14);
 }
 
 .files-header {

@@ -32,7 +32,7 @@
       </div>
 
       <!-- Local Video (PiP bottom-right) -->
-      <div class="local-video-container" :class="{ 'chat-mode': !hasLocalVideoTrack }">
+      <div class="local-video-container">
         <video
           v-show="hasLocalVideoTrack"
           ref="localVideoRef"
@@ -42,23 +42,7 @@
           playsinline
         />
         <div v-show="!hasLocalVideoTrack" class="local-chat-fallback">
-          <div class="fallback-input-row">
-            <input
-              v-model="fallbackMessageInput"
-              class="fallback-input"
-              type="text"
-              placeholder="Ready to send..."
-              :disabled="!canSendMessages"
-              @keydown.enter="sendFallbackMessage"
-            />
-            <button
-              class="fallback-send"
-              :disabled="!canSendMessages"
-              @click="sendFallbackMessage"
-            >
-              SEND
-            </button>
-          </div>
+          <div class="local-preview-placeholder">{{ localPreviewStatusText }}</div>
         </div>
         <div class="pip-border"></div>
       </div>
@@ -130,17 +114,48 @@ const remoteAudioRef = ref<HTMLAudioElement>();
 const remoteFallbackAnimationRef = ref<HTMLElement>();
 const audioEnabled = ref(true);
 const videoEnabled = ref(true);
-const fallbackMessageInput = ref('');
 const lastAnimatedRemoteMessageKey = ref('');
-const hasLocalVideoTrack = ref(false);
-const hasLocalAudioTrack = ref(false);
+const fallbackLocalPreviewStream = ref<MediaStream | null>(null);
+const localPreviewUnavailable = ref(false);
+const remoteTrackRevision = ref(0);
 const { playAnimation } = useMessageAnimations();
 
-// Remote pane visibility is driven by the peerHasVideo prop which comes from
-// DMChat.videoEnabled — this is set reactively via setOrUpdateChat when the
-// RTCPeerConnection ontrack event fires.  Using a prop avoids the unreliable
-// MediaStream addtrack/removetrack event timing issue.
-const hasRemoteVideoTrack = computed(() => props.peerHasVideo ?? false);
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError';
+}
+
+function setMediaElementStream(element: HTMLMediaElement, stream: MediaStream | null) {
+  if (element.srcObject !== stream) {
+    element.srcObject = stream;
+  }
+}
+
+async function safePlayMediaElement(element: HTMLMediaElement, label: string) {
+  try {
+    await element.play();
+  } catch (error) {
+    // Expected race when srcObject changes during play startup.
+    if (isAbortError(error)) {
+      return;
+    }
+    console.error(`VideoWindow: ${label} play error:`, error);
+  }
+}
+
+// Remote pane visibility prefers explicit stream tracks and falls back to peer flag.
+const hasRemoteVideoTrack = computed(() => {
+  // Depend on revision so addtrack/removetrack updates are reflected.
+  remoteTrackRevision.value;
+
+  const streamHasVideo = (props.remoteStream?.getVideoTracks().length ?? 0) > 0;
+  return streamHasVideo || (props.peerHasVideo ?? false);
+});
+const activeLocalStream = computed<MediaStream | null>(() => props.localStream ?? fallbackLocalPreviewStream.value);
+const hasLocalVideoTrack = computed(() => (activeLocalStream.value?.getVideoTracks().length ?? 0) > 0);
+const hasLocalAudioTrack = computed(() => (props.localStream?.getAudioTracks().length ?? 0) > 0);
+const localPreviewStatusText = computed(() => localPreviewUnavailable.value ? 'PREVIEW UNAVAILABLE' : 'CAMERA OFF');
 
 const latestPeerMessage = computed(() => {
   const messages = props.dmMessages ?? [];
@@ -153,50 +168,94 @@ const latestPeerMessage = computed(() => {
   return null;
 });
 
-let localTrackListenerCleanup: (() => void) | null = null;
-
-// Attach streams to video elements
-watch(() => props.localStream, async (stream) => {
-  if (localTrackListenerCleanup) {
-    localTrackListenerCleanup();
-    localTrackListenerCleanup = null;
+async function attachLocalPreviewStream(stream: MediaStream | null) {
+  if (!localVideoRef.value) {
+    await nextTick();
   }
 
-  if (!stream) {
-    hasLocalVideoTrack.value = false;
-    hasLocalAudioTrack.value = false;
-    if (localVideoRef.value) localVideoRef.value.srcObject = null;
+  if (!localVideoRef.value) {
     return;
   }
 
-  // Local stream is created once with known constraints (video: false or real camera).
-  // Check tracks immediately; also listen for addtrack in case of future renegotiation.
-  const update = () => {
-    hasLocalVideoTrack.value = stream.getVideoTracks().length > 0;
-    hasLocalAudioTrack.value = stream.getAudioTracks().length > 0;
-  };
-  stream.addEventListener('addtrack', update);
-  stream.addEventListener('removetrack', update);
-  update();
-  localTrackListenerCleanup = () => {
-    stream.removeEventListener('addtrack', update);
-    stream.removeEventListener('removetrack', update);
-  };
-
-  await nextTick();
-
-  if (localVideoRef.value) {
-    localVideoRef.value.muted = true;
-    localVideoRef.value.defaultMuted = true;
-    localVideoRef.value.srcObject = stream;
-    localVideoRef.value.play().catch(e => console.error('VideoWindow: Local video play error:', e));
+  if (!stream) {
+    setMediaElementStream(localVideoRef.value, null);
+    return;
   }
+
+  localVideoRef.value.muted = true;
+  localVideoRef.value.defaultMuted = true;
+  setMediaElementStream(localVideoRef.value, stream);
+  await safePlayMediaElement(localVideoRef.value, 'Local video');
+}
+
+function clearFallbackPreviewStream() {
+  if (fallbackLocalPreviewStream.value) {
+    fallbackLocalPreviewStream.value.getTracks().forEach((track) => track.stop());
+    fallbackLocalPreviewStream.value = null;
+  }
+}
+
+async function ensureFallbackPreviewStream() {
+  if (props.localStream || fallbackLocalPreviewStream.value) {
+    return;
+  }
+
+  try {
+    localPreviewUnavailable.value = false;
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    fallbackLocalPreviewStream.value = stream;
+  } catch (error) {
+    console.debug('VideoWindow: Fallback local preview unavailable:', error);
+    localPreviewUnavailable.value = true;
+  }
+}
+
+watch(() => props.localStream, async (stream) => {
+  if (stream) {
+    localPreviewUnavailable.value = false;
+    clearFallbackPreviewStream();
+    await attachLocalPreviewStream(stream);
+    return;
+  }
+
+  await ensureFallbackPreviewStream();
+  await attachLocalPreviewStream(fallbackLocalPreviewStream.value);
 }, { immediate: true });
 
-watch(() => props.remoteStream, async (stream) => {
+watch(fallbackLocalPreviewStream, async (stream) => {
+  if (props.localStream) {
+    return;
+  }
+  await attachLocalPreviewStream(stream);
+});
+
+watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
+  remoteTrackRevision.value += 1;
+
+  let cleanupRemoteTrackListeners: (() => void) | null = null;
+  if (stream) {
+    const refreshTrackState = () => {
+      remoteTrackRevision.value += 1;
+    };
+
+    stream.addEventListener('addtrack', refreshTrackState);
+    stream.addEventListener('removetrack', refreshTrackState);
+    cleanupRemoteTrackListeners = () => {
+      stream.removeEventListener('addtrack', refreshTrackState);
+      stream.removeEventListener('removetrack', refreshTrackState);
+    };
+
+    // Ensure initial state is reflected after attaching listeners.
+    refreshTrackState();
+  }
+
+  onCleanup(() => {
+    cleanupRemoteTrackListeners?.();
+  });
+
   if (!stream) {
-    if (remoteVideoRef.value) remoteVideoRef.value.srcObject = null;
-    if (remoteAudioRef.value) remoteAudioRef.value.srcObject = null;
+    if (remoteVideoRef.value) setMediaElementStream(remoteVideoRef.value, null);
+    if (remoteAudioRef.value) setMediaElementStream(remoteAudioRef.value, null);
     return;
   }
 
@@ -206,16 +265,16 @@ watch(() => props.remoteStream, async (stream) => {
     remoteVideoRef.value.muted = true;
     remoteVideoRef.value.defaultMuted = true;
     remoteVideoRef.value.volume = 0;
-    remoteVideoRef.value.srcObject = stream;
-    remoteVideoRef.value.play().catch(e => console.error('VideoWindow: Remote video play error:', e));
+    setMediaElementStream(remoteVideoRef.value, stream);
+    await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
   }
 
   if (remoteAudioRef.value) {
     remoteAudioRef.value.defaultMuted = false;
     remoteAudioRef.value.muted = false;
     remoteAudioRef.value.volume = 1;
-    remoteAudioRef.value.srcObject = stream;
-    remoteAudioRef.value.play().catch(e => console.error('VideoWindow: Remote audio play error:', e));
+    setMediaElementStream(remoteAudioRef.value, stream);
+    await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
   }
 });
 
@@ -259,18 +318,8 @@ function closeWindow() {
   emit('close');
 }
 
-function sendFallbackMessage() {
-  const nextMessage = fallbackMessageInput.value.trim();
-  if (!nextMessage || !props.canSendMessages) return;
-  emit('sendMessage', nextMessage);
-  fallbackMessageInput.value = '';
-}
-
 onBeforeUnmount(() => {
-  if (localTrackListenerCleanup) {
-    localTrackListenerCleanup();
-    localTrackListenerCleanup = null;
-  }
+  clearFallbackPreviewStream();
 
   // Clear video element sources to release streams
   if (localVideoRef.value) {
@@ -457,12 +506,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 2px;
   z-index: 20;
-  transition: height 0.15s ease;
-}
-
-/* When showing chat fallback, collapse to just the input row height */
-.local-video-container.chat-mode {
-  height: 40px;
 }
 
 .local-video {
@@ -477,97 +520,20 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   background: rgba(3, 10, 3, 0.95);
   color: var(--neon-green);
-  padding: 4px 6px;
+  padding: 8px;
   box-sizing: border-box;
-  gap: 0;
-  justify-content: center;
 }
 
-.fallback-header {
-  font-size: 9px;
+.local-preview-placeholder {
+  font-size: 11px;
   letter-spacing: 1px;
   font-weight: bold;
-  border-bottom: 1px solid rgba(57, 255, 20, 0.6);
-  padding-bottom: 4px;
-  text-shadow: 0 0 6px rgba(57, 255, 20, 0.8);
-}
-
-.fallback-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 10px;
-  line-height: 1.25;
-}
-
-.fallback-empty {
-  opacity: 0.7;
-  font-size: 10px;
-}
-
-.fallback-message {
-  word-break: break-word;
-}
-
-.fallback-user {
-  color: var(--neon-green);
-  font-weight: bold;
-  margin-right: 4px;
-}
-
-.fallback-user.mine {
-  color: #7ec8ff;
-}
-
-.fallback-body {
-  color: #d5ffd5;
-}
-
-.fallback-input-row {
-  display: flex;
-  gap: 4px;
-}
-
-.fallback-input {
-  flex: 1;
-  min-width: 0;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 10px;
-  padding: 4px;
-}
-
-.fallback-input:disabled {
-  opacity: 0.6;
-}
-
-.fallback-send {
-  background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 9px;
-  font-weight: bold;
-  padding: 0 6px;
-  cursor: pointer;
-}
-
-.fallback-send:hover:not(:disabled) {
-  background: var(--neon-green);
-  color: #000;
-}
-
-.fallback-send:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
 }
 
 .pip-border {

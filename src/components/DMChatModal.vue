@@ -62,134 +62,159 @@
       <!-- Content Area -->
       <div class="modal-content">
         <div v-if="currentTab" class="chat-section">
-          <!-- Messages: Displayed via animations only (ephemeral) -->
-          <div
-            ref="messagesContainer"
-            class="messages"
-            @dragover="handleDragOver"
-            @dragleave="handleDragLeave"
-            @drop="handleDrop"
-            :class="{ 'drag-over': dragOverZone }"
-          >
-            <div v-if="dragOverZone" class="drop-overlay">
-              Drop files to send
+          <div v-if="chatToastNotices.length > 0 || outgoingRequestsForCurrentTab.length > 0" class="notice-stack notice-stack-inline">
+            <div
+              v-for="notice in chatToastNotices"
+              :key="`notice-${notice.id}`"
+              class="notice-item"
+              :class="notice.type || 'info'"
+            >
+              <span>{{ notice.message }}</span>
+              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer'" class="notice-buttons">
+                <button class="btn-accept" @click="acceptNotice(notice)">ACCEPT</button>
+                <button class="btn-reject" @click="rejectNotice(notice)">REJECT</button>
+              </div>
+            </div>
+
+            <div
+              v-for="user in outgoingRequestsForCurrentTab"
+              :key="`outgoing-${user}`"
+              class="notice-item info outgoing-item"
+            >
+              <span>Waiting for {{ user }} to accept direct line...</span>
+              <button class="btn-cancel-request" @click="emit('cancelRequest', user)">CANCEL</button>
             </div>
           </div>
 
-          <!-- File Downloads -->
-          <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
-            <div class="files-header" @click="toggleFilesPanel">
-              <span>📁 FILES ({{ visibleTransferCount() }})</span>
-              <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
+          <VideoWindow
+            v-if="activeVideoCallUser"
+            :key="activeVideoCallUser"
+            :peer-name="activeVideoCallUser"
+            :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
+            :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
+            :dm-messages="props.activeChats.get(activeVideoCallUser)?.messages || []"
+            :can-send-messages="props.activeChats.get(activeVideoCallUser)?.isConnected ?? false"
+            :username="props.username"
+            :peer-has-video="props.activeChats.get(activeVideoCallUser)?.videoEnabled ?? false"
+            @close="handleVideoWindowClose"
+            @toggle-audio="handleVideoWindowToggleAudio"
+            @toggle-video="handleVideoWindowToggleVideo"
+            @send-message="handleVideoWindowSendMessage"
+          />
+
+          <template v-else>
+            <!-- Messages: Displayed via animations only (ephemeral) -->
+            <div
+              ref="messagesContainer"
+              class="messages"
+              @dragover="handleDragOver"
+              @dragleave="handleDragLeave"
+              @drop="handleDrop"
+              :class="{ 'drag-over': dragOverZone }"
+            >
+              <div v-if="dragOverZone" class="drop-overlay">
+                Drop files to send
+              </div>
             </div>
-            <div v-if="!isFilesPanelCollapsed()" class="files-list">
-              <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
-                <div class="file-info">
-                  <div class="file-name">{{ transfer.filename }}</div>
-                  <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
-                  <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
-                  <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
-                  <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'incoming'" class="file-progress">
-                    <div class="progress-bar">
-                      <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
+
+            <!-- File Downloads -->
+            <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
+              <div class="files-header" @click="toggleFilesPanel">
+                <span>📁 FILES ({{ visibleTransferCount() }})</span>
+                <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
+              </div>
+              <div v-if="!isFilesPanelCollapsed()" class="files-list">
+                <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
+                  <div class="file-info">
+                    <div class="file-name">{{ transfer.filename }}</div>
+                    <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
+                    <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
+                    <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
+                    <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'incoming'" class="file-progress">
+                      <div class="progress-bar">
+                        <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
+                      </div>
+                      <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
                     </div>
-                    <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
+                    <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'outgoing'" class="file-status awaiting-completion">AWAITING COMPLETION</div>
+                    <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
+                    <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
+                    <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
                   </div>
-                  <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'outgoing'" class="file-status awaiting-completion">AWAITING COMPLETION</div>
-                  <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
-                  <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
-                  <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
-                </div>
-                <div class="file-actions">
-                  <button
-                    v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
-                    class="file-action-btn accept"
-                    @click="acceptFileTransfer(fileId)"
-                  >
-                    ACCEPT
-                  </button>
-                  <button
-                    v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
-                    class="file-action-btn reject"
-                    @click="rejectFileTransfer(fileId)"
-                  >
-                    REJECT
-                  </button>
-                  <button
-                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && !isFileAlreadySaved(transfer)"
-                    class="file-action-btn"
-                    :disabled="isSavingFile(fileId)"
-                    @click="downloadFile(transfer)"
-                  >
-                    {{ getDownloadActionLabel(fileId) }}
-                  </button>
-                  <button
-                    v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"
-                    class="file-action-btn"
-                    @click="showSavedFileInFolder(transfer)"
-                  >
-                    SHOW IN FOLDER
-                  </button>
-                  <button
-                    v-if="(transfer.status === 'completed' && (isFileAlreadySaved(transfer) || transfer.direction === 'outgoing')) || transfer.status === 'rejected' || transfer.status === 'failed'"
-                    class="file-action-btn reject"
-                    @click="removeFileTransfer(fileId)"
-                  >
-                    ✕
-                  </button>
+                  <div class="file-actions">
+                    <button
+                      v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                      class="file-action-btn accept"
+                      @click="acceptFileTransfer(fileId)"
+                    >
+                      ACCEPT
+                    </button>
+                    <button
+                      v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                      class="file-action-btn reject"
+                      @click="rejectFileTransfer(fileId)"
+                    >
+                      REJECT
+                    </button>
+                    <button
+                      v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && !isFileAlreadySaved(transfer)"
+                      class="file-action-btn"
+                      :disabled="isSavingFile(fileId)"
+                      @click="downloadFile(transfer)"
+                    >
+                      {{ getDownloadActionLabel(fileId) }}
+                    </button>
+                    <button
+                      v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"
+                      class="file-action-btn"
+                      @click="showSavedFileInFolder(transfer)"
+                    >
+                      SHOW IN FOLDER
+                    </button>
+                    <button
+                      v-if="(transfer.status === 'completed' && (isFileAlreadySaved(transfer) || transfer.direction === 'outgoing')) || transfer.status === 'rejected' || transfer.status === 'failed'"
+                      class="file-action-btn reject"
+                      @click="removeFileTransfer(fileId)"
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Input -->
-          <div class="input-bar">
-            <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
-              ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
+            <!-- Input -->
+            <div class="input-bar">
+              <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
+                ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
+              </div>
+              <input
+                v-model="messageInput"
+                type="text"
+                placeholder="Type message..."
+                :disabled="!getCurrentChat()?.isConnected"
+                @keydown.enter.prevent="handleMessageInputEnter"
+              />
+              <button
+                v-if="getCurrentChat()?.pendingDisplayMessages.length"
+                class="cancel-btn"
+                @click="emit('cancelPendingMessages', currentTab)"
+              >
+                CANCEL
+              </button>
+              <button
+                class="send-btn"
+                :disabled="!getCurrentChat()?.isConnected"
+                @click="sendMessage"
+              >
+                SEND
+              </button>
             </div>
-            <input
-              v-model="messageInput"
-              type="text"
-              placeholder="Type message..."
-              :disabled="!getCurrentChat()?.isConnected"
-              @keydown.enter.prevent="handleMessageInputEnter"
-            />
-            <button
-              v-if="getCurrentChat()?.pendingDisplayMessages.length"
-              class="cancel-btn"
-              @click="emit('cancelPendingMessages', currentTab)"
-            >
-              CANCEL
-            </button>
-            <button
-              class="send-btn"
-              :disabled="!getCurrentChat()?.isConnected"
-              @click="sendMessage"
-            >
-              SEND
-            </button>
-          </div>
+          </template>
         </div>
 
         <div v-else class="empty-state">No active direct messages</div>
       </div>
-
-      <!-- Video Window Overlay -->
-      <VideoWindow
-        v-if="activeVideoCallUser"
-        :key="activeVideoCallUser"
-        :peer-name="activeVideoCallUser"
-        :local-stream="props.activeChats.get(activeVideoCallUser)?.localMediaStream"
-        :remote-stream="props.activeChats.get(activeVideoCallUser)?.remoteMediaStream"
-        :dm-messages="props.activeChats.get(activeVideoCallUser)?.messages || []"
-        :can-send-messages="props.activeChats.get(activeVideoCallUser)?.isConnected ?? false"
-        :username="props.username"
-        :peer-has-video="props.activeChats.get(activeVideoCallUser)?.videoEnabled ?? false"
-        @close="handleVideoWindowClose"
-        @toggle-audio="handleVideoWindowToggleAudio"
-        @toggle-video="handleVideoWindowToggleVideo"
-        @send-message="handleVideoWindowSendMessage"
-      />
     </div>
   </div>
 </template>
@@ -344,6 +369,61 @@ function removeFileTransfer(fileId: string) {
 }
 
 const allTabs = computed(() => Array.from(props.activeChats.keys()));
+const chatToastNotices = computed(() => {
+  if (!currentTab.value) return [];
+
+  return props.notices.filter((notice) => {
+    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer') {
+      return notice.from === currentTab.value;
+    }
+
+    if (notice.type === 'info') {
+      return !notice.from || notice.from === currentTab.value;
+    }
+
+    return false;
+  });
+});
+
+const outgoingRequestsForCurrentTab = computed(() =>
+  currentTab.value ? props.outgoingRequests.filter((user) => user === currentTab.value) : []
+);
+
+function acceptNotice(notice: DMNotice) {
+  if (!notice.from) return;
+
+  if (notice.type === 'audio-call') {
+    emit('acceptAudio', notice.from);
+    return;
+  }
+
+  if (notice.type === 'video-call') {
+    emit('acceptVideo', notice.from);
+    return;
+  }
+
+  if (notice.type === 'file-offer' && notice.fileId) {
+    emit('acceptFile', notice.from, notice.fileId);
+  }
+}
+
+function rejectNotice(notice: DMNotice) {
+  if (!notice.from) return;
+
+  if (notice.type === 'audio-call') {
+    emit('rejectAudio', notice.from);
+    return;
+  }
+
+  if (notice.type === 'video-call') {
+    emit('rejectVideo', notice.from);
+    return;
+  }
+
+  if (notice.type === 'file-offer' && notice.fileId) {
+    emit('rejectFile', notice.from, notice.fileId);
+  }
+}
 
 // Default to first available tab
 watch(allTabs, (newTabs) => {
@@ -437,18 +517,24 @@ watch([currentTab, () => props.activeChats], () => {
 });
 
 // Watch for video call state (when remote media stream has video tracks)
+function hasVideoCallActivity(chat?: DMChat): boolean {
+  if (!chat) return false;
+
+  const hasLocalVideoTrack = chat.localMediaStream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+  const hasRemoteVideoTrack = chat.remoteMediaStream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+
+  return chat.videoCallActive || chat.videoEnabled || hasLocalVideoTrack || hasRemoteVideoTrack;
+}
+
 watch([currentTab, () => props.activeChats], () => {
   const chat = props.activeChats.get(currentTab.value);
-  if (!chat) {
-    activeVideoCallUser.value = null;
+  if (hasVideoCallActivity(chat)) {
+    activeVideoCallUser.value = currentTab.value;
     return;
   }
 
-  if (chat.videoCallActive) {
-    activeVideoCallUser.value = currentTab.value;
-  } else {
-    activeVideoCallUser.value = null;
-  }
+  const fallbackVideoUser = Array.from(props.activeChats.entries()).find(([, candidateChat]) => hasVideoCallActivity(candidateChat))?.[0] ?? null;
+  activeVideoCallUser.value = fallbackVideoUser;
 });
 
 function handleClose() {
@@ -862,12 +948,8 @@ watch(
 }
 
 :deep(.video-window) {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1000;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-header {

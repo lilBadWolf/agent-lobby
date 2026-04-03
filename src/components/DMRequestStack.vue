@@ -10,26 +10,6 @@
       </div>
     </div>
 
-    <div v-for="request in pendingAudioCalls" :key="`audio-${request.from}`" class="request-card call-card">
-      <div class="request-inline-row">
-        <div class="request-body">{{ request.from }} is requesting an audio call.</div>
-        <div class="request-actions">
-          <button class="accept-btn" @click="emit('acceptAudio', request.from)">✅</button>
-          <button class="reject-btn" @click="emit('rejectAudio', request.from)">❌</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-for="request in pendingVideoCalls" :key="`video-${request.from}`" class="request-card call-card">
-      <div class="request-inline-row">
-        <div class="request-body">{{ request.from }} is requesting a video call.</div>
-        <div class="request-actions">
-          <button class="accept-btn" @click="emit('acceptVideo', request.from)">✅</button>
-          <button class="reject-btn" @click="emit('rejectVideo', request.from)">❌</button>
-        </div>
-      </div>
-    </div>
-
     <div v-for="notice in visibleNotices" :key="`notice-${notice.id}`" class="request-card info-card transient-card">
       <div class="request-body">{{ notice.message }}</div>
     </div>
@@ -56,11 +36,13 @@ const emit = defineEmits<{
   rejectVideo: [user: string];
 }>();
 
-const visibleNotices = computed(() => props.notices.filter((notice) => notice.type !== 'file-offer'));
+const visibleNotices = computed(() =>
+  props.notices.filter(
+    (notice) => notice.type !== 'file-offer' && notice.type !== 'audio-call' && notice.type !== 'video-call'
+  )
+);
 const hasEntries = computed(() =>
   props.pendingRequests.length > 0 ||
-  props.pendingAudioCalls.length > 0 ||
-  props.pendingVideoCalls.length > 0 ||
   visibleNotices.value.length > 0
 );
 </script>

@@ -193,6 +193,22 @@
               </option>
             </select>
           </div>
+          <div class="setting-row preview-action-row">
+            <button
+              class="preview-toggle-btn"
+              type="button"
+              :disabled="localConfig.videoInputDeviceId === NO_WEBCAM_DEVICE_ID"
+              @click="toggleVideoPreview"
+            >
+              {{ isVideoPreviewVisible ? 'HIDE PREVIEW' : 'SHOW PREVIEW' }}
+            </button>
+          </div>
+          <div class="setting-row">
+            <div v-if="isVideoPreviewVisible" class="video-preview-wrap">
+              {{ previewCameraLabel }} {{ previewResolutionLabel }}
+              <video ref="videoPreviewRef" class="video-preview" autoplay muted playsinline></video>
+            </div>
+          </div>
         </div>
 
         <div v-if="activeTab === 'help'" class="tab-panel help-panel">
@@ -279,6 +295,11 @@ const activeTab = ref<'general' | 'dm' | 'media' | 'help'>('general');
 const hasInitializedMediaForOpen = ref(false);
 const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
+const videoPreviewRef = ref<HTMLVideoElement>();
+const isVideoPreviewVisible = ref(false);
+const previewCameraLabel = ref('UNKNOWN');
+const previewResolutionLabel = ref('N/A');
+let previewStream: MediaStream | null = null;
 const { playAnimation } = useMessageAnimations();
 
 const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
@@ -341,6 +362,7 @@ watch(
 );
 
 function handleClose() {
+  stopVideoPreview();
   emit('close');
 }
 
@@ -364,6 +386,102 @@ async function previewEffect() {
     }, 300);
   }
 }
+
+async function startVideoPreview() {
+  if (localConfig.value.videoInputDeviceId === NO_WEBCAM_DEVICE_ID) {
+    return;
+  }
+
+  stopVideoPreview();
+
+  const videoConstraints: MediaTrackConstraints | boolean = localConfig.value.videoInputDeviceId
+    ? { deviceId: { ideal: localConfig.value.videoInputDeviceId } }
+    : true;
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: videoConstraints,
+    audio: false,
+  });
+
+  previewStream = stream;
+  isVideoPreviewVisible.value = true;
+
+  await nextTick();
+  if (videoPreviewRef.value) {
+    videoPreviewRef.value.srcObject = stream;
+    await videoPreviewRef.value.play().catch(() => {});
+
+    const settings = stream.getVideoTracks()[0]?.getSettings();
+    const width = settings?.width;
+    const height = settings?.height;
+    previewResolutionLabel.value = width && height ? `${width}x${height}` : 'N/A';
+    previewCameraLabel.value = stream.getVideoTracks()[0]?.label || 'UNKNOWN';
+  }
+}
+
+function stopVideoPreview() {
+  if (videoPreviewRef.value) {
+    videoPreviewRef.value.srcObject = null;
+  }
+
+  if (previewStream) {
+    previewStream.getTracks().forEach((track) => track.stop());
+    previewStream = null;
+  }
+
+  previewCameraLabel.value = 'UNKNOWN';
+  previewResolutionLabel.value = 'N/A';
+
+  isVideoPreviewVisible.value = false;
+}
+
+async function toggleVideoPreview() {
+  if (isVideoPreviewVisible.value) {
+    stopVideoPreview();
+    return;
+  }
+
+  try {
+    await startVideoPreview();
+  } catch (error) {
+    console.error('Failed to start video preview:', error);
+    stopVideoPreview();
+  }
+}
+
+watch(
+  () => localConfig.value.videoInputDeviceId,
+  async () => {
+    if (!isVideoPreviewVisible.value) {
+      return;
+    }
+
+    try {
+      await startVideoPreview();
+    } catch (error) {
+      console.error('Failed to refresh video preview:', error);
+      stopVideoPreview();
+    }
+  }
+);
+
+watch(
+  () => props.showModal,
+  (isOpen) => {
+    if (!isOpen) {
+      stopVideoPreview();
+    }
+  }
+);
+
+watch(
+  () => activeTab.value,
+  (tab) => {
+    if (tab !== 'media') {
+      stopVideoPreview();
+    }
+  }
+);
 
 </script>
 
@@ -589,6 +707,64 @@ label {
 
 .preview-btn:hover {
   opacity: 1;
+}
+
+.preview-toggle-btn {
+  margin-top: 8px;
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--neon-green);
+  color: var(--neon-green);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.preview-toggle-btn:hover:not(:disabled) {
+  background: var(--neon-green);
+  color: #000;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.35);
+}
+
+.preview-toggle-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.media-panel .setting-row.preview-action-row {
+  justify-content: stretch;
+}
+
+.video-preview-wrap {
+  margin-top: 10px;
+  border: 1px solid var(--neon-green);
+  background: #000;
+  width: min(100%, 360px);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.video-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.video-preview-meta {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.7px;
+  color: var(--neon-green);
+  text-transform: uppercase;
 }
 
 .effect-preview {

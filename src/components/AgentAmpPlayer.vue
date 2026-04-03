@@ -173,6 +173,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
 
 const PLAYER_STORAGE_KEY = 'agent_amp_state_v1';
 
@@ -899,22 +900,43 @@ async function persistPlayerState() {
       volume: volume.value,
       compactMode: isCompact.value,
     };
+
     localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(serialized));
+    await setPersistedValue(PLAYER_STORAGE_KEY, serialized);
   } catch {
     // Ignore storage quota/persistence failures.
   }
 }
 
 async function restorePlayerState() {
-  const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
+  let parsed: Partial<PersistedPlayerState> | null = null;
 
-  if (!raw) {
+  try {
+    const persisted = await getPersistedValue<Partial<PersistedPlayerState>>(PLAYER_STORAGE_KEY);
+    if (persisted) {
+      parsed = persisted;
+    }
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed) {
+    try {
+      const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      parsed = JSON.parse(raw) as Partial<PersistedPlayerState>;
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (!parsed) {
     return;
   }
 
   try {
-    const parsed = JSON.parse(raw) as Partial<PersistedPlayerState>;
-
     const restoredTracks = Array.isArray(parsed.playlist)
       ? parsed.playlist
           .map((track): PlaylistTrack | null => {
@@ -967,6 +989,7 @@ async function restorePlayerState() {
     }
   } catch {
     localStorage.removeItem(PLAYER_STORAGE_KEY);
+    void removePersistedValue(PLAYER_STORAGE_KEY);
   }
 }
 

@@ -1,41 +1,18 @@
 import { ref, computed } from 'vue';
 import { THEMES } from '../themes';
+import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 
 const DEFAULT_THEME = 'retro-terminal';
 const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
+const THEME_STORAGE_KEY = 'agent_theme';
 const availableThemes = Object.keys(THEMES);
 const currentTheme = ref<string>(DEFAULT_THEME);
 let hasInitializedTheme = false;
+let hasHydratedTheme = false;
+let themeHydrationPromise: Promise<void> | null = null;
 
-function getInitialTheme(): string {
-  try {
-    const savedSettings = localStorage.getItem('agent_settings');
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings) as { theme?: string };
-      if (typeof parsed.theme === 'string' && parsed.theme.trim()) {
-        return parsed.theme;
-      }
-    }
-  } catch {
-    // Ignore malformed saved settings and continue fallback resolution.
-  }
-
-  return localStorage.getItem('agent_theme') || 'retro-terminal';
-}
-
-function persistThemeInAgentSettings(themeName: string) {
-  try {
-    const savedSettings = localStorage.getItem('agent_settings');
-    const parsed = savedSettings ? JSON.parse(savedSettings) as Record<string, unknown> : {};
-    const nextSettings = {
-      ...parsed,
-      theme: themeName,
-    };
-
-    localStorage.setItem('agent_settings', JSON.stringify(nextSettings));
-  } catch {
-    // Ignore malformed settings payloads in storage.
-  }
+async function persistTheme(themeName: string) {
+  await setPersistedValue(THEME_STORAGE_KEY, themeName);
 }
 
 function getThemeTokenValue(tokenName: string, fallback = ''): string {
@@ -59,15 +36,18 @@ function getThemeUserColors(): string[] {
 }
 
 export function useTheme() {
-  function applyTheme(themeName: string) {
+  function applyTheme(themeName: string, options?: { persist?: boolean }) {
     const nextTheme = THEMES[themeName as keyof typeof THEMES] ? themeName : DEFAULT_THEME;
 
     const root = document.documentElement;
     root.setAttribute('data-theme', nextTheme);
 
     currentTheme.value = nextTheme;
-    localStorage.setItem('agent_theme', nextTheme);
-    persistThemeInAgentSettings(nextTheme);
+
+    const shouldPersist = options?.persist ?? hasHydratedTheme;
+    if (shouldPersist) {
+      void persistTheme(nextTheme);
+    }
   }
 
   const rootTheme = typeof document !== 'undefined'
@@ -75,11 +55,25 @@ export function useTheme() {
     : null;
 
   if (!hasInitializedTheme || !rootTheme) {
-    // Load theme from app settings first, then fallback to legacy theme storage key.
-    const savedTheme = getInitialTheme();
-    const initialTheme = THEMES[savedTheme as keyof typeof THEMES] ? savedTheme : DEFAULT_THEME;
-    applyTheme(initialTheme);
+    applyTheme(DEFAULT_THEME, { persist: false });
     hasInitializedTheme = true;
+  }
+
+  if (!themeHydrationPromise) {
+    themeHydrationPromise = (async () => {
+      try {
+        const persistedTheme = await getPersistedValue<string>(THEME_STORAGE_KEY);
+        if (typeof persistedTheme === 'string' && THEMES[persistedTheme as keyof typeof THEMES]) {
+          if (currentTheme.value !== persistedTheme) {
+            applyTheme(persistedTheme, { persist: false });
+          }
+        }
+      } catch {
+        // Ignore store read failures
+      } finally {
+        hasHydratedTheme = true;
+      }
+    })();
   }
 
   const getUserColor = computed(() => {

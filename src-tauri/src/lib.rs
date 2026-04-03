@@ -51,6 +51,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             #[cfg(dev)]
@@ -83,6 +84,7 @@ pub fn run() {
                         .permission("updater:allow-download")
                         .permission("updater:allow-install")
                         .permission("updater:allow-download-and-install")
+                        .permission("store:default")
                         .permission("process:allow-exit")
                         .permission("process:allow-restart"),
                 )?;

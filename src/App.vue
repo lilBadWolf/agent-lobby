@@ -255,6 +255,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
+import { getPersistedValue, setPersistedValue } from './composables/usePlatformStorage';
 import type { AudioConfig } from './types/chat';
 import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
@@ -269,18 +270,6 @@ import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
-}
-
-function loadSidebarVisibilityPreference(): boolean {
-  if (typeof window === 'undefined') {
-    return true;
-  }
-
-  try {
-    return window.localStorage.getItem('agent_sidebar_visible') !== '0';
-  } catch {
-    return true;
-  }
 }
 
 const {
@@ -520,9 +509,29 @@ const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
-const isSidebarVisible = ref(loadSidebarVisibilityPreference());
+const SIDEBAR_VISIBILITY_KEY = 'agent_sidebar_visible';
+const isSidebarVisible = ref(true);
+const hasHydratedSidebarVisibility = ref(false);
 const isMaximized = ref(false);
 const hasTauriWindow = isTauriRuntime();
+
+void (async () => {
+  if (typeof window === 'undefined') {
+    hasHydratedSidebarVisibility.value = true;
+    return;
+  }
+
+  try {
+    const persisted = await getPersistedValue<string>(SIDEBAR_VISIBILITY_KEY);
+    if (persisted === '0' || persisted === '1') {
+      isSidebarVisible.value = persisted === '1';
+    }
+  } catch {
+    // ignore store read errors
+  } finally {
+    hasHydratedSidebarVisibility.value = true;
+  }
+})();
 
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
@@ -592,8 +601,12 @@ watch(pageTitle, (newTitle) => {
 });
 
 watch(isSidebarVisible, (visible) => {
+  if (!hasHydratedSidebarVisibility.value) {
+    return;
+  }
+
   try {
-    window.localStorage.setItem('agent_sidebar_visible', visible ? '1' : '0');
+    void setPersistedValue(SIDEBAR_VISIBILITY_KEY, visible ? '1' : '0');
   } catch {
     // Ignore storage errors in restricted environments.
   }

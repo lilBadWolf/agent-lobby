@@ -1,6 +1,7 @@
 import { ref, reactive, computed, watch } from 'vue';
 import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
+import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 
 const RESERVED_SLASH_COMMANDS = new Set([
   '/away',
@@ -12,7 +13,21 @@ const RESERVED_SLASH_COMMANDS = new Set([
   '/lobby',
 ]);
 
-const AGENT_AMP_STORAGE_KEY = 'agent_agentamp_enabled';
+const AUDIO_CONFIG_STORAGE_KEYS = {
+  audioEnabled: 'agent_audio_enabled',
+  volume: 'agent_volume',
+  autoAwayMinutes: 'agent_auto_away_minutes',
+  autoUpdatePulseMinutes: 'agent_auto_update_pulse_minutes',
+  dmEnabled: 'agent_dm_enabled',
+  agentAmpEnabled: 'agent_agent_amp_enabled',
+  soundpack: 'agent_soundpack',
+  theme: 'agent_theme',
+  dmChatEffect: 'agent_dm_chat_effect',
+  audioInputDeviceId: 'agent_audio_input_device_id',
+  audioOutputDeviceId: 'agent_audio_output_device_id',
+  videoInputDeviceId: 'agent_video_input_device_id',
+  customSlashCommands: 'agent_custom_slash_commands',
+} as const;
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
@@ -52,11 +67,7 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   normalized.customSlashCommands = sanitizeCustomSlashCommands((savedConfig as Partial<AudioConfig> | null)?.customSlashCommands);
 
   if (typeof normalized.agentAmpEnabled !== 'boolean') {
-    try {
-      normalized.agentAmpEnabled = localStorage.getItem(AGENT_AMP_STORAGE_KEY) === '1';
-    } catch {
-      normalized.agentAmpEnabled = false;
-    }
+    normalized.agentAmpEnabled = DEFAULT_AUDIO_CONFIG.agentAmpEnabled;
   }
 
   if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
@@ -68,6 +79,78 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   }
 
   return normalized;
+}
+
+async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
+  await Promise.all([
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioEnabled, nextConfig.audioEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.volume, nextConfig.volume),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes, nextConfig.autoAwayMinutes ?? DEFAULT_AUDIO_CONFIG.autoAwayMinutes),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes, nextConfig.autoUpdatePulseMinutes ?? DEFAULT_AUDIO_CONFIG.autoUpdatePulseMinutes),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId, nextConfig.audioInputDeviceId),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId, nextConfig.audioOutputDeviceId),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId, nextConfig.videoInputDeviceId),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.customSlashCommands, nextConfig.customSlashCommands ?? []),
+  ]);
+}
+
+async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> {
+  const [
+    audioEnabled,
+    volume,
+    autoAwayMinutes,
+    autoUpdatePulseMinutes,
+    dmEnabled,
+    agentAmpEnabled,
+    soundpack,
+    theme,
+    dmChatEffect,
+    audioInputDeviceId,
+    audioOutputDeviceId,
+    videoInputDeviceId,
+    customSlashCommands,
+  ] = await Promise.all([
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.audioEnabled),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.volume),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.soundpack),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.theme),
+    getPersistedValue<AudioConfig['dmChatEffect']>(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId),
+    getPersistedValue<SlashCommandAlias[]>(AUDIO_CONFIG_STORAGE_KEYS.customSlashCommands),
+  ]);
+
+  const saved: Partial<AudioConfig> = {};
+
+  if (typeof audioEnabled === 'boolean') saved.audioEnabled = audioEnabled;
+  if (typeof volume === 'number') saved.volume = volume;
+  if (typeof autoAwayMinutes === 'number') saved.autoAwayMinutes = autoAwayMinutes;
+  if (typeof autoUpdatePulseMinutes === 'number') saved.autoUpdatePulseMinutes = autoUpdatePulseMinutes;
+  if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
+  if (typeof agentAmpEnabled === 'boolean') {
+    saved.agentAmpEnabled = agentAmpEnabled;
+  }
+  if (typeof soundpack === 'string') saved.soundpack = soundpack;
+  if (typeof theme === 'string') saved.theme = theme;
+  if (dmChatEffect === 'none' || dmChatEffect === 'matrix' || dmChatEffect === 'glitch' || dmChatEffect === 'flames') {
+    saved.dmChatEffect = dmChatEffect;
+  }
+  if (typeof audioInputDeviceId === 'string') saved.audioInputDeviceId = audioInputDeviceId;
+  if (typeof audioOutputDeviceId === 'string') saved.audioOutputDeviceId = audioOutputDeviceId;
+  if (typeof videoInputDeviceId === 'string') saved.videoInputDeviceId = videoInputDeviceId;
+  if (customSlashCommands !== undefined) saved.customSlashCommands = sanitizeCustomSlashCommands(customSlashCommands);
+
+  return Object.keys(saved).length > 0 ? saved : null;
 }
 
 function normalizeSlashAliasCommand(value: string): string {
@@ -658,10 +741,15 @@ export function useLobbyChat() {
     }
   }
 
-  function updateSettings() {
+  async function updateSettings() {
     config.value = normalizeAudioConfig(config.value);
-    localStorage.setItem('agent_settings', JSON.stringify(config.value));
-    localStorage.setItem(AGENT_AMP_STORAGE_KEY, config.value.agentAmpEnabled ? '1' : '0');
+
+    try {
+      await persistAudioConfig(config.value);
+    } catch {
+      // ignore storage errors
+    }
+
     applyAudioSettings();
     publishPresence();
   }
@@ -916,20 +1004,19 @@ export function useLobbyChat() {
     startPresencePreview();
   }
 
-  function loadNetworkConfig() {
-    const saved = localStorage.getItem('agent_network_config');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
+  async function loadNetworkConfig() {
+    try {
+      const saved = await getPersistedValue<NetworkConfig>('agent_network_config');
+      if (saved?.mqttServer || saved?.defaultLobby) {
         networkConfig.value = {
-          mqttServer: parsed.mqttServer || DEFAULT_MQTT_SERVER,
-          defaultLobby: parsed.defaultLobby || DEFAULT_LOBBY
+          mqttServer: saved.mqttServer || DEFAULT_MQTT_SERVER,
+          defaultLobby: saved.defaultLobby || DEFAULT_LOBBY,
         };
         roomId.value = networkConfig.value.defaultLobby;
         activeLobbyId.value = networkConfig.value.defaultLobby;
-      } catch {
-        // Invalid JSON, use defaults
       }
+    } catch {
+      // ignore storage errors
     }
   }
 
@@ -937,19 +1024,17 @@ export function useLobbyChat() {
     networkConfig.value = config;
     roomId.value = config.defaultLobby;
     activeLobbyId.value = config.defaultLobby;
-    localStorage.setItem('agent_network_config', JSON.stringify(config));
+    void setPersistedValue('agent_network_config', config);
     startPresencePreview();
   }
 
-  function loadSettings() {
-    const saved = localStorage.getItem('agent_settings');
-    if (saved) {
-      try {
-        config.value = normalizeAudioConfig(JSON.parse(saved));
-      } catch {
-        config.value = normalizeAudioConfig();
-      }
+  async function loadSettings() {
+    try {
+      const saved = await loadPersistedAudioConfig();
+      config.value = normalizeAudioConfig(saved);
       return;
+    } catch {
+      // ignore storage errors
     }
 
     config.value = normalizeAudioConfig();
@@ -984,11 +1069,13 @@ export function useLobbyChat() {
     }
   }
 
-  loadNetworkConfig();
-  loadSettings();
-  loadAvailableSoundpacks();
-  initAudio();
-  startPresencePreview();
+  (async () => {
+    await loadNetworkConfig();
+    await loadSettings();
+    await loadAvailableSoundpacks();
+    initAudio();
+    startPresencePreview();
+  })();
 
   if (typeof window !== 'undefined') {
     activeAutoAwayListenerCleanup?.();

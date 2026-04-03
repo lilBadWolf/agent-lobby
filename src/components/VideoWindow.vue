@@ -37,33 +37,35 @@
           <div class="local-preview-placeholder">{{ localPreviewStatusText }}</div>
         </div>
         <div class="pip-border"></div>
+
+        <!-- PiP controls -->
+        <div class="pip-controls">
+          <button
+            v-show="hasLocalAudioTrack"
+            class="pip-control-btn"
+            :class="{ 'btn-off': !audioEnabled }"
+            :aria-label="audioEnabled ? 'Mute speaker' : 'Unmute speaker'"
+            :title="audioEnabled ? 'Mute speaker' : 'Unmute speaker'"
+            @click="toggleAudio"
+          >
+            <span aria-hidden="true">{{ audioEnabled ? '🔊' : '🔇' }}</span>
+          </button>
+          <button
+            v-show="hasLocalVideoTrack"
+            class="pip-control-btn"
+            :class="{ 'btn-off': !videoEnabled }"
+            :aria-label="videoEnabled ? 'Turn camera off' : 'Turn camera on'"
+            :title="videoEnabled ? 'Turn camera off' : 'Turn camera on'"
+            @click="toggleVideo"
+          >
+            <span aria-hidden="true">{{ videoEnabled ? '📷' : '🚫' }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Glitch effect overlay -->
       <div class="glitch-overlay"></div>
 
-      <!-- Control buttons (bottom) -->
-      <div class="bottom-controls">
-        <button
-            v-show="hasLocalAudioTrack"
-            class="control-btn"
-            :class="{ 'btn-off': !audioEnabled }"
-            @click="toggleAudio"
-          >
-            {{ audioEnabled ? '🎤 MIC ON' : '🔇 MIC OFF' }}
-          </button>
-          <button
-            v-show="hasLocalVideoTrack"
-            class="control-btn"
-            :class="{ 'btn-off': !videoEnabled }"
-            @click="toggleVideo"
-          >
-          {{ videoEnabled ? '📹 CAM ON' : '📷 CAM OFF' }}
-        </button>
-        <button class="control-btn btn-end" @click="closeWindow">
-          ⏹ TERMINATE
-        </button>
-      </div>
     </div>
   </div>
 </template>
@@ -488,10 +490,6 @@ function toggleVideo() {
   emit('toggleVideo', videoEnabled.value);
 }
 
-function closeWindow() {
-  emit('close');
-}
-
 onBeforeUnmount(() => {
   stopRemoteDiagnostics();
   debugLog('before unmount, clearing media refs');
@@ -610,6 +608,53 @@ onBeforeUnmount(() => {
   z-index: 20;
 }
 
+.pip-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 0px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  z-index: 30;
+  padding: 2px 4px;
+}
+
+.pip-control-btn {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--neon-green);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 11px;
+  text-shadow: 0 0 6px rgba(57, 255, 20, 0.7);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+  padding: 0;
+}
+
+.pip-control-btn:hover {
+  transform: translateY(-1px);
+  opacity: 0.9;
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.pip-control-btn.btn-off {
+  color: var(--alert-red);
+  text-shadow: 0 0 6px rgba(255, 57, 57, 0.7);
+}
+
+.pip-control-btn.btn-off:hover {
+  opacity: 0.9;
+}
+
 .local-video {
   width: 100%;
   height: 100%;
@@ -666,67 +711,6 @@ onBeforeUnmount(() => {
   background-size: 100% 3px;
   pointer-events: none;
   z-index: 5;
-}
-
-/* Bottom Controls */
-.bottom-controls {
-  position: absolute;
-  bottom: 10px;
-  left: 9px;
-  display: flex;
-  gap: 12px;
-  z-index: 20;
-}
-
-.control-btn {
-  padding: 10px 16px;
-  background: transparent;
-  border: 2px solid var(--neon-green);
-  color: var(--neon-green);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 11px;
-  font-weight: bold;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.2s;
-  letter-spacing: 1px;
-  box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
-  text-shadow: 0 0 5px var(--neon-green);
-}
-
-.control-btn:hover {
-  background: var(--neon-green);
-  color: var(--dark-bg);
-  box-shadow: 0 0 20px var(--neon-green);
-  text-shadow: none;
-}
-
-.control-btn.btn-off {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
-  box-shadow: 0 0 10px rgba(255, 57, 57, 0.3);
-  text-shadow: 0 0 5px var(--alert-red);
-}
-
-.control-btn.btn-off:hover {
-  background: var(--alert-red);
-  color: var(--dark-bg);
-  box-shadow: 0 0 20px var(--alert-red);
-  text-shadow: none;
-}
-
-.control-btn.btn-end {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
-  box-shadow: 0 0 10px rgba(255, 57, 57, 0.3);
-  text-shadow: 0 0 5px var(--alert-red);
-}
-
-.control-btn.btn-end:hover {
-  background: var(--alert-red);
-  color: var(--dark-bg);
-  box-shadow: 0 0 20px var(--alert-red), inset 0 0 10px rgba(255, 57, 57, 0.3);
-  text-shadow: none;
 }
 
 /* Ensure video fills container */

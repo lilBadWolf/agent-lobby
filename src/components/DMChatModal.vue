@@ -960,7 +960,7 @@ watch(
   background: #000;
   border: 2px solid var(--neon-green);
   width: 100%;
-  height: calc(100% - 16px);
+  height: calc(100% - 24px);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -970,7 +970,7 @@ watch(
 
 .modal-box.presentation-window {
   width: 100%;
-  height: 100%;
+  height: calc(100% - 34px);
   border: none;
   box-shadow:
     inset 0 1px 0 rgba(57, 255, 20, 0.16),

@@ -80,41 +80,6 @@
       @cancel-request="handleCancelDMRequest"
     />
 
-    <DMChatModal
-      :show-modal="showDM && !dmWindowOpen"
-      :active-chats="dmActiveChats"
-      :pending-requests="dmPendingRequests"
-      :pending-audio-calls="dmPendingAudioCalls"
-      :pending-video-calls="dmPendingVideoCalls"
-      :outgoing-requests="dmOutgoingRequests"
-      :notices="dmNotices"
-      :username="username"
-      :dm-chat-effect="config.dmChatEffect"
-      :focused-dm-user="focusedDMUser"
-      @close="toggleDM"
-      @accept-dm="handleAcceptDM"
-      @reject-dm="handleRejectDM"
-      @accept-audio="handleAcceptAudio"
-      @reject-audio="handleRejectAudio"
-      @accept-video="handleAcceptVideo"
-      @reject-video="handleRejectVideo"
-      @cancel-request="handleCancelDMRequest"
-      @send-message="handleSendDMMessage"
-      @typing="handleTyping"
-      @stop-typing="handleStopTyping"
-      @cancel-pending-messages="handleCancelPendingMessages"
-      @close-dm="handleCloseDM"
-      @request-audio="handleRequestAudio"
-      @toggle-audio="handleToggleAudio"
-      @request-video="handleRequestVideo"
-      @toggle-video="handleToggleVideo"
-      @send-file="handleSendFile"
-      @accept-file="handleAcceptFile"
-      @reject-file="handleRejectFile"
-      @file-saved="handleFileSaved"
-      @remove-file="handleRemoveFile"
-    />
-
     <AuthScreen
       :show-auth="showAuth"
       :app-version="appVersion"
@@ -319,7 +284,6 @@ import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
-import DMChatModal from './components/DMChatModal.vue';
 import DMRequestStack from './components/DMRequestStack.vue';
 import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
 
@@ -371,10 +335,10 @@ const DM_WINDOW_LABEL = 'dm-window';
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
 const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
-const DM_WINDOW_DEFAULT_WIDTH = 1280;
-const DM_WINDOW_DEFAULT_HEIGHT = 800;
-const DM_WINDOW_MIN_WIDTH = 960;
-const DM_WINDOW_MIN_HEIGHT = 600;
+const DM_WINDOW_DEFAULT_WIDTH = 640;
+const DM_WINDOW_DEFAULT_HEIGHT = 400;
+const DM_WINDOW_MIN_WIDTH = 320;
+const DM_WINDOW_MIN_HEIGHT = 200;
 const DM_WINDOW_MEDIA_EVENT = 'media-state';
 const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
@@ -420,7 +384,6 @@ interface RelaySenderEntry {
 }
 
 // DM system
-const showDM = ref(false);
 const dmWindowOpen = ref(false);
 let dmPopupWindow: Window | null = null;
 let dmPopupWatchIntervalId: number | null = null;
@@ -532,7 +495,7 @@ watch(
 watch(
   () => dmActiveChats.value.size,
   (newCount, oldCount) => {
-    if ((showDM.value || dmWindowOpen.value) && oldCount > 0 && newCount === 0) {
+    if (dmWindowOpen.value && oldCount > 0 && newCount === 0) {
       focusedDMUser.value = null;
       void closeDetachedDMWindow();
     }
@@ -571,14 +534,15 @@ const hasTauriWindow = isTauriRuntime();
 
 const pageTitle = computed(() => {
   if (!isConnected.value) return 'LOBBY // AUTH';
-  if (isConnected.value && !showDM.value) {
-    return `${username.value} // ${isAway.value ? 'AWAY' : 'LISTENING'}`;
-  } else if (isConnected.value && showDM.value) {
+  if (dmWindowOpen.value) {
     const activeDMs = Array.from(dmActiveChats.value.keys());
     if (activeDMs.length > 0) {
       return `${username.value} // DM with ${activeDMs.join(', ')}`;
     }
+    return `${username.value} // DM`;
   }
+
+  return `${username.value} // ${isAway.value ? 'AWAY' : 'LISTENING'}`;
 });
 
 onMounted(async () => {
@@ -738,24 +702,6 @@ function toggleSidebarPane() {
 
 function toggleNetworkConfig() {
   showNetworkConfig.value = !showNetworkConfig.value;
-}
-
-function toggleDM() {
-  if (showDM.value) {
-    showDM.value = false;
-    return;
-  }
-
-  if (dmWindowOpen.value) {
-    void focusDetachedDMWindow().then((focused) => {
-      if (!focused) {
-        void openDetachedDMWindow();
-      }
-    });
-    return;
-  }
-
-  void openDetachedDMWindow();
 }
 
 function handleShowDMWindow() {
@@ -1521,7 +1467,6 @@ async function closeDetachedDMWindow() {
     }
 
     dmWindowOpen.value = false;
-    showDM.value = false;
     return;
   }
 
@@ -1531,7 +1476,6 @@ async function closeDetachedDMWindow() {
 
   dmPopupWindow = null;
   dmWindowOpen.value = false;
-  showDM.value = false;
 
   if (dmPopupWatchIntervalId !== null) {
     window.clearInterval(dmPopupWatchIntervalId);
@@ -1569,7 +1513,6 @@ async function openDetachedDMWindow() {
 
     dmWindow.once('tauri://created', () => {
       dmWindowOpen.value = true;
-      showDM.value = false;
       void emitDMWindowState();
     });
 
@@ -1580,7 +1523,6 @@ async function openDetachedDMWindow() {
     dmWindow.once('tauri://error', (error) => {
       console.error('Failed to create detached DM window:', error);
       dmWindowOpen.value = false;
-      showDM.value = true;
     });
 
     return;
@@ -1601,13 +1543,11 @@ async function openDetachedDMWindow() {
 
   const popup = window.open(dmWindowUrl, 'agent-lobby-dm', popupFeatures);
   if (!popup) {
-    showDM.value = true;
     return;
   }
 
   dmPopupWindow = popup;
   dmWindowOpen.value = true;
-  showDM.value = false;
   startWebPopupHeartbeat();
   await emitDMWindowState();
 }

@@ -5,7 +5,7 @@ on:
       - main
 
 jobs:
-  publish-tauri:
+  publish:
     permissions:
       contents: write
     strategy:
@@ -106,7 +106,7 @@ jobs:
           "
 
   publish-updater-json:
-    needs: publish-tauri
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       contents: write

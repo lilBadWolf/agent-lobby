@@ -39,6 +39,7 @@
       @toggle-audio="(user, enabled) => sendAction({ type: 'toggleAudio', user, enabled })"
       @request-video="(user) => sendAction({ type: 'requestVideo', user })"
       @toggle-video="(user, enabled) => sendAction({ type: 'toggleVideo', user, enabled })"
+      @send-file="(user, file) => sendFileAction(user, file)"
       @accept-file="(user, fileId) => sendAction({ type: 'acceptFile', user, fileId })"
       @reject-file="(user, fileId) => sendAction({ type: 'rejectFile', user, fileId })"
       @file-saved="(user, fileId) => sendAction({ type: 'fileSaved', user, fileId })"
@@ -93,9 +94,15 @@ function isTauriRuntime(): boolean {
 }
 
 function toFileTransferState(transfer: SerializedDMChat['fileTransfers'][number]): FileTransferState {
+  const chunks = new Map<number, Uint8Array>();
+
+  for (const chunk of transfer.chunks ?? []) {
+    chunks.set(chunk.index, Uint8Array.from(chunk.data));
+  }
+
   return {
     ...transfer,
-    chunks: new Map(),
+    chunks,
   };
 }
 
@@ -143,6 +150,19 @@ async function sendAction(action: DMWindowAction) {
   }
 
   webChannel?.postMessage({ type: 'action', payload: action });
+}
+
+async function sendFileAction(user: string, file: File) {
+  const fileAction: DMWindowAction = { type: 'sendFile', user, file };
+
+  // Tauri event payloads cannot reliably carry File objects, so forward file sends through
+  // BroadcastChannel where structured cloning supports File payloads.
+  if (isTauriRuntime() && webChannel) {
+    webChannel.postMessage({ type: 'action', payload: fileAction });
+    return;
+  }
+
+  await sendAction(fileAction);
 }
 
 function handleWebMessage(event: MessageEvent) {
@@ -195,6 +215,10 @@ async function toggleMaximize() {
 }
 
 onMounted(async () => {
+  if (typeof BroadcastChannel !== 'undefined') {
+    webChannel = new BroadcastChannel(DM_WEB_CHANNEL);
+  }
+
   if (hasTauriWindow) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     isMaximized.value = await getCurrentWindow().isMaximized();
@@ -214,8 +238,7 @@ onMounted(async () => {
       window.addEventListener('message', handleWebMessage);
       webMessageListenerBound = true;
     }
-  } else if (typeof BroadcastChannel !== 'undefined') {
-    webChannel = new BroadcastChannel(DM_WEB_CHANNEL);
+  } else if (webChannel) {
     webChannel.onmessage = (event: MessageEvent) => {
       const message = event.data as { type?: string; payload?: unknown };
       if (message?.type === 'state') {

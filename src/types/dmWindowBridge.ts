@@ -15,6 +15,11 @@ export type DMTransferStatus =
   | 'rejected'
   | 'failed';
 
+export interface SerializedFileChunk {
+  index: number;
+  data: number[];
+}
+
 export interface SerializedFileTransfer {
   id: string;
   filename: string;
@@ -26,6 +31,7 @@ export interface SerializedFileTransfer {
   direction: FileTransferDirection;
   status: DMTransferStatus;
   savedToDisk: boolean;
+  chunks?: SerializedFileChunk[];
 }
 
 export interface SerializedDMChat {
@@ -74,6 +80,7 @@ export type DMWindowAction =
   | { type: 'toggleAudio'; user: string; enabled: boolean }
   | { type: 'requestVideo'; user: string }
   | { type: 'toggleVideo'; user: string; enabled: boolean }
+  | { type: 'sendFile'; user: string; file: File }
   | { type: 'acceptFile'; user: string; fileId: string }
   | { type: 'rejectFile'; user: string; fileId: string }
   | { type: 'fileSaved'; user: string; fileId: string }

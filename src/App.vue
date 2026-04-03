@@ -1094,18 +1094,30 @@ function toSerializedChats(): SerializedDMChat[] {
       callStartTime: chat.callStartTime,
       callDuration: chat.callDuration,
       videoCallActive: chat.videoCallActive,
-      fileTransfers: Array.from(chat.fileTransfers.values() as Iterable<FileTransferState>).map((transfer) => ({
-        id: transfer.id,
-        filename: transfer.filename,
-        mimeType: transfer.mimeType,
-        totalSize: transfer.totalSize,
-        receivedSize: transfer.receivedSize,
-        totalChunks: transfer.totalChunks,
-        progress: transfer.progress,
-        direction: transfer.direction,
-        status: transfer.status,
-        savedToDisk: transfer.savedToDisk,
-      })),
+      fileTransfers: Array.from(chat.fileTransfers.values() as Iterable<FileTransferState>).map((transfer) => {
+        const includeChunks = transfer.direction === 'incoming' && transfer.status === 'completed';
+
+        return {
+          id: transfer.id,
+          filename: transfer.filename,
+          mimeType: transfer.mimeType,
+          totalSize: transfer.totalSize,
+          receivedSize: transfer.receivedSize,
+          totalChunks: transfer.totalChunks,
+          progress: transfer.progress,
+          direction: transfer.direction,
+          status: transfer.status,
+          savedToDisk: transfer.savedToDisk,
+          chunks: includeChunks
+            ? Array.from(transfer.chunks.entries())
+                .sort(([a], [b]) => a - b)
+                .map(([index, data]) => ({
+                  index,
+                  data: Array.from(data),
+                }))
+            : undefined,
+        };
+      }),
     });
   }
 
@@ -1320,6 +1332,9 @@ function handleDetachedDMAction(action: DMWindowAction | undefined) {
       break;
     case 'toggleVideo':
       handleToggleVideo(action.user, action.enabled);
+      break;
+    case 'sendFile':
+      handleSendFile(action.user, action.file);
       break;
     case 'acceptFile':
       handleAcceptFile(action.user, action.fileId);

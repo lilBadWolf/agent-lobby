@@ -89,12 +89,13 @@
                   <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
                   <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
                   <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
-                  <div v-else-if="transfer.status === 'in-progress'" class="file-progress">
+                  <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'incoming'" class="file-progress">
                     <div class="progress-bar">
                       <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
                     </div>
                     <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
                   </div>
+                  <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'outgoing'" class="file-status awaiting-completion">AWAITING COMPLETION</div>
                   <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
                   <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
                   <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
@@ -130,7 +131,7 @@
                     SHOW IN FOLDER
                   </button>
                   <button
-                    v-if="(transfer.status === 'completed' && isFileAlreadySaved(transfer)) || transfer.status === 'rejected' || transfer.status === 'failed'"
+                    v-if="(transfer.status === 'completed' && (isFileAlreadySaved(transfer) || transfer.direction === 'outgoing')) || transfer.status === 'rejected' || transfer.status === 'failed'"
                     class="file-action-btn reject"
                     @click="removeFileTransfer(fileId)"
                   >
@@ -1581,6 +1582,12 @@ watch(
   text-shadow: 0 0 5px #ffce6b;
 }
 
+.file-status.awaiting-completion {
+  color: #ffce6b;
+  text-shadow: 0 0 6px #ffce6b;
+  animation: sender-awaiting-flash 0.9s ease-in-out infinite;
+}
+
 .file-status.completed {
   color: var(--neon-green);
   text-shadow: 0 0 5px var(--neon-green);
@@ -1634,6 +1641,16 @@ watch(
 
 .file-action-btn.accept {
   border-color: var(--neon-green);
+}
+
+@keyframes sender-awaiting-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 </style>

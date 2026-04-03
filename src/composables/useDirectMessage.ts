@@ -386,7 +386,7 @@ export function useDirectMessage(
         if (!chat) return;
 
         // Check if this is a file transfer message
-        if (handleFileTransferMessage(data, otherUser)) {
+        if (handleFileTransferMessage(data, otherUser, dataChannel)) {
           return;
         }
 
@@ -483,9 +483,26 @@ export function useDirectMessage(
     setOrUpdateChat(otherUser, chat);
   }
 
+  async function waitForDataChannelBackpressure(
+    channel: RTCDataChannel,
+    maxBufferedAmount = 512 * 1024,
+    timeoutMs = 10000
+  ) {
+    const start = Date.now();
+    while (channel.readyState === 'open' && channel.bufferedAmount > maxBufferedAmount) {
+      if (Date.now() - start >= timeoutMs) {
+        throw new Error('Timed out waiting for RTC data channel buffer to drain');
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 8);
+      });
+    }
+  }
+
   async function streamFileToPeer(otherUser: string, fileId: string, file: File) {
     const chat = activeChats.value.get(otherUser);
-    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
+    const sendChannel = resolveOpenDataChannel(otherUser, chat?.dataChannel);
+    if (!chat || !sendChannel || sendChannel.readyState !== 'open') {
       pushNotice('File transfer requires active connection');
       return;
     }
@@ -504,7 +521,8 @@ export function useDirectMessage(
     setOrUpdateChat(otherUser, chat);
 
     try {
-      chat.dataChannel.send(JSON.stringify({
+      await waitForDataChannelBackpressure(sendChannel);
+      sendChannel.send(JSON.stringify({
         type: 'file-start',
         id: fileId,
         filename: file.name,
@@ -527,21 +545,22 @@ export function useDirectMessage(
         new DataView(chunkMessage).setUint32(36, i);
         chunkView.set(chunk, 40);
 
-        chat.dataChannel.send(chunkMessage);
+        await waitForDataChannelBackpressure(sendChannel);
+        sendChannel.send(chunkMessage);
 
         transfer.receivedSize = end;
         transfer.progress = ((i + 1) / totalChunks) * 100;
         setOrUpdateChat(otherUser, chat);
       }
 
-      chat.dataChannel.send(JSON.stringify({
+      await waitForDataChannelBackpressure(sendChannel);
+      sendChannel.send(JSON.stringify({
         type: 'file-complete',
         id: fileId
       }));
 
-      transfer.status = 'completed';
+      // Wait for explicit receiver acknowledgement before marking sender-side completion.
       transfer.progress = 100;
-      chat.fileTransfers.delete(fileId);
       setOrUpdateChat(otherUser, chat);
     } catch (error) {
       console.error('File transfer error:', error);
@@ -549,10 +568,12 @@ export function useDirectMessage(
       setOrUpdateChat(otherUser, chat);
 
       try {
-        chat.dataChannel.send(JSON.stringify({
-          type: 'file-error',
-          id: fileId
-        }));
+        if (sendChannel.readyState === 'open') {
+          sendChannel.send(JSON.stringify({
+            type: 'file-error',
+            id: fileId
+          }));
+        }
       } catch {
         // Ignore follow-up send errors on broken channels.
       }
@@ -564,7 +585,25 @@ export function useDirectMessage(
   }
 
   // Handle file transfer via data channel messages
-  function handleFileTransferMessage(data: any, otherUser: string): boolean {
+  function resolveOpenDataChannel(otherUser: string, preferred?: RTCDataChannel | null): RTCDataChannel | null {
+    if (preferred && preferred.readyState === 'open') {
+      return preferred;
+    }
+
+    const chat = activeChats.value.get(otherUser);
+    if (chat?.dataChannel && chat.dataChannel.readyState === 'open') {
+      return chat.dataChannel;
+    }
+
+    const rtcConn = rtcConnections.get(otherUser);
+    if (rtcConn?.dataChannel && rtcConn.dataChannel.readyState === 'open') {
+      return rtcConn.dataChannel;
+    }
+
+    return null;
+  }
+
+  function handleFileTransferMessage(data: any, otherUser: string, sourceChannel?: RTCDataChannel): boolean {
     const chat = activeChats.value.get(otherUser);
     if (!chat) return false;
 
@@ -622,8 +661,34 @@ export function useDirectMessage(
     if (data.type === 'file-complete') {
       const transfer = chat.fileTransfers.get(data.id);
       if (transfer) {
-        transfer.status = 'completed';
-        transfer.progress = 100;
+        const hasAllChunks = transfer.chunks.size === transfer.totalChunks && transfer.receivedSize >= transfer.totalSize;
+
+        transfer.status = hasAllChunks ? 'completed' : 'failed';
+        transfer.progress = hasAllChunks ? 100 : transfer.progress;
+        setOrUpdateChat(otherUser, chat);
+
+        const ackChannel = resolveOpenDataChannel(otherUser, sourceChannel);
+        if (ackChannel) {
+          ackChannel.send(JSON.stringify({
+            type: 'file-received',
+            id: data.id,
+            ok: hasAllChunks
+          }));
+        }
+      }
+      return true;
+    }
+
+    if (data.type === 'file-received') {
+      const transfer = chat.fileTransfers.get(data.id);
+      if (transfer && transfer.direction === 'outgoing') {
+        if (data.ok === false) {
+          transfer.status = 'failed';
+          pushNotice(`${otherUser} reported an incomplete file transfer.`);
+        } else {
+          transfer.status = 'completed';
+          transfer.progress = 100;
+        }
         setOrUpdateChat(otherUser, chat);
       }
       return true;

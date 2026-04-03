@@ -598,10 +598,10 @@ onBeforeUnmount(() => {
 /* Local Video PiP (bottom-right) */
 .local-video-container {
   position: absolute;
-  bottom: 40px;
-  right: 20px;
-  width: 220px;
-  height: 150px;
+  bottom: 10px;
+  right: 9px;
+  width: 23%;
+  height: 30%;
   border: 2px solid var(--neon-green);
   box-shadow: 0 0 20px rgba(57, 255, 20, 0.5);
   background: #000;
@@ -671,8 +671,8 @@ onBeforeUnmount(() => {
 /* Bottom Controls */
 .bottom-controls {
   position: absolute;
-  bottom: 40px;
-  left: 20px;
+  bottom: 10px;
+  left: 9px;
   display: flex;
   gap: 12px;
   z-index: 20;

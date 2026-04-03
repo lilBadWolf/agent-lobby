@@ -1,7 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { useTheme } from '../useTheme';
 
 describe('useTheme', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.style.removeProperty('--neon-green');
+  });
+
+  it('prefers theme from agent_settings over legacy key', () => {
+    localStorage.setItem('agent_theme', 'light-blue');
+    localStorage.setItem('agent_settings', JSON.stringify({ theme: 'soft-pink' }));
+
+    const { currentTheme } = useTheme();
+
+    expect(currentTheme.value).toBe('soft-pink');
+    expect(localStorage.getItem('agent_theme')).toBe('soft-pink');
+  });
+
   it('loads saved theme from localStorage', () => {
     localStorage.setItem('agent_theme', 'light-blue');
 
@@ -18,6 +33,7 @@ describe('useTheme', () => {
 
     expect(currentTheme.value).toBe('light-blue');
     expect(localStorage.getItem('agent_theme')).toBe('light-blue');
+    expect(localStorage.getItem('agent_settings')).toContain('"theme":"light-blue"');
     expect(document.documentElement.style.getPropertyValue('--neon-green')).toBe('#0066cc');
   });
 
@@ -29,5 +45,13 @@ describe('useTheme', () => {
     const second = getUserColor.value('ALPHA');
 
     expect(first).toBe(second);
+  });
+
+  it('applies initial theme variables immediately', () => {
+    localStorage.setItem('agent_settings', JSON.stringify({ theme: 'light-blue' }));
+
+    useTheme();
+
+    expect(document.documentElement.style.getPropertyValue('--neon-green')).toBe('#0066cc');
   });
 });

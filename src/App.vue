@@ -32,29 +32,7 @@
       :config="config"
       :available-soundpacks="availableSoundpacks"
       :available-themes="availableThemes"
-      @update="
-        (newConfig) => {
-          config.dmEnabled = newConfig.dmEnabled;
-          config.agentAmpEnabled = newConfig.agentAmpEnabled;
-          config.audioEnabled = newConfig.audioEnabled;
-          config.volume = newConfig.volume;
-          config.autoAwayMinutes = newConfig.autoAwayMinutes ?? 10;
-          config.autoUpdatePulseMinutes = newConfig.autoUpdatePulseMinutes ?? 30;
-          config.dmChatEffect = newConfig.dmChatEffect;
-          config.audioInputDeviceId = newConfig.audioInputDeviceId;
-          config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
-          config.videoInputDeviceId = newConfig.videoInputDeviceId;
-          config.customSlashCommands = newConfig.customSlashCommands;
-          if (config.soundpack !== newConfig.soundpack) {
-            setSoundpack(newConfig.soundpack);
-          }
-          if (config.theme !== newConfig.theme) {
-            applyTheme(newConfig.theme);
-            config.theme = newConfig.theme;
-          }
-          updateSettings();
-        }
-      "
+      @update="handleSettingsUpdate"
       @clear-log="clearMessages"
       @close="toggleSettings"
     />
@@ -277,6 +255,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
+import type { AudioConfig } from './types/chat';
 import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
@@ -634,6 +613,18 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => config.value.theme,
+  (themeName) => {
+    if (!themeName) {
+      return;
+    }
+
+    applyTheme(themeName);
+  },
+  { immediate: true }
+);
+
 function minimize() {
   if (!hasTauriWindow) {
     return;
@@ -744,6 +735,27 @@ function handleShowDMWindow() {
 
 function handleAmbience() {
   tryPlayAmbience();
+}
+
+function handleSettingsUpdate(newConfig: AudioConfig) {
+  const previousSoundpack = config.value.soundpack;
+
+  config.value = {
+    ...config.value,
+    ...newConfig,
+    autoAwayMinutes: newConfig.autoAwayMinutes ?? 10,
+    autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
+    customSlashCommands: newConfig.customSlashCommands ?? [],
+  };
+
+  applyTheme(config.value.theme);
+
+  if (previousSoundpack !== config.value.soundpack) {
+    setSoundpack(config.value.soundpack);
+    return;
+  }
+
+  updateSettings();
 }
 
 function handleChatSend(rawMessage: string) {

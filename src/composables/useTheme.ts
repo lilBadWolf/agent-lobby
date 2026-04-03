@@ -1,9 +1,40 @@
 import { ref, watch, computed } from 'vue';
 import { THEMES } from '../themes';
 
+function getInitialTheme(): string {
+  try {
+    const savedSettings = localStorage.getItem('agent_settings');
+    if (savedSettings) {
+      const parsed = JSON.parse(savedSettings) as { theme?: string };
+      if (typeof parsed.theme === 'string' && parsed.theme.trim()) {
+        return parsed.theme;
+      }
+    }
+  } catch {
+    // Ignore malformed saved settings and continue fallback resolution.
+  }
+
+  return localStorage.getItem('agent_theme') || 'retro-terminal';
+}
+
+function persistThemeInAgentSettings(themeName: string) {
+  try {
+    const savedSettings = localStorage.getItem('agent_settings');
+    const parsed = savedSettings ? JSON.parse(savedSettings) as Record<string, unknown> : {};
+    const nextSettings = {
+      ...parsed,
+      theme: themeName,
+    };
+
+    localStorage.setItem('agent_settings', JSON.stringify(nextSettings));
+  } catch {
+    // Ignore malformed settings payloads in storage.
+  }
+}
+
 export function useTheme() {
-  // Load saved theme from localStorage, default to 'retro-terminal'
-  const savedTheme = localStorage.getItem('agent_theme') || 'retro-terminal';
+  // Load theme from app settings first, then fallback to legacy theme storage key.
+  const savedTheme = getInitialTheme();
   const currentTheme = ref<string>(savedTheme);
   const availableThemes = Object.keys(THEMES);
 
@@ -21,6 +52,7 @@ export function useTheme() {
 
     currentTheme.value = themeName;
     localStorage.setItem('agent_theme', themeName);
+    persistThemeInAgentSettings(themeName);
   }
 
   const getUserColor = computed(() => {
@@ -39,7 +71,7 @@ export function useTheme() {
 
   watch(currentTheme, (newTheme) => {
     applyTheme(newTheme);
-  });
+  }, { immediate: true });
 
   return {
     currentTheme,

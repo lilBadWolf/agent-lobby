@@ -2,7 +2,7 @@
   <div v-if="showModal" id="network-config-modal" @click="(e) => e.target === $el && handleClose()">
     <div class="modal-box">
       <div class="config-content">
-        <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">NET_CONFIG</h3>
+        <h3 style="margin-top: 0; border-bottom: 1px solid var(--color-accent)">NET_CONFIG</h3>
         <div class="config-row">
           <label for="mqtt-server">MQTT SERVER</label>
           <input
@@ -79,8 +79,8 @@ function handleSave() {
 
 .modal-box {
   width: 350px;
-  border: 2px solid var(--neon-green);
-  background: var(--dark-bg);
+  border: 2px solid var(--color-accent);
+  background: var(--color-bg-base);
   padding: 20px;
   text-align: left;
   max-height: 80vh;
@@ -105,13 +105,13 @@ label {
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 1px;
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 input[type='text'] {
   background: rgba(57, 255, 20, 0.1);
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   padding: 10px;
   font-family: inherit;
   font-size: 12px;
@@ -120,7 +120,7 @@ input[type='text'] {
 }
 
 input[type='text']:focus {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
   box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
 }
 
@@ -133,8 +133,8 @@ input[type='text']::placeholder {
   width: 100%;
   padding: 12px;
   background: transparent;
-  border: 2px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 2px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-weight: bold;
   font-size: 12px;
@@ -147,9 +147,9 @@ input[type='text']::placeholder {
 
 .save-btn:hover,
 .close-btn:hover {
-  background: var(--neon-green);
+  background: var(--color-accent);
   color: #000;
-  box-shadow: 0 0 15px var(--neon-green);
+  box-shadow: 0 0 15px var(--color-accent);
 }
 
 .close-btn {
@@ -157,7 +157,7 @@ input[type='text']::placeholder {
 }
 
 h3 {
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin: 0 0 15px 0;

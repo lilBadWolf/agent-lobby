@@ -194,7 +194,7 @@
           <span
             class="text"
             :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
-            :style="{ color: msg.user === username ? 'var(--neon-green)' : 'var(--text-white)' }"
+            :style="{ color: msg.user === username ? 'var(--color-accent)' : 'var(--color-text-primary)' }"
           >
             <template v-for="(part, partIndex) in getDisplayedParts(index)" :key="`${index}-${partIndex}`">
               <span v-if="part.type === 'mention'" class="mention-highlight">{{ part.text }}</span>
@@ -2164,7 +2164,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--neon-green);
+  border-right: 1px solid var(--color-accent);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -2175,8 +2175,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--dim-green);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 18, 6, 0.72));
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface-strong);
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -2223,9 +2223,9 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid var(--dim-green);
-  background: rgba(0, 0, 0, 0.45);
-  color: var(--system-dim);
+  border: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface);
+  color: var(--color-chat-text-muted);
   padding: 5px 8px;
   cursor: pointer;
   font-family: inherit;
@@ -2260,27 +2260,27 @@ onBeforeUnmount(() => {
 
 .tab-close:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-chat-overlay);
 }
 
 .lobby-tab.active .tab-close:hover {
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--color-chat-surface);
 }
 
 .lobby-tab:hover {
-  color: var(--neon-green);
-  border-color: var(--neon-green);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .lobby-tab.active {
-  color: #000;
-  border-color: var(--neon-green);
-  background: var(--neon-green);
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
 }
 
 .lobby-tab.has-unread {
-  color: #ffd36f;
-  border-color: #ffd36f;
+  color: var(--color-chat-warning);
+  border-color: var(--color-chat-warning);
   animation: lobby-tab-flash 1.1s steps(2, end) infinite;
 }
 
@@ -2295,8 +2295,8 @@ onBeforeUnmount(() => {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0;
-  background: #ffd36f;
-  color: #121212;
+  background: var(--color-chat-warning);
+  color: var(--color-chat-warning-contrast);
 }
 
 .lobby-actions {
@@ -2308,9 +2308,9 @@ onBeforeUnmount(() => {
 .lobby-join-toggle,
 .lobby-join-confirm,
 .lobby-join-cancel {
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-family: inherit;
   text-transform: uppercase;
   font-size: 10px;
@@ -2322,7 +2322,7 @@ onBeforeUnmount(() => {
 .lobby-join-toggle:hover,
 .lobby-join-confirm:hover,
 .lobby-join-cancel:hover {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
 }
 
 .lobby-join-bar {
@@ -2330,8 +2330,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--dim-green);
-  background: rgba(0, 0, 0, 0.7);
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface-strong);
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -2340,9 +2340,9 @@ onBeforeUnmount(() => {
 .lobby-join-input {
   flex: 1;
   min-width: 120px;
-  border: 1px solid var(--dim-green);
-  background: rgba(0, 0, 0, 0.8);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface-strong);
+  color: var(--color-accent);
   padding: 6px 8px;
   font-family: inherit;
   font-size: 12px;
@@ -2351,11 +2351,11 @@ onBeforeUnmount(() => {
 }
 
 .lobby-join-input:focus {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
 }
 
 .lobby-join-cancel {
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
 }
 
 @keyframes lobby-tab-flash {
@@ -2381,15 +2381,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
-  border-top: 1px solid var(--neon-green);
+  border-top: 1px solid var(--color-accent);
   height: 60px;
-  background: #000;
+  background: var(--color-chat-bg);
 }
 
 #chat-msg {
   background: transparent;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   padding: 0 20px;
   flex: 1;
   height: 100%;
@@ -2404,8 +2404,8 @@ onBeforeUnmount(() => {
 }
 
 .send-btn {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   border: none;
   padding: 0 30px;
   cursor: pointer;
@@ -2417,7 +2417,7 @@ onBeforeUnmount(() => {
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #fff;
+  filter: brightness(1.08);
 }
 
 .send-btn:disabled {
@@ -2428,13 +2428,13 @@ onBeforeUnmount(() => {
 .msg {
   margin-bottom: 12px;
   line-height: 1.5;
-  border-left: 3px solid var(--dim-green);
+  border-left: 3px solid var(--color-accent-muted);
   padding-left: 12px;
 }
 
 .system-msg {
   text-align: center;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-size: 13px;
   margin: 15px 0;
   letter-spacing: 1px;
@@ -2454,8 +2454,8 @@ onBeforeUnmount(() => {
 }
 
 .mention-highlight {
-  color: #000;
-  background: var(--neon-green);
+  color: var(--color-on-accent);
+  background: var(--color-accent);
   border-radius: 2px;
   padding: 0 3px;
   margin: 0 1px;
@@ -2463,14 +2463,14 @@ onBeforeUnmount(() => {
 }
 
 .chat-link {
-  color: #8fd3ff;
+  color: var(--color-chat-link);
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;
 }
 
 .chat-link:hover {
-  color: #c9ebff;
+  color: var(--color-chat-link-hover);
 }
 
 .large-emoji {
@@ -2492,8 +2492,8 @@ onBeforeUnmount(() => {
   bottom: 100%;
   left: 0;
   right: 0;
-  background: #0a0a0a;
-  border: 1px solid var(--neon-green);
+  background: var(--color-chat-bg);
+  border: 1px solid var(--color-accent);
   border-bottom: none;
   max-height: 220px;
   overflow-y: auto;
@@ -2508,14 +2508,14 @@ onBeforeUnmount(() => {
   padding: 6px 14px;
   cursor: pointer;
   font-size: 14px;
-  color: var(--text-white);
+  color: var(--color-chat-text);
   transition: background 0.1s;
 }
 
 .emoji-item:hover,
 .emoji-item.active {
   background: rgba(57, 255, 20, 0.12);
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .emoji-char {
@@ -2550,9 +2550,9 @@ onBeforeUnmount(() => {
 }
 
 .video-expandable {
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--color-chat-surface);
   overflow: hidden;
 }
 
@@ -2562,7 +2562,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 6px 10px;
   cursor: pointer;
-  color: var(--text-white);
+  color: var(--color-chat-text);
   font-size: 12px;
   line-height: 1.2;
   user-select: none;
@@ -2570,15 +2570,15 @@ onBeforeUnmount(() => {
 }
 
 .video-expandable[open] .video-header {
-  border-bottom-color: var(--dim-green);
+  border-bottom-color: var(--color-accent-muted);
 }
 
 .video-header::-webkit-details-marker {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .video-header-title {
-  color: var(--text-white);
+  color: var(--color-chat-text);
   flex: 1;
   min-width: 0;
   white-space: nowrap;
@@ -2592,15 +2592,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-size: 11px;
   letter-spacing: 0.3px;
 }
 
 .video-pin-btn {
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   background: transparent;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-family: inherit;
   font-size: 10px;
   letter-spacing: 0.4px;
@@ -2611,22 +2611,22 @@ onBeforeUnmount(() => {
 }
 
 .video-pin-btn:hover {
-  color: var(--neon-green);
-  border-color: var(--neon-green);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .video-pin-btn[aria-pressed="true"] {
-  color: #000;
-  background: var(--neon-green);
-  border-color: var(--neon-green);
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .video-header:hover .video-header-control {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .video-expandable[open] .video-header-control {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .video-control-indicator {
@@ -2667,26 +2667,26 @@ onBeforeUnmount(() => {
   max-width: 100%;
   aspect-ratio: 16 / 9;
   height: auto;
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-radius: 4px;
-  background: #000;
+  background: var(--color-chat-bg);
 }
 
 .video-player-shell {
   position: relative;
   width: 100%;
   max-width: 100%;
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-top: none;
   border-radius: 0 0 4px 4px;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--color-chat-surface);
   overflow: hidden;
 }
 
 .pinned-video-panel {
   position: relative;
-  border-bottom: 1px solid var(--neon-green);
-  background: rgba(0, 0, 0, 0.88);
+  border-bottom: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -2742,7 +2742,7 @@ onBeforeUnmount(() => {
 }
 
 .pinned-video-title {
-  color: var(--text-white);
+  color: var(--color-chat-text);
   font-size: 12px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -2810,8 +2810,8 @@ onBeforeUnmount(() => {
 
 .pinned-video-divider {
   height: 14px;
-  border-bottom: 1px solid var(--neon-green);
-  background: rgba(0, 0, 0, 0.92);
+  border-bottom: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2821,7 +2821,7 @@ onBeforeUnmount(() => {
 .pinned-video-divider-grip {
   width: 64px;
   height: 6px;
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-radius: 3px;
   background: repeating-linear-gradient(
     90deg,
@@ -2833,7 +2833,7 @@ onBeforeUnmount(() => {
 }
 
 .pinned-video-divider:hover .pinned-video-divider-grip {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
 }
 
 .youtube-player-host {
@@ -2842,8 +2842,8 @@ onBeforeUnmount(() => {
   max-width: 100%;
   height: 0;
   padding-top: 56.25%;
-  border-bottom: 1px solid var(--dim-green);
-  background: #000;
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-bg);
   overflow: hidden;
 }
 
@@ -2872,8 +2872,8 @@ onBeforeUnmount(() => {
   max-width: 100%;
   height: 0;
   padding-top: 56.25%;
-  border-bottom: 1px solid var(--dim-green);
-  background: #000;
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-bg);
   overflow: hidden;
 }
 
@@ -2898,9 +2898,9 @@ onBeforeUnmount(() => {
   top: 10px;
   right: 10px;
   z-index: 3;
-  border: 1px solid var(--neon-green);
-  background: rgba(0, 0, 0, 0.72);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 11px;
   font-weight: 700;
@@ -2911,8 +2911,8 @@ onBeforeUnmount(() => {
 }
 
 .video-fullscreen-exit:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .video-fullscreen-exit.hidden {
@@ -2926,7 +2926,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  color: var(--text-white);
+  color: var(--color-chat-text);
   font-size: 11px;
   opacity: 0;
   visibility: hidden;
@@ -2942,9 +2942,9 @@ onBeforeUnmount(() => {
 }
 
 .video-control-btn {
-  border: 1px solid var(--neon-green);
+  border: 1px solid var(--color-accent);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 11px;
   letter-spacing: 0.5px;
@@ -2955,8 +2955,8 @@ onBeforeUnmount(() => {
 }
 
 .video-control-btn:hover:not(:disabled) {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .video-control-btn:disabled {
@@ -2965,14 +2965,14 @@ onBeforeUnmount(() => {
 }
 
 .video-timecode {
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   min-width: 76px;
   text-align: right;
   font-family: monospace;
 }
 
 .video-range {
-  accent-color: var(--neon-green);
+  accent-color: var(--color-accent);
 }
 
 .video-progress {
@@ -2983,7 +2983,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-weight: 700;
 }
 
@@ -2994,14 +2994,14 @@ onBeforeUnmount(() => {
 .video-fallback {
   display: inline-block;
   margin-top: 4px;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-size: 12px;
   font-family: monospace;
   word-break: break-all;
   padding: 4px;
-  border: 1px dashed var(--dim-green);
+  border: 1px dashed var(--color-accent-muted);
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--color-chat-surface);
 }
 
 .image-container {
@@ -3012,7 +3012,7 @@ onBeforeUnmount(() => {
 .embedded-image {
   max-width: 100%;
   max-height: 300px;
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-radius: 4px;
   cursor: pointer;
   transition: opacity 0.2s;
@@ -3025,14 +3025,14 @@ onBeforeUnmount(() => {
 .image-fallback {
   display: inline-block;
   margin-top: 4px;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   font-size: 12px;
   font-family: monospace;
   word-break: break-all;
   padding: 4px;
-  border: 1px dashed var(--dim-green);
+  border: 1px dashed var(--color-accent-muted);
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--color-chat-surface);
 }
 
 @keyframes blink {

@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
   background:
     radial-gradient(circle at top, rgba(57, 255, 20, 0.08), transparent 28%),
     linear-gradient(180deg, #081008 0%, #020402 100%);
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .custom-titlebar {
@@ -673,7 +673,7 @@ onBeforeUnmount(() => {
   right: 66px;
   background: none;
   border: 1px solid rgba(57, 255, 20, 0.18);
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 12px;
   cursor: pointer;
   opacity: 0.8;
@@ -698,7 +698,7 @@ onBeforeUnmount(() => {
   right: 38px;
   background: none;
   border: 1px solid rgba(57, 255, 20, 0.18);
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 12px;
   cursor: pointer;
   opacity: 0.8;
@@ -744,7 +744,7 @@ onBeforeUnmount(() => {
   right: 10px;
   background: none;
   border: 1px solid rgba(255, 59, 59, 0.18);
-  color: var(--alert-red);
+  color: var(--color-danger);
   font-size: 12px;
   cursor: pointer;
   opacity: 0.82;

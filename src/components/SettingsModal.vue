@@ -2,7 +2,7 @@
   <div v-if="showModal" id="settings-modal" @click="(e) => e.target === $el && handleClose()">
     <div class="modal-box">
       <div class="settings-content">
-        <h3 style="margin-top: 0; border-bottom: 1px solid var(--neon-green)">CONFIG_SYS</h3>
+        <h3 style="margin-top: 0; border-bottom: 1px solid var(--color-accent)">CONFIG_SYS</h3>
         <div class="settings-tabs" role="tablist" aria-label="Settings Sections">
           <button
             class="tab-btn"
@@ -66,7 +66,7 @@
               id="set-theme"
               @change="handleChange"
             >
-              <option v-for="themeName in availableThemes" :key="themeName" :value="themeName">
+              <option v-for="themeName in orderedThemes" :key="themeName" :value="themeName">
                 {{ themeName }}
               </option>
             </select>
@@ -309,10 +309,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
+
+const DEFAULT_THEME = 'retro-terminal';
 
 const RESERVED_SLASH_COMMANDS = new Set([
   '/away',
@@ -375,14 +377,32 @@ const emit = defineEmits<{
 }>();
 
 function normalizeConfig(config: AudioConfig): AudioConfig {
+  const normalizedTheme = typeof config.theme === 'string' && config.theme.trim()
+    ? config.theme
+    : DEFAULT_THEME;
+
   return {
     ...config,
+    theme: normalizedTheme,
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
     customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),
   };
 }
+
+const orderedThemes = computed(() => {
+  const uniqueThemes = Array.from(new Set(props.availableThemes ?? []));
+  const nonLightThemes = uniqueThemes.filter((name) => !name.startsWith('light-') && name !== DEFAULT_THEME);
+  const lightThemes = uniqueThemes.filter((name) => name.startsWith('light-'));
+  const hasDefaultTheme = uniqueThemes.includes(DEFAULT_THEME);
+
+  return [
+    ...(hasDefaultTheme ? [DEFAULT_THEME] : []),
+    ...nonLightThemes,
+    ...lightThemes,
+  ];
+});
 
 const localConfig = ref<AudioConfig>(normalizeConfig(props.config));
 const activeTab = ref<'general' | 'dm' | 'media' | 'help' | 'slash'>('general');
@@ -450,6 +470,23 @@ watch(
     // Ensure the selected soundpack is in the available list
     if (newPacks.length > 0 && !newPacks.includes(localConfig.value.soundpack)) {
       localConfig.value.soundpack = newPacks[0];
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => props.availableThemes,
+  (nextThemes) => {
+    if (!Array.isArray(nextThemes) || nextThemes.length === 0) {
+      localConfig.value.theme = DEFAULT_THEME;
+      return;
+    }
+
+    if (!nextThemes.includes(localConfig.value.theme)) {
+      localConfig.value.theme = nextThemes.includes(DEFAULT_THEME)
+        ? DEFAULT_THEME
+        : nextThemes[0];
     }
   },
   { immediate: true }
@@ -651,7 +688,7 @@ watch(
 #settings-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--color-settings-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -660,8 +697,8 @@ watch(
 
 .modal-box {
   width: min(460px, 92vw);
-  border: 2px solid var(--neon-green);
-  background: var(--dark-bg);
+  border: 2px solid var(--color-accent);
+  background: var(--color-settings-surface);
   padding: 20px;
   text-align: left;
   height: min(80vh, 620px);
@@ -695,8 +732,8 @@ watch(
 
 .tab-btn {
   background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 11px;
   letter-spacing: 1px;
@@ -706,12 +743,12 @@ watch(
 }
 
 .tab-btn:hover {
-  box-shadow: 0 0 8px var(--neon-green);
+  box-shadow: 0 0 8px var(--color-accent);
 }
 
 .tab-btn.active {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .tab-panel {
@@ -720,7 +757,7 @@ watch(
 
 .settings-divider {
   border: 0;
-  border-top: 1px solid rgba(57, 255, 20, 0.35);
+  border-top: 1px solid var(--color-settings-divider);
   margin: 10px 0 4px;
 }
 
@@ -752,7 +789,7 @@ watch(
   margin: 8px 0 4px;
   font-size: 12px;
   letter-spacing: 1px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
 }
 
@@ -762,13 +799,13 @@ watch(
   align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: var(--text-white);
+  color: var(--color-text-primary);
 }
 
 .help-row code {
-  color: var(--neon-green);
-  background: rgba(57, 255, 20, 0.08);
-  border: 1px solid rgba(57, 255, 20, 0.35);
+  color: var(--color-accent);
+  background: var(--color-settings-code-bg);
+  border: 1px solid var(--color-settings-code-border);
   padding: 2px 6px;
   font-family: inherit;
   font-size: 11px;
@@ -783,14 +820,14 @@ watch(
 
 .slash-note {
   font-size: 11px;
-  color: var(--text-white);
+  color: var(--color-text-primary);
   opacity: 0.9;
 }
 
 .slash-note code {
-  color: var(--neon-green);
-  background: rgba(57, 255, 20, 0.08);
-  border: 1px solid rgba(57, 255, 20, 0.35);
+  color: var(--color-accent);
+  background: var(--color-settings-code-bg);
+  border: 1px solid var(--color-settings-code-border);
   padding: 1px 5px;
   font-family: inherit;
   font-size: 11px;
@@ -813,15 +850,15 @@ watch(
 }
 
 .slash-input.invalid {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .slash-add-btn,
 .slash-remove-btn {
   background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 11px;
   text-transform: uppercase;
@@ -841,12 +878,12 @@ watch(
 
 .slash-add-btn:hover,
 .slash-remove-btn:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 input[type='range'] {
-  accent-color: var(--neon-green);
+  accent-color: var(--color-accent);
   cursor: pointer;
 }
 
@@ -857,9 +894,9 @@ input[type='checkbox'] {
 }
 
 select {
-  background: var(--dark-bg);
-  color: var(--neon-green);
-  border: 1px solid var(--neon-green);
+  background: var(--color-settings-surface);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
   padding: 5px 8px;
   cursor: pointer;
   font-family: inherit;
@@ -867,16 +904,16 @@ select {
 }
 
 select option {
-  background: var(--dark-bg);
-  color: var(--neon-green);
+  background: var(--color-settings-surface);
+  color: var(--color-accent);
 }
 
 .clear-btn {
   width: 100%;
   padding: 12px;
   background: transparent;
-  border: 2px solid #ff6b6b;
-  color: #ff6b6b;
+  border: 2px solid var(--color-danger);
+  color: var(--color-danger);
   font-family: inherit;
   font-weight: bold;
   font-size: 14px;
@@ -888,17 +925,17 @@ select option {
 }
 
 .clear-btn:hover {
-  background: #ff6b6b;
-  color: #000;
-  box-shadow: 0 0 15px #ff6b6b;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  box-shadow: 0 0 15px var(--color-danger);
 }
 
 .close-btn {
   width: 100%;
   padding: 15px;
   background: transparent;
-  border: 2px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 2px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-weight: bold;
   font-size: 16px;
@@ -909,13 +946,13 @@ select option {
 }
 
 .close-btn:hover {
-  background: var(--neon-green);
-  color: #000;
-  box-shadow: 0 0 15px var(--neon-green);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 15px var(--color-accent);
 }
 
 h3 {
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
   letter-spacing: 1px;
 }
@@ -929,7 +966,7 @@ label {
 .preview-btn {
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   cursor: pointer;
   font-size: 16px;
   opacity: 0.6;
@@ -947,8 +984,8 @@ label {
   display: block;
   padding: 8px 10px;
   background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 11px;
   font-weight: bold;
@@ -958,9 +995,9 @@ label {
 }
 
 .preview-toggle-btn:hover:not(:disabled) {
-  background: var(--neon-green);
-  color: #000;
-  box-shadow: 0 0 10px rgba(57, 255, 20, 0.35);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 10px var(--color-settings-accent-glow);
 }
 
 .preview-toggle-btn:disabled {
@@ -974,8 +1011,8 @@ label {
 
 .video-preview-wrap {
   margin-top: 10px;
-  border: 1px solid var(--neon-green);
-  background: #000;
+  border: 1px solid var(--color-accent);
+  background: var(--color-settings-video-preview-bg);
   width: min(100%, 360px);
   aspect-ratio: 16 / 9;
   overflow: hidden;
@@ -995,14 +1032,14 @@ label {
   gap: 10px;
   font-size: 11px;
   letter-spacing: 0.7px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
 }
 
 .effect-preview {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.9);
+  background: var(--color-settings-effect-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1017,7 +1054,7 @@ label {
   font-family: 'Courier New', Courier, monospace;
   letter-spacing: 3px;
   text-align: center;
-  color: var(--neon-green);
+  color: var(--color-accent);
   min-height: 60px;
   display: flex;
   align-items: center;

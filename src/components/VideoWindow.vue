@@ -516,8 +516,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--dark-bg);
-  color: var(--neon-green);
+  background: var(--color-bg-base);
+  color: var(--color-accent);
   font-family: 'Courier New', Courier, monospace;
   overflow: hidden;
   position: relative;
@@ -541,7 +541,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   display: block;
-  border: 2px solid var(--neon-green);
+  border: 2px solid var(--color-accent);
   box-shadow: 0 0 30px rgba(57, 255, 20, 0.3), inset 0 0 30px rgba(57, 255, 20, 0.1);
 }
 
@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  border: 2px solid var(--neon-green);
+  border: 2px solid var(--color-accent);
   background:
     radial-gradient(circle at 50% 45%, rgba(57, 255, 20, 0.16), rgba(0, 0, 0, 0.95) 60%),
     linear-gradient(180deg, rgba(6, 15, 6, 0.95), rgba(1, 4, 1, 0.98));
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
 .remote-fallback-header {
   font-size: 14px;
   letter-spacing: 2px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
   font-weight: bold;
 }
@@ -579,7 +579,7 @@ onBeforeUnmount(() => {
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 2px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
   right: 9px;
   width: 23%;
   height: 30%;
-  border: 2px solid var(--neon-green);
+  border: 2px solid var(--color-accent);
   box-shadow: 0 0 20px rgba(57, 255, 20, 0.5);
   background: #000;
   overflow: hidden;
@@ -627,7 +627,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.6);
-  color: var(--neon-green);
+  color: var(--color-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -647,7 +647,7 @@ onBeforeUnmount(() => {
 }
 
 .pip-control-btn.btn-off {
-  color: var(--alert-red);
+  color: var(--color-danger);
   text-shadow: 0 0 6px rgba(255, 57, 57, 0.7);
 }
 
@@ -670,7 +670,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: rgba(3, 10, 3, 0.95);
-  color: var(--neon-green);
+  color: var(--color-accent);
   padding: 8px;
   box-sizing: border-box;
 }
@@ -686,7 +686,7 @@ onBeforeUnmount(() => {
 .pip-border {
   position: absolute;
   inset: 0;
-  border: 2px solid var(--neon-green);
+  border: 2px solid var(--color-accent);
   pointer-events: none;
   animation: pip-flicker 0.15s infinite;
   opacity: 0.6;

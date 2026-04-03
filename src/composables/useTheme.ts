@@ -1,5 +1,11 @@
-import { ref, watch, computed } from 'vue';
+import { ref, computed } from 'vue';
 import { THEMES } from '../themes';
+
+const DEFAULT_THEME = 'retro-terminal';
+const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
+const availableThemes = Object.keys(THEMES);
+const currentTheme = ref<string>(DEFAULT_THEME);
+let hasInitializedTheme = false;
 
 function getInitialTheme(): string {
   try {
@@ -32,51 +38,70 @@ function persistThemeInAgentSettings(themeName: string) {
   }
 }
 
-export function useTheme() {
-  // Load theme from app settings first, then fallback to legacy theme storage key.
-  const savedTheme = getInitialTheme();
-  const currentTheme = ref<string>(savedTheme);
-  const availableThemes = Object.keys(THEMES);
+function getThemeTokenValue(tokenName: string, fallback = ''): string {
+  if (typeof window === 'undefined') {
+    return fallback;
+  }
 
+  const root = document.documentElement;
+  const value = getComputedStyle(root).getPropertyValue(tokenName).trim();
+  return value || fallback;
+}
+
+function getThemeUserColors(): string[] {
+  const rawPalette = getThemeTokenValue('--theme-user-colors', '');
+  const parsedPalette = rawPalette
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return parsedPalette.length > 0 ? parsedPalette : DEFAULT_USER_COLORS;
+}
+
+export function useTheme() {
   function applyTheme(themeName: string) {
-    const theme = THEMES[themeName as keyof typeof THEMES];
-    if (!theme) return;
+    const nextTheme = THEMES[themeName as keyof typeof THEMES] ? themeName : DEFAULT_THEME;
 
     const root = document.documentElement;
-    root.style.setProperty('--neon-green', theme.colors.neonGreen);
-    root.style.setProperty('--dark-bg', theme.colors.darkBg);
-    root.style.setProperty('--dim-green', theme.colors.dimGreen);
-    root.style.setProperty('--alert-red', theme.colors.alertRed);
-    root.style.setProperty('--text-white', theme.colors.textWhite);
-    root.style.setProperty('--system-dim', theme.colors.systemDim);
+    root.setAttribute('data-theme', nextTheme);
 
-    currentTheme.value = themeName;
-    localStorage.setItem('agent_theme', themeName);
-    persistThemeInAgentSettings(themeName);
+    currentTheme.value = nextTheme;
+    localStorage.setItem('agent_theme', nextTheme);
+    persistThemeInAgentSettings(nextTheme);
+  }
+
+  const rootTheme = typeof document !== 'undefined'
+    ? document.documentElement.getAttribute('data-theme')
+    : null;
+
+  if (!hasInitializedTheme || !rootTheme) {
+    // Load theme from app settings first, then fallback to legacy theme storage key.
+    const savedTheme = getInitialTheme();
+    const initialTheme = THEMES[savedTheme as keyof typeof THEMES] ? savedTheme : DEFAULT_THEME;
+    applyTheme(initialTheme);
+    hasInitializedTheme = true;
   }
 
   const getUserColor = computed(() => {
     return (str: string): string => {
-      const theme = THEMES[currentTheme.value as keyof typeof THEMES];
-      if (!theme) return '#39ff14';
+      const palette = getThemeUserColors();
+      if (palette.length === 0) return DEFAULT_USER_COLORS[0];
 
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
       }
-      const colorIndex = Math.abs(hash) % theme.userColors.length;
-      return theme.userColors[colorIndex];
+      const colorIndex = Math.abs(hash) % palette.length;
+      return palette[colorIndex];
     };
   });
-
-  watch(currentTheme, (newTheme) => {
-    applyTheme(newTheme);
-  }, { immediate: true });
 
   return {
     currentTheme,
     availableThemes,
     applyTheme,
     getUserColor,
+    getThemeUserColors,
+    getThemeTokenValue,
   };
 }

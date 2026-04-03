@@ -30,6 +30,15 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   customSlashCommands: [],
 };
 
+function normalizeThemeName(theme: unknown): string {
+  if (typeof theme !== 'string') {
+    return DEFAULT_AUDIO_CONFIG.theme;
+  }
+
+  const trimmedTheme = theme.trim();
+  return trimmedTheme || DEFAULT_AUDIO_CONFIG.theme;
+}
+
 let activeAutoAwayListenerCleanup: (() => void) | null = null;
 
 function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioConfig {
@@ -37,6 +46,8 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     ...DEFAULT_AUDIO_CONFIG,
     ...(savedConfig || {}),
   };
+
+  normalized.theme = normalizeThemeName((savedConfig as Partial<AudioConfig> | null)?.theme ?? normalized.theme);
 
   normalized.customSlashCommands = sanitizeCustomSlashCommands((savedConfig as Partial<AudioConfig> | null)?.customSlashCommands);
 
@@ -669,14 +680,6 @@ export function useLobbyChat() {
     return tmp.textContent || tmp.innerText || '';
   }
 
-  function getUserColor(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return `hsl(${Math.abs(hash % 360)}, 80%, 60%)`;
-  }
-
   function boot(handle: string, customRoomId?: string) {
     if (!handle) return;
 
@@ -1083,7 +1086,6 @@ export function useLobbyChat() {
     config,
     networkConfig: computed(() => networkConfig.value),
     availableSoundpacks,
-    getUserColor,
     boot,
     joinLobby,
     leaveLobby,

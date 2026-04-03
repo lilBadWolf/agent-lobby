@@ -26,11 +26,38 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useTheme } from '../composables/useTheme';
-import { THEMES } from '../themes';
 
-const { currentTheme } = useTheme();
+const { currentTheme, getThemeUserColors, getThemeTokenValue } = useTheme();
+const themeChangeTick = ref(0);
+let themeObserver: MutationObserver | null = null;
+
+onMounted(() => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const root = document.documentElement;
+  themeObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+        themeChangeTick.value += 1;
+        break;
+      }
+    }
+  });
+
+  themeObserver.observe(root, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+});
+
+onBeforeUnmount(() => {
+  themeObserver?.disconnect();
+  themeObserver = null;
+});
 
 // Generates a simple sine wave path across the 1000-unit viewBox
 const sinePath = computed(() => {
@@ -44,6 +71,14 @@ const sinePath = computed(() => {
 
 // Get 3 random unique indices from the color array
 function getRandomColorIndices(arrayLength: number): [number, number, number] {
+  if (arrayLength <= 1) {
+    return [0, 0, 0];
+  }
+
+  if (arrayLength === 2) {
+    return [0, 1, Math.floor(Math.random() * 2)] as [number, number, number];
+  }
+
   const indices = new Set<number>();
   while (indices.size < 3) {
     indices.add(Math.floor(Math.random() * arrayLength));
@@ -53,16 +88,20 @@ function getRandomColorIndices(arrayLength: number): [number, number, number] {
 
 // Get theme-based colors with random selection
 const themeColors = computed(() => {
-  const theme = THEMES[currentTheme.value as keyof typeof THEMES];
-  if (!theme) return {};
+  // Track both local theme refs and document-level theme attribute changes.
+  void currentTheme.value;
+  void themeChangeTick.value;
+  const palette = getThemeUserColors();
+  const fallbackPalette = ['#39ff14', '#00ff00', '#00ffaa'];
+  const activePalette = palette.length > 0 ? palette : fallbackPalette;
 
-  const [idx1, idx2, idx3] = getRandomColorIndices(theme.userColors.length);
+  const [idx1, idx2, idx3] = getRandomColorIndices(activePalette.length);
 
   return {
-    bg: theme.colors.darkBg,
-    primary: theme.userColors[idx1],
-    secondary: theme.userColors[idx2],
-    tertiary: theme.userColors[idx3],
+    bg: getThemeTokenValue('--color-bg-base', '#0a0f0a'),
+    primary: activePalette[idx1],
+    secondary: activePalette[idx2],
+    tertiary: activePalette[idx3],
   };
 });
 

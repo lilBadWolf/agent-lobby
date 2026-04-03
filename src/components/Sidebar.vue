@@ -156,7 +156,7 @@ function getCompactUserLabel(user: string): string {
   width: 220px;
   padding: 10px;
   padding-bottom: 20px;
-  background: rgba(0, 20, 0, 0.3);
+  background: var(--color-sidebar-bg);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -168,7 +168,7 @@ function getCompactUserLabel(user: string): string {
 }
 
 .sidebar-header {
-  border-bottom: 1px solid var(--neon-green);
+  border-bottom: 1px solid var(--color-accent);
   padding-bottom: 5px;
   display: flex;
   align-items: center;
@@ -178,7 +178,7 @@ function getCompactUserLabel(user: string): string {
 
 .compact-header-divider {
   height: 27px;
-  border-bottom: 1px solid var(--neon-green);
+  border-bottom: 1px solid var(--color-accent);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -203,7 +203,7 @@ function getCompactUserLabel(user: string): string {
 .away-toggle-btn {
   background: transparent;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   opacity: 1;
   width: 22px;
   height: 22px;
@@ -222,15 +222,15 @@ function getCompactUserLabel(user: string): string {
 }
 
 .away-toggle-btn.active {
-  color: var(--text-main);
+  color: var(--color-text-primary);
 }
 
 .status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #36ff6f;
-  box-shadow: 0 0 8px #36ff6f;
+  background: var(--color-sidebar-status-dot);
+  box-shadow: 0 0 8px var(--color-sidebar-status-dot-glow);
   animation: status-dot-flash 2.6s ease-in-out infinite;
 }
 
@@ -238,11 +238,11 @@ function getCompactUserLabel(user: string): string {
   0%,
   100% {
     opacity: 0.72;
-    box-shadow: 0 0 4px rgba(54, 255, 111, 0.45);
+    box-shadow: 0 0 4px var(--color-sidebar-status-dot-glow-soft);
   }
   50% {
     opacity: 1;
-    box-shadow: 0 0 12px rgba(54, 255, 111, 0.85);
+    box-shadow: 0 0 12px var(--color-sidebar-status-dot-glow-strong);
   }
 }
 
@@ -282,7 +282,7 @@ function getCompactUserLabel(user: string): string {
 
 .user-node::before {
   content: '[O] ';
-  color: var(--neon-green);
+  color: var(--color-accent);
   opacity: 0.5;
   margin-right: 4px;
 }
@@ -363,16 +363,16 @@ function getCompactUserLabel(user: string): string {
 }
 
 .dm-btn-active {
-  color: #6dff8f;
-  border-color: rgba(109, 255, 143, 0.55);
-  box-shadow: 0 0 10px rgba(109, 255, 143, 0.45);
+  color: var(--color-sidebar-dm-active);
+  border-color: var(--color-sidebar-dm-active-border);
+  box-shadow: 0 0 10px var(--color-sidebar-dm-active-glow);
   opacity: 1;
 }
 
 .dm-btn-pending {
-  color: #ffd84a;
-  border-color: rgba(255, 216, 74, 0.55);
-  box-shadow: 0 0 10px rgba(255, 216, 74, 0.4);
+  color: var(--color-sidebar-dm-pending);
+  border-color: var(--color-sidebar-dm-pending-border);
+  box-shadow: 0 0 10px var(--color-sidebar-dm-pending-glow);
   opacity: 1;
   animation: dm-pending-pulse 1s ease-in-out infinite;
 }
@@ -380,19 +380,19 @@ function getCompactUserLabel(user: string): string {
 @keyframes dm-pending-pulse {
   0%,
   100% {
-    box-shadow: 0 0 8px rgba(255, 216, 74, 0.35);
+    box-shadow: 0 0 8px var(--color-sidebar-dm-pending-glow);
     opacity: 0.85;
   }
   50% {
-    box-shadow: 0 0 14px rgba(255, 216, 74, 0.65);
+    box-shadow: 0 0 14px var(--color-sidebar-dm-pending-glow-strong);
     opacity: 1;
   }
 }
 
 .dm-btn-denied {
-  color: var(--alert-red);
-  border-color: rgba(255, 57, 57, 0.65);
-  box-shadow: 0 0 10px rgba(255, 57, 57, 0.42);
+  color: var(--color-danger);
+  border-color: var(--color-sidebar-dm-denied-border);
+  box-shadow: 0 0 10px var(--color-sidebar-dm-denied-glow);
   opacity: 1;
   animation: dm-denied-flash 0.22s step-end 6;
 }
@@ -440,8 +440,8 @@ function getCompactUserLabel(user: string): string {
 #disconnect-btn {
   margin-top: 10px;
   background: transparent;
-  border: 1px solid var(--alert-red);
-  color: var(--alert-red);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
   padding: 10px;
   width: 100%;
   font-size: 12px;
@@ -459,15 +459,15 @@ function getCompactUserLabel(user: string): string {
 }
 
 #disconnect-btn:hover {
-  background: var(--alert-red);
-  color: #000;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 #show-dm-btn {
   margin-top: 10px;
   background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   padding: 10px;
   width: 100%;
   font-size: 12px;
@@ -484,8 +484,8 @@ function getCompactUserLabel(user: string): string {
 }
 
 #show-dm-btn:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 </style>

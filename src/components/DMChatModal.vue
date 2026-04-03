@@ -867,7 +867,7 @@ watch(
     // Add text container for animation (no sender label)
     const textContainer = document.createElement('span');
     textContainer.className = 'animation-text';
-    textContainer.style.color = 'var(--neon-green, #39ff14)';
+    textContainer.style.color = 'var(--color-accent, #39ff14)';
     textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
     textContainer.style.fontWeight = 'bold';
     textContainer.style.textAlign = 'center';
@@ -937,7 +937,7 @@ watch(
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.8);
+  background: var(--color-chat-surface-strong);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -957,8 +957,8 @@ watch(
 }
 
 .modal-box {
-  background: #000;
-  border: 2px solid var(--neon-green);
+  background: var(--color-chat-bg);
+  border: 2px solid var(--color-accent);
   width: 100%;
   height: calc(100% - 24px);
   min-height: 0;
@@ -990,8 +990,8 @@ watch(
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  border-bottom: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border-bottom: 1px solid var(--color-accent);
+  color: var(--color-accent);
   flex-shrink: 0;
 }
 
@@ -1009,7 +1009,7 @@ watch(
 }
 
 .notice-item {
-  border: 1px solid var(--alert-red);
+  border: 1px solid var(--color-danger);
   background: rgba(255, 0, 0, 0.08);
   color: #ff8d8d;
   padding: 8px 10px;
@@ -1024,9 +1024,9 @@ watch(
 
 .notice-item.audio-call,
 .notice-item.video-call {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
   background: rgba(57, 255, 20, 0.08);
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .notice-item.file-offer {
@@ -1036,9 +1036,9 @@ watch(
 }
 
 .notice-item.info {
-  border-color: var(--dim-green);
+  border-color: var(--color-accent-muted);
   background: rgba(57, 255, 20, 0.08);
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .notice-buttons {
@@ -1049,46 +1049,46 @@ watch(
 
 .notice-item.audio-call .btn-accept,
 .notice-item.video-call .btn-accept {
-  border-color: var(--neon-green);
-  color: var(--neon-green);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .notice-item.audio-call .btn-accept:hover,
 .notice-item.video-call .btn-accept:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .notice-item.audio-call .btn-reject,
 .notice-item.video-call .btn-reject {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .notice-item.audio-call .btn-reject:hover,
 .notice-item.video-call .btn-reject:hover {
-  background: var(--alert-red);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 .notice-item.file-offer .btn-accept {
-  border-color: var(--neon-green);
-  color: var(--neon-green);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .notice-item.file-offer .btn-accept:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .notice-item.file-offer .btn-reject {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .notice-item.file-offer .btn-reject:hover {
-  background: var(--alert-red);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 .outgoing-item {
@@ -1099,9 +1099,9 @@ watch(
 }
 
 .btn-cancel-request {
-  border: 1px solid var(--alert-red);
+  border: 1px solid var(--color-danger);
   background: transparent;
-  color: var(--alert-red);
+  color: var(--color-danger);
   padding: 4px 8px;
   font-size: 10px;
   font-weight: bold;
@@ -1111,14 +1111,14 @@ watch(
 }
 
 .btn-cancel-request:hover {
-  background: var(--alert-red);
-  color: #000;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 .close-btn {
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 18px;
   cursor: pointer;
   opacity: 0.7;
@@ -1133,8 +1133,8 @@ watch(
 /* Tab Bar */
 .tab-bar {
   display: flex;
-  border-bottom: 1px solid var(--dim-green);
-  background: rgba(0, 20, 0, 0.5);
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface);
   overflow-x: auto;
   flex-shrink: 0;
 }
@@ -1148,8 +1148,8 @@ watch(
   flex: 1;
   min-width: 120px;
   padding: 10px 15px;
-  border-right: 1px solid var(--dim-green);
-  color: var(--text-dim);
+  border-right: 1px solid var(--color-accent-muted);
+  color: var(--color-chat-text-muted);
   cursor: pointer;
   display: flex;
   justify-content: space-between;
@@ -1174,8 +1174,8 @@ watch(
 
 .tab.active {
   background: rgba(57, 255, 20, 0.1);
-  color: var(--neon-green);
-  border-bottom: 2px solid var(--neon-green);
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
 }
 
 #dm-modal.presentation-window .tab.active {
@@ -1207,24 +1207,24 @@ watch(
 
 .phone-btn,
 .camera-btn {
-  color: var(--text-white);
+  color: var(--color-chat-text);
 }
 
 .end-call-btn {
-  color: var(--alert-red);
+  color: var(--color-danger);
 }
 
 .call-duration-tab {
   font-size: 10px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-family: 'Courier New', monospace;
-  text-shadow: 0 0 4px var(--neon-green);
+  text-shadow: 0 0 4px var(--color-accent);
   margin: 0 4px;
 }
 
 .badge {
-  background: var(--alert-red);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
   border-radius: 3px;
   padding: 2px 6px;
   font-size: 10px;
@@ -1269,24 +1269,24 @@ watch(
 
 .empty-state {
   text-align: center;
-  color: var(--system-dim);
+  color: var(--color-text-secondary);
   padding-top: 40px;
 }
 
 .request-header {
   font-size: 11px;
   font-weight: bold;
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
   padding: 12px 0 8px 0;
-  border-bottom: 1px solid var(--dim-green);
+  border-bottom: 1px solid var(--color-accent-muted);
   margin-bottom: 12px;
-  text-shadow: 0 0 5px var(--neon-green);
+  text-shadow: 0 0 5px var(--color-accent);
 }
 
 .request-item {
   background: rgba(57, 255, 20, 0.05);
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   padding: 15px;
   margin-bottom: 12px;
   border-radius: 2px;
@@ -1309,9 +1309,9 @@ watch(
 .btn-accept,
 .btn-reject {
   padding: 6px 12px;
-  border: 1px solid var(--neon-green);
+  border: 1px solid var(--color-accent);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   cursor: pointer;
   font-size: 11px;
   text-transform: uppercase;
@@ -1321,18 +1321,18 @@ watch(
 }
 
 .btn-accept:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .btn-reject {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .btn-reject:hover {
-  background: var(--alert-red);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
 }
 
 /* Chat Section */
@@ -1369,7 +1369,7 @@ watch(
 
 .chat-header {
   padding: 12px 20px;
-  border-bottom: 1px solid var(--dim-green);
+  border-bottom: 1px solid var(--color-accent-muted);
   font-size: 13px;
   text-transform: uppercase;
   font-weight: bold;
@@ -1381,20 +1381,20 @@ watch(
 
 .status-indicator {
   font-size: 10px;
-  color: var(--neon-green);
+  color: var(--color-accent);
   animation: pulse 1.5s infinite;
 }
 
 .status-indicator.disconnected {
-  color: var(--alert-red);
+  color: var(--color-danger);
   animation: none;
 }
 
 .audio-indicator {
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 12px;
   margin-left: 4px;
-  text-shadow: 0 0 8px var(--neon-green);
+  text-shadow: 0 0 8px var(--color-accent);
 }
 
 /* Controls Bar */
@@ -1402,17 +1402,17 @@ watch(
   display: flex;
   gap: 8px;
   padding: 10px 15px;
-  border-top: 1px solid var(--dim-green);
-  border-bottom: 1px solid var(--dim-green);
-  background: rgba(0, 20, 0, 0.3);
+  border-top: 1px solid var(--color-accent-muted);
+  border-bottom: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface);
   flex-shrink: 0;
 }
 
 .control-btn {
   padding: 6px 12px;
-  border: 1px solid var(--neon-green);
+  border: 1px solid var(--color-accent);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   cursor: pointer;
   font-size: 11px;
   text-transform: uppercase;
@@ -1422,9 +1422,9 @@ watch(
 }
 
 .control-btn:hover {
-  background: var(--neon-green);
-  color: #000;
-  box-shadow: 0 0 10px var(--neon-green);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 
 .mic-btn {
@@ -1433,9 +1433,9 @@ watch(
 }
 
 .mic-btn.active {
-  background: var(--neon-green);
-  color: #000;
-  box-shadow: 0 0 10px var(--neon-green);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 
 .call-duration {
@@ -1444,8 +1444,8 @@ watch(
   align-items: center;
   font-size: 12px;
   font-weight: bold;
-  color: var(--neon-green);
-  text-shadow: 0 0 8px var(--neon-green);
+  color: var(--color-accent);
+  text-shadow: 0 0 8px var(--color-accent);
   font-family: 'Courier New', monospace;
   letter-spacing: 1px;
 }
@@ -1474,7 +1474,7 @@ watch(
   align-items: center;
   justify-content: center;
   background: rgba(57, 255, 20, 0.15);
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 16px;
   font-weight: bold;
   text-transform: uppercase;
@@ -1484,7 +1484,7 @@ watch(
 .msg {
   margin-bottom: 8px;
   line-height: 1.4;
-  border-left: 2px solid var(--dim-green);
+  border-left: 2px solid var(--color-accent-muted);
   padding-left: 10px;
 }
 
@@ -1494,16 +1494,16 @@ watch(
 }
 
 .text {
-  color: var(--text-white);
+  color: var(--color-chat-text);
   word-wrap: break-word;
   white-space: pre-wrap;
 }
 
 .input-bar {
   display: flex;
-  border-top: 1px solid var(--dim-green);
+  border-top: 1px solid var(--color-accent-muted);
   height: 50px;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-chat-surface);
   flex-shrink: 0;
   align-items: center;
   position: relative;
@@ -1522,7 +1522,7 @@ watch(
   position: absolute;
   left: 15px;
   font-size: 11px;
-  color: var(--dim-green);
+  color: var(--color-accent-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.7;
@@ -1532,7 +1532,7 @@ watch(
 .input-bar input {
   background: transparent;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   padding: 0 15px;
   flex: 1;
   font-family: inherit;
@@ -1541,7 +1541,7 @@ watch(
 }
 
 .input-bar input::placeholder {
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
 }
 
 .input-bar input:disabled {
@@ -1551,8 +1551,8 @@ watch(
 
 .cancel-btn {
   background: transparent;
-  color: var(--alert-red);
-  border: 1px solid var(--alert-red);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
   padding: 0 12px;
   cursor: pointer;
   font-family: inherit;
@@ -1565,14 +1565,14 @@ watch(
 }
 
 .cancel-btn:hover {
-  background: var(--alert-red);
-  color: #000;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
   box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
 }
 
 .send-btn {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   border: none;
   padding: 0 20px;
   cursor: pointer;
@@ -1585,7 +1585,7 @@ watch(
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #fff;
+  filter: brightness(1.08);
   box-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
 }
 
@@ -1646,7 +1646,7 @@ watch(
 .files-section {
   padding: 12px 15px;
   background: rgba(57, 255, 20, 0.02);
-  border-top: 1px solid var(--dim-green);
+  border-top: 1px solid var(--color-accent-muted);
   max-height: 200px;
   overflow-y: auto;
 }
@@ -1660,10 +1660,10 @@ watch(
 .files-header {
   font-size: 11px;
   font-weight: bold;
-  color: var(--neon-green);
+  color: var(--color-accent);
   text-transform: uppercase;
   margin-bottom: 10px;
-  text-shadow: 0 0 5px var(--neon-green);
+  text-shadow: 0 0 5px var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1696,8 +1696,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--dim-green);
+  background: var(--color-chat-surface);
+  border: 1px solid var(--color-accent-muted);
   padding: 8px 10px;
   border-radius: 2px;
   gap: 8px;
@@ -1711,14 +1711,14 @@ watch(
 .file-name {
   font-size: 12px;
   font-weight: bold;
-  color: var(--text-white);
+  color: var(--color-chat-text);
   word-break: break-word;
   margin-bottom: 2px;
 }
 
 .file-size {
   font-size: 10px;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
 }
 
 .file-progress {
@@ -1732,21 +1732,21 @@ watch(
   flex: 1;
   height: 4px;
   background: rgba(57, 255, 20, 0.1);
-  border: 1px solid var(--dim-green);
+  border: 1px solid var(--color-accent-muted);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--neon-green);
+  background: var(--color-accent);
   transition: width 0.3s;
-  box-shadow: 0 0 10px var(--neon-green);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 
 .progress-text {
   font-size: 9px;
-  color: var(--system-dim);
+  color: var(--color-chat-text-muted);
   min-width: 25px;
   text-align: right;
 }
@@ -1759,25 +1759,25 @@ watch(
 }
 
 .file-status.pending {
-  color: #ffce6b;
-  text-shadow: 0 0 5px #ffce6b;
+  color: var(--color-chat-warning);
+  text-shadow: 0 0 5px var(--color-chat-warning);
 }
 
 .file-status.awaiting-completion {
-  color: #ffce6b;
-  text-shadow: 0 0 6px #ffce6b;
+  color: var(--color-chat-warning);
+  text-shadow: 0 0 6px var(--color-chat-warning);
   animation: sender-awaiting-flash 0.9s ease-in-out infinite;
 }
 
 .file-status.completed {
-  color: var(--neon-green);
-  text-shadow: 0 0 5px var(--neon-green);
+  color: var(--color-accent);
+  text-shadow: 0 0 5px var(--color-accent);
 }
 
 .file-status.rejected,
 .file-status.failed {
-  color: var(--alert-red);
-  text-shadow: 0 0 5px var(--alert-red);
+  color: var(--color-danger);
+  text-shadow: 0 0 5px var(--color-danger);
 }
 
 .file-actions {
@@ -1791,8 +1791,8 @@ watch(
 .file-action-btn {
   padding: 4px 8px;
   background: transparent;
-  border: 1px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
   font-size: 10px;
   font-weight: bold;
   text-transform: uppercase;
@@ -1804,24 +1804,24 @@ watch(
 }
 
 .file-action-btn:hover {
-  background: var(--neon-green);
-  color: var(--dark-bg);
-  box-shadow: 0 0 10px var(--neon-green);
+  background: var(--color-accent);
+  color: var(--color-bg-base);
+  box-shadow: 0 0 10px var(--color-accent);
 }
 
 .file-action-btn.reject {
-  border-color: var(--alert-red);
-  color: var(--alert-red);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .file-action-btn.reject:hover {
-  background: var(--alert-red);
-  color: #fff;
+  background: var(--color-danger);
+  color: var(--color-on-danger);
   box-shadow: 0 0 10px rgba(255, 0, 0, 0.4);
 }
 
 .file-action-btn.accept {
-  border-color: var(--neon-green);
+  border-color: var(--color-accent);
 }
 
 @keyframes sender-awaiting-flash {

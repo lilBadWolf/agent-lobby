@@ -1002,8 +1002,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .agentamp-dock {
-  border-top: 1px solid var(--neon-green);
-  background: linear-gradient(180deg, rgba(0, 8, 0, 0.9), rgba(0, 0, 0, 0.95));
+  border-top: 1px solid var(--color-agentamp-border);
+  background: var(--color-agentamp-bg);
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
@@ -1022,8 +1022,8 @@ onBeforeUnmount(() => {
 
 .agentamp-btn {
   background: transparent;
-  border: 1px solid rgba(57, 255, 20, 0.65);
-  color: var(--neon-green);
+  border: 1px solid var(--color-agentamp-button-border);
+  color: var(--color-accent);
   font-family: inherit;
   text-transform: uppercase;
   font-size: 11px;
@@ -1037,9 +1037,9 @@ onBeforeUnmount(() => {
   height: 24px;
   min-width: 24px;
   padding: 0;
-  border: 1px solid var(--neon-green);
+  border: 1px solid var(--color-accent);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-family: inherit;
   font-size: 16px;
   line-height: 1;
@@ -1047,23 +1047,22 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-icon-btn:hover {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .agentamp-btn:hover:not(:disabled) {
-  background: var(--neon-green);
-  color: #000;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .transport-btn {
   min-width: 34px;
   height: 24px;
   padding: 0 6px;
-  border-color: rgba(150, 255, 140, 0.85);
-  background: linear-gradient(180deg, rgba(90, 120, 90, 0.55), rgba(25, 35, 25, 0.75));
-  box-shadow: inset 0 1px 0 rgba(220, 255, 220, 0.22), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(10, 22, 10, 0.6);
-  color: #d7ffd3;
+  border-color: var(--color-agentamp-button-border);
+  background: var(--color-agentamp-button-bg);
+  color: var(--color-agentamp-button-text);
   text-transform: none;
   letter-spacing: 0;
   font-size: 10px;
@@ -1071,25 +1070,24 @@ onBeforeUnmount(() => {
 }
 
 .transport-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(125, 165, 125, 0.7), rgba(38, 56, 38, 0.85));
-  color: #ecffe8;
+  background: var(--color-agentamp-button-hover-bg);
+  color: var(--color-agentamp-button-hover-text);
 }
 
 .transport-btn:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(220, 255, 220, 0.12);
+  box-shadow: var(--color-agentamp-button-active-shadow);
 }
 
 .loop-mode-none {
-  border-color: rgba(160, 170, 160, 0.55);
-  background: linear-gradient(180deg, rgba(70, 74, 70, 0.5), rgba(28, 30, 28, 0.72));
-  color: rgba(205, 212, 205, 0.9);
-  box-shadow: inset 0 1px 0 rgba(230, 230, 230, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(12, 12, 12, 0.55);
+  border-color: var(--color-agentamp-button-muted-border);
+  background: var(--color-agentamp-button-muted-bg);
+  color: var(--color-agentamp-button-muted-text);
 }
 
 .loop-mode-none:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(82, 86, 82, 0.62), rgba(34, 36, 34, 0.82));
-  color: rgba(230, 235, 230, 0.95);
+  background: var(--color-agentamp-button-muted-hover-bg);
+  color: var(--color-agentamp-button-muted-hover-text);
 }
 
 .agentamp-btn:disabled {
@@ -1111,8 +1109,8 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-now-playing {
-  border: 1px solid var(--dim-green);
-  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--color-agentamp-panel-border);
+  background: var(--color-agentamp-panel-bg);
   padding: 6px 36px 6px 8px;
   display: block;
   min-height: 30px;
@@ -1176,26 +1174,26 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-label {
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.6px;
 }
 
 .agentamp-label.label-now {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .agentamp-label.label-next {
-  color: #7fd7ff;
+  color: var(--color-agentamp-label-next);
 }
 
 .agentamp-label.label-then {
-  color: #ffd86a;
+  color: var(--color-agentamp-label-then);
 }
 
 .agentamp-track-name {
-  color: var(--text-white);
+  color: var(--color-text-primary);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
@@ -1231,7 +1229,7 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-range {
-  accent-color: var(--neon-green);
+  accent-color: var(--color-accent);
   cursor: pointer;
 }
 
@@ -1239,19 +1237,19 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--dim-green);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--color-agentamp-panel-border);
+  background: var(--color-agentamp-panel-bg);
   transition: max-height 0.25s cubic-bezier(.4,1.6,.6,1), box-shadow 0.18s;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.13);
+  box-shadow: var(--color-agentamp-playlist-shadow);
 }
 
 .agentamp-toggle-playlist-btn {
   min-width: 28px;
   height: 24px;
   padding: 0 6px;
-  border-color: rgba(160, 170, 160, 0.55);
-  background: linear-gradient(180deg, rgba(70, 74, 70, 0.5), rgba(28, 30, 28, 0.72));
-  color: rgba(205, 212, 205, 0.9);
+  border-color: var(--color-agentamp-button-muted-border);
+  background: var(--color-agentamp-button-muted-bg);
+  color: var(--color-agentamp-button-muted-text);
   font-size: 15px;
   font-weight: 700;
   margin: 0 2px;
@@ -1261,17 +1259,17 @@ onBeforeUnmount(() => {
   transition: border-color 0.18s, background 0.18s, color 0.18s;
 }
 .agentamp-toggle-playlist-btn.playlist-visible {
-  border-color: rgba(150, 255, 140, 0.85);
-  background: linear-gradient(180deg, rgba(90, 120, 90, 0.55), rgba(25, 35, 25, 0.75));
-  color: #d7ffd3;
+  border-color: var(--color-agentamp-button-border);
+  background: var(--color-agentamp-button-bg);
+  color: var(--color-agentamp-button-text);
 }
 .agentamp-toggle-playlist-btn.playlist-visible:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(125, 165, 125, 0.7), rgba(38, 56, 38, 0.85));
-  color: #ecffe8;
+  background: var(--color-agentamp-button-hover-bg);
+  color: var(--color-agentamp-button-hover-text);
 }
 .agentamp-toggle-playlist-btn:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(220, 255, 220, 0.12);
+  box-shadow: var(--color-agentamp-button-active-shadow);
 }
 
 
@@ -1295,7 +1293,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  border-bottom: 1px solid rgba(57, 255, 20, 0.08);
+  border-bottom: 1px solid var(--color-agentamp-track-row-border);
   cursor: grab;
 }
 
@@ -1312,18 +1310,18 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-track-row:hover {
-  background: rgba(57, 255, 20, 0.12);
+  background: var(--color-agentamp-track-hover-bg);
 }
 
 .agentamp-track-row.drag-target {
-  outline: 1px dashed rgba(57, 255, 20, 0.75);
+  outline: 1px dashed var(--color-agentamp-drag-outline);
   outline-offset: -1px;
 }
 
 .agentamp-track-btn {
   background: transparent;
   border: none;
-  color: var(--text-white);
+  color: var(--color-text-primary);
   font-family: inherit;
   text-align: left;
   font-size: 11px;
@@ -1336,18 +1334,18 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-track-btn:hover {
-  color: var(--text-white);
+  color: var(--color-text-primary);
 }
 
 .agentamp-track-row.active .agentamp-track-btn {
-  color: var(--neon-green);
-  text-shadow: 0 0 6px rgba(57, 255, 20, 0.45);
+  color: var(--color-accent);
+  text-shadow: 0 0 6px var(--color-agentamp-track-active-glow);
 }
 
 .agentamp-remove-btn {
   background: transparent;
   border: 1px solid transparent;
-  color: var(--alert-red);
+  color: var(--color-danger);
   font-family: inherit;
   font-size: 11px;
   width: 22px;
@@ -1357,12 +1355,12 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-remove-btn:hover {
-  border-color: var(--alert-red);
+  border-color: var(--color-danger);
 }
 
 .agentamp-empty {
   padding: 10px 8px;
-  color: var(--system-dim);
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 

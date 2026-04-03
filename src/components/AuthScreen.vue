@@ -137,10 +137,10 @@ const quit = async () => {
 
 .login-box {
   width: 400px;
-  border: 2px solid var(--neon-green);
+  border: 2px solid var(--color-accent);
   padding: 40px;
-  background: rgba(0, 20, 0, 0.8);
-  box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
+  background: var(--color-auth-surface);
+  box-shadow: 0 0 20px var(--color-auth-surface-glow);
   position: relative;
   text-align: center;
 }
@@ -149,18 +149,18 @@ const quit = async () => {
   position: absolute;
   top: -10px;
   left: 10px;
-  background: #020a02;
+  background: var(--color-auth-badge-bg);
   padding: 0 5px;
   font-size: 10px;
   letter-spacing: 0;
 }
 
 .app-version-label {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .app-version-number {
-  color: var(--text-white);
+  color: var(--color-text-primary);
   font-weight: 700;
 }
 
@@ -169,29 +169,29 @@ const quit = async () => {
   position: absolute;
   bottom: -10px;
   right: 10px;
-  background: #020a02;
+  background: var(--color-auth-badge-bg);
   padding: 0 5px;
   font-size: 10px;
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .login-box.online::after {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .login-box.offline::after {
-  color: var(--alert-red);
+  color: var(--color-danger);
 }
 
 .login-box.checking::after {
-  color: var(--text-white);
+  color: var(--color-text-primary);
 }
 
 .glitch-text {
   font-size: 24px;
   letter-spacing: 3px;
   margin-bottom: 30px;
-  text-shadow: 2px 0 var(--alert-red), -2px 0 blue;
+  text-shadow: 2px 0 var(--color-auth-glitch-primary), -2px 0 var(--color-auth-glitch-secondary);
   animation: glitch 1s infinite alternate-reverse;
 }
 
@@ -200,8 +200,8 @@ const quit = async () => {
   margin-bottom: 25px;
   display: flex;
   align-items: center;
-  border-bottom: 2px solid var(--neon-green);
-  background: var(--dim-green);
+  border-bottom: 2px solid var(--color-accent);
+  background: var(--color-accent-muted);
 }
 
 .prompt-char {
@@ -214,7 +214,7 @@ const quit = async () => {
   width: 100%;
   background: transparent;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   padding: 15px 10px;
   font-family: inherit;
   font-size: 18px;
@@ -226,8 +226,8 @@ const quit = async () => {
   width: 100%;
   padding: 15px;
   background: transparent;
-  border: 2px solid var(--neon-green);
-  color: var(--neon-green);
+  border: 2px solid var(--color-accent);
+  color: var(--color-accent);
   font-family: inherit;
   font-weight: bold;
   font-size: 16px;
@@ -238,9 +238,9 @@ const quit = async () => {
 }
 
 #login-btn:hover {
-  background: var(--neon-green);
-  color: #000;
-  box-shadow: 0 0 15px var(--neon-green);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 15px var(--color-accent);
 }
 
 #login-btn:disabled {
@@ -254,8 +254,8 @@ const quit = async () => {
   padding: 15px;
   margin-top: 10px;
   background: transparent;
-  border: 2px solid var(--alert-red);
-  color: var(--alert-red);
+  border: 2px solid var(--color-danger);
+  color: var(--color-danger);
   font-family: inherit;
   font-weight: bold;
   font-size: 16px;
@@ -266,13 +266,13 @@ const quit = async () => {
 }
 
 #quit-btn:hover {
-  background: var(--alert-red);
-  color: #000;
-  box-shadow: 0 0 15px var(--alert-red);
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  box-shadow: 0 0 15px var(--color-danger);
 }
 
 #auth-err {
-  color: var(--alert-red);
+  color: var(--color-danger);
   font-size: 10px;
   margin-top: -15px;
   margin-bottom: 10px;
@@ -280,7 +280,7 @@ const quit = async () => {
 }
 
 #online-count {
-  color: var(--text-white);
+  color: var(--color-text-primary);
   font-size: 12px;
   font-weight: 800;
   margin-top: -8px;
@@ -289,29 +289,29 @@ const quit = async () => {
 }
 
 #online-count.pending {
-  color: var(--neon-green);
+  color: var(--color-accent);
   opacity: 0.9;
 }
 
 #online-count.cooldown {
-  color: var(--alert-red);
+  color: var(--color-danger);
   opacity: 0.92;
 }
 
 #online-count.ready {
-  color: var(--text-white);
+  color: var(--color-text-primary);
 }
 
 #online-count.error {
-  color: var(--alert-red);
+  color: var(--color-danger);
 }
 
 @keyframes glitch {
   0% {
-    text-shadow: 1px 0 0 red, -1px 0 0 blue;
+    text-shadow: 1px 0 0 var(--color-auth-glitch-primary), -1px 0 0 var(--color-auth-glitch-secondary);
   }
   100% {
-    text-shadow: -1px 0 0 red, 1px 0 0 blue;
+    text-shadow: -1px 0 0 var(--color-auth-glitch-primary), 1px 0 0 var(--color-auth-glitch-secondary);
   }
 }
 
@@ -321,7 +321,7 @@ const quit = async () => {
   right: 8px;
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 8px;
   opacity: 0.3;
   transition: all 0.2s;
@@ -336,7 +336,7 @@ const quit = async () => {
 
 .config-btn:hover {
   opacity: 0.8;
-  text-shadow: 0 0 8px rgba(57, 255, 20, 0.5);
+  text-shadow: 0 0 8px var(--color-auth-config-glow);
 }
 
 </style>

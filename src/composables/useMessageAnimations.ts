@@ -157,7 +157,7 @@ function ensureAnimationStyles() {
     .matrix-char {
       display: inline-block;
       animation: matrix-fall 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-      color: var(--neon-green, #39ff14);
+      color: var(--color-accent, #39ff14);
       font-weight: bold;
       letter-spacing: 2px;
     }

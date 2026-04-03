@@ -1,10 +1,46 @@
 :root {
-  --neon-green: #39ff14;
-  --dark-bg: #0a0f0a;
-  --dim-green: rgba(57, 255, 20, 0.1);
-  --alert-red: #ff3939;
-  --text-white: #e0e0e0;
-  --system-dim: rgba(57, 255, 20, 0.6);
+  --color-accent: #39ff14;
+  --color-bg-base: #0a0f0a;
+  --color-accent-muted: rgba(57, 255, 20, 0.1);
+  --color-danger: #ff3939;
+  --color-on-accent: #000000;
+  --color-on-danger: #ffffff;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: rgba(57, 255, 20, 0.6);
+  --color-chat-bg: #050905;
+  --color-chat-surface: rgba(0, 0, 0, 0.45);
+  --color-chat-surface-strong: rgba(0, 0, 0, 0.78);
+  --color-chat-overlay: rgba(0, 0, 0, 0.7);
+  --color-chat-text: var(--color-text-primary);
+  --color-chat-text-muted: var(--color-text-secondary);
+  --color-chat-border: var(--color-accent-muted);
+  --color-chat-link: #8fd3ff;
+  --color-chat-link-hover: #c9ebff;
+  --color-chat-warning: #ffd36f;
+  --color-chat-warning-contrast: #121212;
+  --color-agentamp-bg: linear-gradient(180deg, rgba(0, 8, 0, 0.9), rgba(0, 0, 0, 0.95));
+  --color-agentamp-border: rgba(57, 255, 20, 0.45);
+  --color-agentamp-panel-bg: rgba(0, 0, 0, 0.45);
+  --color-agentamp-panel-border: rgba(57, 255, 20, 0.14);
+  --color-agentamp-button-border: rgba(150, 255, 140, 0.85);
+  --color-agentamp-button-bg: linear-gradient(180deg, rgba(90, 120, 90, 0.55), rgba(25, 35, 25, 0.75));
+  --color-agentamp-button-text: #d7ffd3;
+  --color-agentamp-button-hover-bg: linear-gradient(180deg, rgba(125, 165, 125, 0.7), rgba(38, 56, 38, 0.85));
+  --color-agentamp-button-hover-text: #ecffe8;
+  --color-agentamp-button-muted-border: rgba(160, 170, 160, 0.55);
+  --color-agentamp-button-muted-bg: linear-gradient(180deg, rgba(70, 74, 70, 0.5), rgba(28, 30, 28, 0.72));
+  --color-agentamp-button-muted-text: rgba(205, 212, 205, 0.9);
+  --color-agentamp-button-muted-hover-bg: linear-gradient(180deg, rgba(82, 86, 82, 0.62), rgba(34, 36, 34, 0.82));
+  --color-agentamp-button-muted-hover-text: rgba(230, 235, 230, 0.95);
+  --color-agentamp-button-active-shadow: inset 0 2px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(220, 255, 220, 0.12);
+  --color-agentamp-playlist-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.13);
+  --color-agentamp-track-row-border: rgba(57, 255, 20, 0.08);
+  --color-agentamp-track-hover-bg: rgba(57, 255, 20, 0.12);
+  --color-agentamp-track-active-glow: rgba(57, 255, 20, 0.45);
+  --color-agentamp-drag-outline: rgba(57, 255, 20, 0.75);
+  --color-agentamp-label-next: #7fd7ff;
+  --color-agentamp-label-then: #ffd86a;
+  --theme-user-colors: #39ff14, #00ff00, #00ffaa;
   --top-control-offset: 4px;
 }
 
@@ -20,8 +56,8 @@ html {
   min-height: 100vh;
   height: 100vh;
   height: 100dvh;
-  background: var(--dark-bg);
-  color: var(--neon-green);
+  background: var(--color-bg-base);
+  color: var(--color-accent);
   font-family: 'Courier New', Courier, monospace;
   overflow: hidden;
   text-transform: uppercase;
@@ -53,7 +89,7 @@ body > #app {
   width: 100%;
   min-height: 0;
   height: calc(100% - 16px);
-  background: var(--dark-bg);
+  background: var(--color-bg-base);
   transform-origin: center;
   overflow: hidden;
 }
@@ -86,21 +122,21 @@ body > #app {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--dark-bg);
+  background: var(--color-bg-base);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--neon-green);
+  background: var(--color-accent);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #fff;
+  background: var(--color-text-primary);
 }
 
 /* Firefox scrollbar */
 * {
-  scrollbar-color: var(--neon-green) var(--dark-bg);
+  scrollbar-color: var(--color-accent) var(--color-bg-base);
   scrollbar-width: thin;
 }
 
@@ -132,7 +168,7 @@ body > #app {
   right: 6px;
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 24px;
   cursor: pointer;
   z-index: 300;
@@ -146,7 +182,7 @@ body > #app {
   right: 38px;
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 18px;
   cursor: pointer;
   z-index: 300;

@@ -4,7 +4,7 @@ import { useTheme } from '../useTheme';
 describe('useTheme', () => {
   beforeEach(() => {
     localStorage.clear();
-    document.documentElement.style.removeProperty('--neon-green');
+    document.documentElement.removeAttribute('data-theme');
   });
 
   it('prefers theme from agent_settings over legacy key', () => {
@@ -34,7 +34,8 @@ describe('useTheme', () => {
     expect(currentTheme.value).toBe('light-blue');
     expect(localStorage.getItem('agent_theme')).toBe('light-blue');
     expect(localStorage.getItem('agent_settings')).toContain('"theme":"light-blue"');
-    expect(document.documentElement.style.getPropertyValue('--neon-green')).toBe('#0066cc');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light-blue');
+    expect(getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()).toBe('#0066cc');
   });
 
   it('returns deterministic user colors for same input', () => {
@@ -52,6 +53,7 @@ describe('useTheme', () => {
 
     useTheme();
 
-    expect(document.documentElement.style.getPropertyValue('--neon-green')).toBe('#0066cc');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light-blue');
+    expect(getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()).toBe('#0066cc');
   });
 });

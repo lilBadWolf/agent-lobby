@@ -134,7 +134,7 @@
   right: 60px;
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 14px;
   cursor: pointer;
   opacity: 0.7;
@@ -154,9 +154,9 @@
   position: absolute;
   right: 90px;
   height: 16px;
-  border: 1px solid var(--neon-green);
+  border: 1px solid var(--color-accent);
   background: transparent;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 10px;
   line-height: 1;
   padding: 0 6px;
@@ -175,7 +175,7 @@
   right: 35px;
   background: none;
   border: none;
-  color: var(--neon-green);
+  color: var(--color-accent);
   font-size: 14px;
   cursor: pointer;
   opacity: 0.7;
@@ -217,7 +217,7 @@
   right: 10px;
   background: none;
   border: none;
-  color: var(--alert-red);
+  color: var(--color-danger);
   font-size: 14px;
   cursor: pointer;
   opacity: 0.7;

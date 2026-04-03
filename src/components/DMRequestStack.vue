@@ -80,7 +80,7 @@ const hasEntries = computed(() =>
 .request-body {
   font-size: 11px;
   line-height: 1.25;
-  color: var(--text-white);
+  color: var(--color-text-primary);
 }
 
 .request-inline-row {
@@ -125,7 +125,7 @@ const hasEntries = computed(() =>
 }
 
 .accept-btn {
-  color: var(--neon-green);
+  color: var(--color-accent);
 }
 
 .accept-btn:hover {
@@ -133,7 +133,7 @@ const hasEntries = computed(() =>
 }
 
 .reject-btn {
-  color: var(--alert-red);
+  color: var(--color-danger);
 }
 
 .reject-btn:hover {

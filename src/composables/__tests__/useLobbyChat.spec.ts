@@ -155,9 +155,11 @@ describe('useLobbyChat', () => {
 
     chat.config.value.audioEnabled = true;
     chat.config.value.volume = 0.7;
+    chat.config.value.customSlashCommands = [{ command: '/sig', text: 'copy/paste me' }];
     chat.updateSettings();
 
     expect(localStorage.getItem('agent_settings')).toContain('"volume":0.7');
+    expect(localStorage.getItem('agent_settings')).toContain('"customSlashCommands"');
 
     chat.tryPlayAmbience();
     expect(MockAudio.instances.some((instance) => instance.play.mock.calls.length > 0)).toBe(true);
@@ -265,6 +267,10 @@ describe('useLobbyChat', () => {
       audioInputDeviceId: 'mic-x',
       audioOutputDeviceId: 'spk-y',
       videoInputDeviceId: 'cam-z',
+      customSlashCommands: [
+        { command: '/status', text: 'all green' },
+        { command: '/away', text: 'blocked builtin' },
+      ],
     }));
 
     const chat = useLobbyChat();
@@ -274,8 +280,33 @@ describe('useLobbyChat', () => {
     expect(chat.config.value.theme).toBe('light-blue');
     expect(chat.config.value.dmEnabled).toBe(false);
     expect(chat.config.value.dmChatEffect).toBe('glitch');
+    expect(chat.config.value.customSlashCommands).toEqual([{ command: '/status', text: 'all green' }]);
     expect(chat.config.value.autoAwayMinutes).toBe(10);
     expect(chat.config.value.autoUpdatePulseMinutes).toBe(30);
+  });
+
+  it('expands custom slash aliases and keeps built-ins guarded', () => {
+    const chat = useLobbyChat();
+
+    chat.boot('INDIA', 'intel');
+    const activeClient = clients[1];
+    activeClient.emit('connect');
+
+    chat.config.value.customSlashCommands = [
+      { command: '/sig', text: 'status green' },
+      { command: '/away', text: 'must never override away' },
+    ];
+
+    chat.sendMessage('/sig');
+
+    const aliasCall = activeClient.publish.mock.calls.find((c: any[]) => c[0] === 'intel_lobby/chat_global');
+    expect(aliasCall?.[1]).toContain('status green');
+
+    activeClient.publish.mockClear();
+    chat.sendMessage('/away');
+    expect(chat.isAway.value).toBe(true);
+    const chatCallsAfterAway = activeClient.publish.mock.calls.filter((c: any[]) => c[0] === 'intel_lobby/chat_global');
+    expect(chatCallsAfterAway.length).toBe(0);
   });
 
   it('starts auto-away on blur and cancels it on focus', () => {

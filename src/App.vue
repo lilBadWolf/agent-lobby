@@ -44,6 +44,7 @@
           config.audioInputDeviceId = newConfig.audioInputDeviceId;
           config.audioOutputDeviceId = newConfig.audioOutputDeviceId;
           config.videoInputDeviceId = newConfig.videoInputDeviceId;
+          config.customSlashCommands = newConfig.customSlashCommands;
           if (config.soundpack !== newConfig.soundpack) {
             setSoundpack(newConfig.soundpack);
           }
@@ -291,6 +292,18 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
 }
 
+function loadSidebarVisibilityPreference(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  try {
+    return window.localStorage.getItem('agent_sidebar_visible') !== '0';
+  } catch {
+    return true;
+  }
+}
+
 const {
   username,
   messages,
@@ -528,7 +541,7 @@ const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
-const isSidebarVisible = ref(true);
+const isSidebarVisible = ref(loadSidebarVisibilityPreference());
 const isMaximized = ref(false);
 const hasTauriWindow = isTauriRuntime();
 
@@ -598,6 +611,14 @@ watch(
 watch(pageTitle, (newTitle) => {
   document.title = newTitle ?? "LOBBY // AUTH";
 });
+
+watch(isSidebarVisible, (visible) => {
+  try {
+    window.localStorage.setItem('agent_sidebar_visible', visible ? '1' : '0');
+  } catch {
+    // Ignore storage errors in restricted environments.
+  }
+}, { immediate: true });
 
 watch(
   () => config.value.autoUpdatePulseMinutes ?? 30,

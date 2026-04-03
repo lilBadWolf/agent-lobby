@@ -1,6 +1,18 @@
 import { ref, reactive, computed, watch } from 'vue';
-import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig } from '../types/chat';
+import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
+
+const RESERVED_SLASH_COMMANDS = new Set([
+  '/away',
+  '/back',
+  '/settings',
+  '/quit',
+  '/dm',
+  '/join',
+  '/lobby',
+]);
+
+const AGENT_AMP_STORAGE_KEY = 'agent_agentamp_enabled';
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
@@ -14,7 +26,8 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmChatEffect: 'matrix',
   audioInputDeviceId: '',
   audioOutputDeviceId: '',
-  videoInputDeviceId: ''
+  videoInputDeviceId: '',
+  customSlashCommands: [],
 };
 
 let activeAutoAwayListenerCleanup: (() => void) | null = null;
@@ -25,6 +38,16 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     ...(savedConfig || {}),
   };
 
+  normalized.customSlashCommands = sanitizeCustomSlashCommands((savedConfig as Partial<AudioConfig> | null)?.customSlashCommands);
+
+  if (typeof normalized.agentAmpEnabled !== 'boolean') {
+    try {
+      normalized.agentAmpEnabled = localStorage.getItem(AGENT_AMP_STORAGE_KEY) === '1';
+    } catch {
+      normalized.agentAmpEnabled = false;
+    }
+  }
+
   if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
     normalized.autoAwayMinutes = 10;
   }
@@ -34,6 +57,43 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   }
 
   return normalized;
+}
+
+function normalizeSlashAliasCommand(value: string): string {
+  const trimmed = (value || '').trim().toLowerCase();
+  if (!trimmed) {
+    return '';
+  }
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return /^\/[a-z0-9_-]+$/.test(withSlash) ? withSlash : '';
+}
+
+function sanitizeCustomSlashCommands(value: unknown): SlashCommandAlias[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result: SlashCommandAlias[] = [];
+  const seen = new Set<string>();
+
+  for (const rawAlias of value) {
+    if (!rawAlias || typeof rawAlias !== 'object') {
+      continue;
+    }
+
+    const command = normalizeSlashAliasCommand(String((rawAlias as SlashCommandAlias).command || ''));
+    const text = String((rawAlias as SlashCommandAlias).text || '').trim();
+
+    if (!command || !text || RESERVED_SLASH_COMMANDS.has(command) || seen.has(command)) {
+      continue;
+    }
+
+    seen.add(command);
+    result.push({ command, text });
+  }
+
+  return result;
 }
 
 function getPublicAssetUrl(path: string): string {
@@ -588,7 +648,9 @@ export function useLobbyChat() {
   }
 
   function updateSettings() {
+    config.value = normalizeAudioConfig(config.value);
     localStorage.setItem('agent_settings', JSON.stringify(config.value));
+    localStorage.setItem(AGENT_AMP_STORAGE_KEY, config.value.agentAmpEnabled ? '1' : '0');
     applyAudioSettings();
     publishPresence();
   }
@@ -702,7 +764,8 @@ export function useLobbyChat() {
   function sendMessage(msg: string) {
     if (!msg || !client || !isConnected.value) return;
     const cleanMsg = scrub(msg);
-    const normalized = cleanMsg.trim().toLowerCase();
+    const trimmed = cleanMsg.trim();
+    const normalized = trimmed.toLowerCase();
 
     if (normalized === '/away') {
       setAway(true, 'manual');
@@ -714,11 +777,20 @@ export function useLobbyChat() {
       return;
     }
 
+    let outboundMessage = cleanMsg;
+    if (/^\/\S+$/.test(trimmed) && !RESERVED_SLASH_COMMANDS.has(normalized)) {
+      const aliases = config.value.customSlashCommands ?? [];
+      const matchingAlias = aliases.find((alias) => alias.command === normalized);
+      if (matchingAlias) {
+        outboundMessage = matchingAlias.text;
+      }
+    }
+
     if (isAway.value) {
       setAway(false, 'system');
     }
 
-    client.publish(getChatTopic(activeLobbyId.value), JSON.stringify({ u: username.value, m: cleanMsg }));
+    client.publish(getChatTopic(activeLobbyId.value), JSON.stringify({ u: username.value, m: outboundMessage }));
   }
 
   function switchLobby(targetLobbyId: string): boolean {
@@ -874,7 +946,10 @@ export function useLobbyChat() {
       } catch {
         config.value = normalizeAudioConfig();
       }
+      return;
     }
+
+    config.value = normalizeAudioConfig();
   }
 
   function tryPlayAmbience() {
@@ -887,7 +962,7 @@ export function useLobbyChat() {
   function setSoundpack(newSoundpack: string) {
     config.value.soundpack = newSoundpack;
     initAudio();
-    localStorage.setItem('agent_settings', JSON.stringify(config.value));
+    updateSettings();
   }
 
   const availableSoundpacks = ref<string[]>(['default']);

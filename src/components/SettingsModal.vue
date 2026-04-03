@@ -30,6 +30,14 @@
           </button>
           <button
             class="tab-btn"
+            :class="{ active: activeTab === 'slash' }"
+            type="button"
+            @click="activeTab = 'slash'"
+          >
+            SLASH
+          </button>
+          <button
+            class="tab-btn"
             :class="{ active: activeTab === 'help' }"
             type="button"
             @click="activeTab = 'help'"
@@ -252,6 +260,44 @@
             <span>TYPE @ TO PICK A USER</span>
           </div>
         </div>
+
+        <div v-if="activeTab === 'slash'" class="tab-panel slash-panel">
+          <div class="help-title">CUSTOM SHORTCUTS</div>
+          <div class="slash-note">
+            <code>/SHORT</code> TO SEND REUSABLE MESSAGE.
+          </div>
+
+          <div
+            v-for="(alias, index) in localConfig.customSlashCommands"
+            :key="`alias-${index}`"
+            class="slash-row"
+          >
+            <input
+              :id="`set-slash-command-${index}`"
+              class="slash-input"
+              :class="{ invalid: isReservedSlashCommand(alias.command) }"
+              :value="alias.command"
+              type="text"
+              placeholder="/mycode"
+              @input="updateSlashCommand(index, $event)"
+            />
+            <input
+              :id="`set-slash-text-${index}`"
+              class="slash-input slash-text-input"
+              :value="alias.text"
+              type="text"
+              placeholder="Reusable message text"
+              @input="updateSlashText(index, $event)"
+            />
+            <button class="slash-remove-btn" type="button" @click="removeSlashCommand(index)">
+              X
+            </button>
+          </div>
+
+          <button id="set-slash-add" class="slash-add-btn" type="button" @click="addSlashCommand">
+            + ADD SHORTCUT
+          </button>
+        </div>
       </div>
       <button v-if="activeTab === 'general'" class="clear-btn" @click="handleClearLog">CLEAR MSG LOG</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
@@ -264,9 +310,56 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
-import type { AudioConfig } from '../types/chat';
+import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
+
+const RESERVED_SLASH_COMMANDS = new Set([
+  '/away',
+  '/back',
+  '/settings',
+  '/quit',
+  '/dm',
+  '/join',
+  '/lobby',
+]);
+
+function normalizeSlashAliasCommand(value: string): string {
+  const trimmed = (value || '').trim().toLowerCase();
+  if (!trimmed) {
+    return '';
+  }
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return /^\/[a-z0-9_-]+$/.test(withSlash) ? withSlash : '';
+}
+
+function sanitizeCustomSlashCommands(value: unknown): SlashCommandAlias[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const result: SlashCommandAlias[] = [];
+  const seen = new Set<string>();
+
+  for (const rawAlias of value) {
+    if (!rawAlias || typeof rawAlias !== 'object') {
+      continue;
+    }
+
+    const command = normalizeSlashAliasCommand(String((rawAlias as SlashCommandAlias).command || ''));
+    const text = String((rawAlias as SlashCommandAlias).text || '').trim();
+
+    if (!command || !text || RESERVED_SLASH_COMMANDS.has(command) || seen.has(command)) {
+      continue;
+    }
+
+    seen.add(command);
+    result.push({ command, text });
+  }
+
+  return result;
+}
 
 const props = defineProps<{
   showModal: boolean;
@@ -287,11 +380,12 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
+    customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),
   };
 }
 
 const localConfig = ref<AudioConfig>(normalizeConfig(props.config));
-const activeTab = ref<'general' | 'dm' | 'media' | 'help'>('general');
+const activeTab = ref<'general' | 'dm' | 'media' | 'help' | 'slash'>('general');
 const hasInitializedMediaForOpen = ref(false);
 const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();
@@ -367,7 +461,75 @@ function handleClose() {
 }
 
 function handleChange() {
-  emit('update', { ...localConfig.value });
+  emit('update', {
+    ...localConfig.value,
+    customSlashCommands: sanitizeCustomSlashCommands(localConfig.value.customSlashCommands),
+  });
+}
+
+function emitSlashCommandsIfChanged() {
+  const nextAliases = sanitizeCustomSlashCommands(localConfig.value.customSlashCommands);
+  const currentAliases = sanitizeCustomSlashCommands(props.config.customSlashCommands);
+
+  if (JSON.stringify(nextAliases) === JSON.stringify(currentAliases)) {
+    return;
+  }
+
+  emit('update', {
+    ...localConfig.value,
+    customSlashCommands: nextAliases,
+  });
+}
+
+function isReservedSlashCommand(command: string): boolean {
+  return RESERVED_SLASH_COMMANDS.has((command || '').trim().toLowerCase());
+}
+
+function addSlashCommand() {
+  const existingAliases = localConfig.value.customSlashCommands ?? [];
+  localConfig.value.customSlashCommands = [
+    ...existingAliases,
+    { command: '', text: '' },
+  ];
+}
+
+function removeSlashCommand(index: number) {
+  const existingAliases = localConfig.value.customSlashCommands ?? [];
+  localConfig.value.customSlashCommands = existingAliases.filter((_, idx) => idx !== index);
+  emitSlashCommandsIfChanged();
+}
+
+function updateSlashCommand(index: number, event: Event) {
+  const commandValue = (event.target as HTMLInputElement | null)?.value ?? '';
+  const nextCommand = normalizeSlashAliasCommand(commandValue);
+  const next = [...(localConfig.value.customSlashCommands ?? [])];
+  const current = next[index];
+  if (!current) {
+    return;
+  }
+
+  next[index] = {
+    ...current,
+    command: nextCommand,
+  };
+  localConfig.value.customSlashCommands = next;
+  emitSlashCommandsIfChanged();
+}
+
+function updateSlashText(index: number, event: Event) {
+  const textValue = (event.target as HTMLInputElement | null)?.value ?? '';
+  const next = [...(localConfig.value.customSlashCommands ?? [])];
+  const current = next[index];
+  if (!current) {
+    return;
+  }
+
+  next[index] = {
+    ...current,
+    text: textValue,
+  };
+  localConfig.value.customSlashCommands = next;
+  emitSlashCommandsIfChanged();
 }
 
 function handleClearLog() {
@@ -526,7 +688,7 @@ watch(
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -611,6 +773,76 @@ watch(
   font-family: inherit;
   font-size: 11px;
   border-radius: 2px;
+}
+
+.slash-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slash-note {
+  font-size: 11px;
+  color: var(--text-white);
+  opacity: 0.9;
+}
+
+.slash-note code {
+  color: var(--neon-green);
+  background: rgba(57, 255, 20, 0.08);
+  border: 1px solid rgba(57, 255, 20, 0.35);
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 2px;
+}
+
+.slash-row {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.slash-input {
+  width: 100%;
+}
+
+.slash-text-input {
+  min-width: 0;
+}
+
+.slash-input.invalid {
+  border-color: var(--alert-red);
+  color: var(--alert-red);
+}
+
+.slash-add-btn,
+.slash-remove-btn {
+  background: transparent;
+  border: 1px solid var(--neon-green);
+  color: var(--neon-green);
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.slash-add-btn {
+  padding: 7px 10px;
+  width: 100%;
+}
+
+.slash-remove-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.slash-add-btn:hover,
+.slash-remove-btn:hover {
+  background: var(--neon-green);
+  color: #000;
 }
 
 input[type='range'] {

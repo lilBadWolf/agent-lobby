@@ -41,6 +41,7 @@ describe('SettingsModal', () => {
     audioInputDeviceId: '',
     audioOutputDeviceId: '',
     videoInputDeviceId: '',
+    customSlashCommands: [],
   };
 
   beforeEach(() => {
@@ -243,5 +244,41 @@ describe('SettingsModal', () => {
     const updates = wrapper.emitted('update') ?? [];
     const lastPayload = updates.slice(-1)?.[0]?.[0] as typeof baseConfig;
     expect(lastPayload.agentAmpEnabled).toBe(true);
+  });
+
+  it('edits custom slash commands and guards reserved built-ins', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        showModal: true,
+        config: {
+          ...baseConfig,
+          customSlashCommands: [
+            { command: '/sig', text: 'deploy done' },
+            { command: '/away', text: 'should be blocked' },
+          ],
+        },
+        availableSoundpacks: ['default'],
+        availableThemes: ['retro-terminal'],
+      },
+    });
+
+    await wrapper.findAll('.tab-btn')[4].trigger('click');
+    expect(wrapper.find('.slash-panel').exists()).toBe(true);
+
+    // Reserved aliases should be filtered from emitted payloads.
+    await wrapper.find('#set-slash-command-0').setValue('/build');
+    await wrapper.find('#set-slash-text-0').setValue('build successful');
+
+    const lastPayload = (wrapper.emitted('update') ?? []).slice(-1)?.[0]?.[0] as typeof baseConfig;
+    expect(lastPayload.customSlashCommands).toEqual([
+      { command: '/build', text: 'build successful' },
+    ]);
+
+    await wrapper.find('#set-slash-add').trigger('click');
+    const removeButtons = wrapper.findAll('.slash-remove-btn');
+    await removeButtons[0].trigger('click');
+
+    const removedPayload = (wrapper.emitted('update') ?? []).slice(-1)?.[0]?.[0] as typeof baseConfig;
+    expect(Array.isArray(removedPayload.customSlashCommands)).toBe(true);
   });
 });

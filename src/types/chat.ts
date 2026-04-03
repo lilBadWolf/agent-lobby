@@ -15,6 +15,11 @@ export interface ChatMessage {
   messageId?: string;
 }
 
+export interface SlashCommandAlias {
+  command: string;
+  text: string;
+}
+
 export interface AudioConfig {
   audioEnabled: boolean;
   volume: number;
@@ -28,6 +33,7 @@ export interface AudioConfig {
   audioInputDeviceId: string;
   audioOutputDeviceId: string;
   videoInputDeviceId: string;
+  customSlashCommands?: SlashCommandAlias[];
 }
 
 export interface NetworkConfig {

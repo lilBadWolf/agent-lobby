@@ -225,6 +225,13 @@ type PersistedPlayerState = {
   compactMode?: boolean;
   showPlaylist?: boolean;
   shuffle?: boolean;
+  persistedAt?: number;
+};
+
+type TransitionState = {
+  wasPlaying?: boolean;
+  timestamp?: number;
+  playerState?: PersistedPlayerState;
 };
 
 const props = defineProps<{
@@ -1232,19 +1239,129 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function readLocalPlayerState(): Partial<PersistedPlayerState> | null {
+  try {
+    const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as Partial<PersistedPlayerState>;
+  } catch {
+    return null;
+  }
+}
+
+function resolveRestoredState(
+  fromStore: Partial<PersistedPlayerState> | null,
+  fromLocal: Partial<PersistedPlayerState> | null
+): Partial<PersistedPlayerState> | null {
+  if (fromStore && !fromLocal) {
+    return fromStore;
+  }
+
+  if (!fromStore && fromLocal) {
+    return fromLocal;
+  }
+
+  if (!fromStore && !fromLocal) {
+    return null;
+  }
+
+  const storeTs = Number(fromStore?.persistedAt);
+  const localTs = Number(fromLocal?.persistedAt);
+  const hasStoreTs = Number.isFinite(storeTs);
+  const hasLocalTs = Number.isFinite(localTs);
+
+  if (hasStoreTs && hasLocalTs) {
+    return localTs >= storeTs ? fromLocal : fromStore;
+  }
+
+  if (hasLocalTs) {
+    return fromLocal;
+  }
+
+  if (hasStoreTs) {
+    return fromStore;
+  }
+
+  // Legacy snapshots may not have timestamps; prefer local as the most immediate source.
+  return fromLocal;
+}
+
+function readLocalTransitionState(): TransitionState | null {
+  try {
+    const raw = localStorage.getItem(AGENTAMP_TRANSITION_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as TransitionState;
+  } catch {
+    return null;
+  }
+}
+
+function resolveTransitionState(
+  fromStore: TransitionState | null,
+  fromLocal: TransitionState | null
+): TransitionState | null {
+  if (fromStore && !fromLocal) {
+    return fromStore;
+  }
+
+  if (!fromStore && fromLocal) {
+    return fromLocal;
+  }
+
+  if (!fromStore && !fromLocal) {
+    return null;
+  }
+
+  const storeTs = Number(fromStore?.timestamp);
+  const localTs = Number(fromLocal?.timestamp);
+  const hasStoreTs = Number.isFinite(storeTs);
+  const hasLocalTs = Number.isFinite(localTs);
+
+  if (hasStoreTs && hasLocalTs) {
+    return localTs >= storeTs ? fromLocal : fromStore;
+  }
+
+  return fromLocal ?? fromStore;
+}
+
+function buildPersistedPlayerStateSnapshot(): PersistedPlayerState {
+  const liveCurrentTime = Number.isFinite(audioEl.value?.currentTime)
+    ? (audioEl.value?.currentTime ?? 0)
+    : currentTime.value;
+
+  return {
+    playlist: [...playlist.value],
+    currentIndex: currentIndex.value,
+    nowPlayingTrackId: currentTrack.value?.id ?? null,
+    currentTime: Math.max(0, liveCurrentTime),
+    loopMode: loopMode.value,
+    volume: volume.value,
+    compactMode: isCompact.value,
+    showPlaylist: showPlaylist.value,
+    shuffle: isShuffle.value,
+    persistedAt: Date.now(),
+  };
+}
+
+function writeTransitionState(state: TransitionState) {
+  try {
+    localStorage.setItem(AGENTAMP_TRANSITION_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore
+  }
+
+  void setPersistedValue(AGENTAMP_TRANSITION_KEY, state);
+}
+
 async function persistPlayerState() {
   try {
-    const serialized: PersistedPlayerState = {
-      playlist: playlist.value,
-      currentIndex: currentIndex.value,
-      nowPlayingTrackId: currentTrack.value?.id ?? null,
-      currentTime: currentTime.value,
-      loopMode: loopMode.value,
-      volume: volume.value,
-      compactMode: isCompact.value,
-      showPlaylist: showPlaylist.value,
-      shuffle: isShuffle.value,
-    };
+    const serialized = buildPersistedPlayerStateSnapshot();
 
     localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(serialized));
     await setPersistedValue(PLAYER_STORAGE_KEY, serialized);
@@ -1255,26 +1372,52 @@ async function persistPlayerState() {
 
 async function restorePlayerState() {
   let parsed: Partial<PersistedPlayerState> | null = null;
+  let storeState: Partial<PersistedPlayerState> | null = null;
+  let shouldAutoplay = false;
+  let hasFreshTransition = false;
 
   try {
-    const persisted = await getPersistedValue<Partial<PersistedPlayerState>>(PLAYER_STORAGE_KEY);
-    if (persisted) {
-      parsed = persisted;
+    const storedTransition = await getPersistedValue<TransitionState>(AGENTAMP_TRANSITION_KEY);
+    const localTransition = readLocalTransitionState();
+    const transition = resolveTransitionState(storedTransition ?? null, localTransition);
+
+    if (transition) {
+      const age = Date.now() - (transition.timestamp ?? 0);
+      const isFresh = Number.isFinite(age) && age >= 0 && age < 10_000;
+
+      if (isFresh) {
+        hasFreshTransition = true;
+        shouldAutoplay = transition.wasPlaying === true;
+        if (transition.playerState) {
+          parsed = transition.playerState;
+        }
+      }
     }
+
+    // Consume the transition key once this instance has started restoring.
+    void removePersistedValue(AGENTAMP_TRANSITION_KEY);
+    localStorage.removeItem(AGENTAMP_TRANSITION_KEY);
   } catch {
-    parsed = null;
+    // Ignore
   }
 
   if (!parsed) {
-    try {
-      const raw = localStorage.getItem(PLAYER_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-      parsed = JSON.parse(raw) as Partial<PersistedPlayerState>;
-    } catch {
-      parsed = null;
+    if (hasFreshTransition) {
+      // During detach/dock handoff, never fall back to older snapshots.
+      return;
     }
+
+    try {
+      const persisted = await getPersistedValue<Partial<PersistedPlayerState>>(PLAYER_STORAGE_KEY);
+      if (persisted) {
+        storeState = persisted;
+      }
+    } catch {
+      storeState = null;
+    }
+
+    const localState = readLocalPlayerState();
+    parsed = resolveRestoredState(storeState, localState);
   }
 
   if (!parsed) {
@@ -1347,32 +1490,6 @@ async function restorePlayerState() {
     isShuffle.value = Boolean(parsed.shuffle);
 
     if (currentIndex.value >= 0) {
-      // Check for a recent dock/window transition — resume playback if music was playing
-      let shouldAutoplay = false;
-      try {
-        type TransitionState = { wasPlaying?: boolean; timestamp?: number };
-        // Primary: read from shared Tauri store (works across windows)
-        const stored = await getPersistedValue<TransitionState>(AGENTAMP_TRANSITION_KEY);
-        if (stored?.wasPlaying === true && Date.now() - (stored.timestamp ?? 0) < 10_000) {
-          shouldAutoplay = true;
-        } else {
-          // Fallback: localStorage (same-window transitions)
-          const raw = localStorage.getItem(AGENTAMP_TRANSITION_KEY);
-          if (raw) {
-            const transition = JSON.parse(raw) as TransitionState;
-            const age = Date.now() - (transition.timestamp ?? 0);
-            if (transition.wasPlaying === true && age < 10_000) {
-              shouldAutoplay = true;
-            }
-          }
-        }
-        // Consume the transition key
-        void removePersistedValue(AGENTAMP_TRANSITION_KEY);
-        localStorage.removeItem(AGENTAMP_TRANSITION_KEY);
-      } catch {
-        // Ignore
-      }
-
       loadCurrentTrack(shouldAutoplay, currentTime.value);
     }
   } catch {
@@ -1402,6 +1519,14 @@ onMounted(() => {
     agentAmpStopChannel = new BroadcastChannel(AGENTAMP_STOP_CHANNEL);
     agentAmpStopChannel.onmessage = (event) => {
       if (event.data === 'stop-for-transition') {
+        // Write handoff state immediately so the docked instance can restore
+        // from live detached state before this window is actually closed.
+        writeTransitionState({
+          wasPlaying: isPlaying.value,
+          timestamp: Date.now(),
+          playerState: buildPersistedPlayerStateSnapshot(),
+        });
+
         audioEl.value?.pause();
         isPlaying.value = false;
       }
@@ -1420,16 +1545,12 @@ onBeforeUnmount(() => {
   agentAmpStopChannel?.close();
   agentAmpStopChannel = null;
 
-  // Synchronously write transition state so the other player can resume playback
-  try {
-    localStorage.setItem(AGENTAMP_TRANSITION_KEY, JSON.stringify({
-      wasPlaying: isPlaying.value,
-      timestamp: Date.now(),
-    }));
-  } catch {
-    // Ignore
-  }
-  void setPersistedValue(AGENTAMP_TRANSITION_KEY, { wasPlaying: isPlaying.value, timestamp: Date.now() });
+  // Write a full handoff payload so the next player instance restores exact live state.
+  writeTransitionState({
+    wasPlaying: isPlaying.value,
+    timestamp: Date.now(),
+    playerState: buildPersistedPlayerStateSnapshot(),
+  });
 
   isPlaying.value = false;
   publishPlaybackState();

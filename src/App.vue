@@ -772,15 +772,12 @@ watch(
     detached: config.value.agentAmpDetached,
   }),
   ({ enabled, detached }, previous) => {
-    // flush: 'pre' runs BEFORE the DOM update, so the transition key is written
-    // before the newly-mounted player calls restorePlayerState.
     const wasDetached = previous?.detached ?? false;
     const switchingToDocked = enabled && !detached && wasDetached;
-    const switchingToWindowed = enabled && detached && !wasDetached;
 
     if (switchingToDocked && isAgentAmpPlaying.value) {
       // Stop the detached window's audio immediately so it doesn't overlap
-      // with the docked player that is about to mount and autoplay.
+      // with the docked player that is about to mount.
       try {
         const stopChannel = new BroadcastChannel('agent-lobby-agentamp-stop');
         stopChannel.postMessage('stop-for-transition');
@@ -788,13 +785,6 @@ watch(
       } catch {
         // Ignore
       }
-      // Write the transition key to the shared Tauri store so the docked player knows to autoplay
-      void setPersistedValue('agent_agentamp_transition', { wasPlaying: true, timestamp: Date.now() });
-    }
-
-    if (switchingToWindowed && isAgentAmpPlaying.value) {
-      // Write the transition key to the shared Tauri store so the new windowed player knows to autoplay
-      void setPersistedValue('agent_agentamp_transition', { wasPlaying: true, timestamp: Date.now() });
     }
   },
   { flush: 'pre' }
@@ -813,7 +803,7 @@ watch(
 
     await closeDetachedAgentAmpWindow();
   },
-  { immediate: true, deep: true }
+  { immediate: true, deep: true, flush: 'post' }
 );
 
 function minimize() {
@@ -1823,9 +1813,11 @@ async function closeDetachedAgentAmpWindow() {
     const existingWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
     if (existingWindow) {
       try {
-        await existingWindow.hide();
+        const agentAmpChannel = new BroadcastChannel(AGENTAMP_FORCE_CLOSE_CHANNEL);
+        agentAmpChannel.postMessage('force-close');
+        agentAmpChannel.close();
       } catch (error) {
-        // Ignore hide errors
+        // Ignore close signaling errors
       }
     }
 

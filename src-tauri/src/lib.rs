@@ -1,3 +1,4 @@
+use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Manager, UserAttentionType};
 
 #[cfg(not(dev))]
@@ -10,6 +11,34 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn compute_spectrum(samples: Vec<f32>) -> Result<Vec<f32>, String> {
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let fft_len = samples.len().next_power_of_two();
+    let mut buffer: Vec<Complex<f32>> = samples
+        .into_iter()
+        .map(|sample| Complex::new(sample, 0.0))
+        .collect();
+
+    buffer.resize(fft_len, Complex::new(0.0, 0.0));
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(fft_len);
+    fft.process(&mut buffer);
+
+    let bin_count = fft_len / 2;
+    let magnitudes = buffer
+        .into_iter()
+        .take(bin_count)
+        .map(|value| value.norm() / fft_len as f32)
+        .collect();
+
+    Ok(magnitudes)
 }
 
 #[tauri::command]
@@ -135,7 +164,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, raise_dm_window, raise_agentamp_window])
+        .invoke_handler(tauri::generate_handler![greet, compute_spectrum, raise_dm_window, raise_agentamp_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

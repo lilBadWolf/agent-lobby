@@ -25,6 +25,8 @@ export interface AudioConfig {
   volume: number;
   autoAwayMinutes?: number;
   autoUpdatePulseMinutes?: number;
+  spectrumBarCount?: number;
+  spectrumFftSize?: number;
   dmEnabled: boolean;
   agentAmpEnabled: boolean;
   agentAmpDetached?: boolean;

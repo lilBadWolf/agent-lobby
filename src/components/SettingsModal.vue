@@ -14,11 +14,11 @@
           </button>
           <button
             class="tab-btn"
-            :class="{ active: activeTab === 'dm' }"
+            :class="{ active: activeTab === 'agentamp' }"
             type="button"
-            @click="activeTab = 'dm'"
+            @click="activeTab = 'agentamp'"
           >
-            DM
+            AGENTAMP
           </button>
           <button
             class="tab-btn"
@@ -48,57 +48,6 @@
 
         <div v-if="activeTab === 'general'" class="tab-panel">
           <div class="setting-row">
-            <label>SOUNDPACK</label>
-            <select
-              v-model="localConfig.soundpack"
-              id="set-soundpack"
-              @change="handleChange"
-            >
-              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
-                {{ pack }}
-              </option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>THEME</label>
-            <select
-              v-model="localConfig.theme"
-              id="set-theme"
-              @change="handleChange"
-            >
-              <option v-for="themeName in orderedThemes" :key="themeName" :value="themeName">
-                {{ themeName }}
-              </option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>AUTO-AWAY</label>
-            <select
-              v-model.number="localConfig.autoAwayMinutes"
-              id="set-auto-away"
-              @change="handleChange"
-            >
-              <option :value="10">10M</option>
-              <option :value="30">30M</option>
-              <option :value="60">1HR</option>
-              <option :value="0">OFF</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>UPDATE PULSE</label>
-            <select
-              v-model.number="localConfig.autoUpdatePulseMinutes"
-              id="set-update-pulse"
-              @change="handleChange"
-            >
-              <option :value="15">15M</option>
-              <option :value="30">30M</option>
-              <option :value="60">1HR</option>
-              <option :value="120">2HR</option>
-              <option :value="0">OFF</option>
-            </select>
-          </div>
-          <div class="setting-row">
             <label>SCANLINES</label>
             <input
               v-model="localConfig.scanlines"
@@ -107,28 +56,6 @@
               @change="handleChange"
             />
           </div>
-          <div class="setting-row">
-            <label>AGENTAMP</label>
-            <input
-              v-model="localConfig.agentAmpEnabled"
-              type="checkbox"
-              id="set-agentamp-toggle"
-              @change="handleChange"
-            />
-          </div>
-          <div class="setting-row">
-            <label>DETACH AGENTAMP</label>
-            <input
-              v-model="localConfig.agentAmpDetached"
-              type="checkbox"
-              id="set-agentamp-detach-toggle"
-              :disabled="!localConfig.agentAmpEnabled"
-              @change="handleChange"
-            />
-          </div>
-        </div>
-
-        <div v-if="activeTab === 'dm'" class="tab-panel">
           <div class="setting-row">
             <label>DM ENABLED</label>
             <input
@@ -154,8 +81,98 @@
               <option value="flames">FLAMES</option>
             </select>
           </div>
+          <div class="setting-row">
+            <label>AUTO-AWAY</label>
+            <select
+              v-model.number="localConfig.autoAwayMinutes"
+              id="set-auto-away"
+              @change="handleChange"
+            >
+              <option :value="10">10M</option>
+              <option :value="30">30M</option>
+              <option :value="60">1HR</option>
+              <option :value="0">OFF</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>UPDATE CHECK</label>
+            <select
+              v-model.number="localConfig.autoUpdatePulseMinutes"
+              id="set-update-pulse"
+              @change="handleChange"
+            >
+              <option :value="15">15M</option>
+              <option :value="30">30M</option>
+              <option :value="60">1HR</option>
+              <option :value="120">2HR</option>
+              <option :value="0">OFF</option>
+            </select>
+          </div>
+          <hr class="settings-divider" />
+          <div class="setting-row">
+            <label>COLOR THEME</label>
+            <select
+              v-model="localConfig.theme"
+              id="set-theme"
+              @change="handleChange"
+            >
+              <option v-for="themeName in orderedThemes" :key="themeName" :value="themeName">
+                {{ themeName }}
+              </option>
+            </select>
+          </div>
         </div>
-
+        <div v-if="activeTab === 'agentamp'" class="tab-panel media-panel">
+          <div class="setting-row">
+            <label>AGENTAMP</label>
+            <input
+              v-model="localConfig.agentAmpEnabled"
+              type="checkbox"
+              id="set-agentamp-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
+            <label>DETACH AGENTAMP</label>
+            <input
+              v-model="localConfig.agentAmpDetached"
+              type="checkbox"
+              id="set-agentamp-detach-toggle"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            />
+          </div>
+          <hr class="settings-divider" />
+          <div class="setting-row">
+            <label>SPECTRUM BARS</label>
+            <select
+              v-model.number="localConfig.spectrumBarCount"
+              id="set-spectrum-bars"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            >
+              <option :value="32">32 (LOW CPU)</option>
+              <option :value="48">48</option>
+              <option :value="64">64 (BALANCED)</option>
+              <option :value="96">96</option>
+              <option :value="128">128 (HIGH DETAIL)</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <label>SPECTRUM FFT</label>
+            <select
+              v-model.number="localConfig.spectrumFftSize"
+              id="set-spectrum-fft"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            >
+              <option :value="1024">1024 (LOW LATENCY)</option>
+              <option :value="2048">2048 (BALANCED)</option>
+              <option :value="4096">4096</option>
+              <option :value="8192">8192 (HIGH RESOLUTION)</option>
+            </select>
+          </div>
+        </div>
         <div v-if="activeTab === 'media'" class="tab-panel media-panel">
           <div class="setting-row">
             <label>AUDIO ENABLED</label>
@@ -177,6 +194,18 @@
               step="0.1"
               @change="handleChange"
             />
+          </div>
+          <div class="setting-row">
+            <label>SOUNDPACK</label>
+            <select
+              v-model="localConfig.soundpack"
+              id="set-soundpack"
+              @change="handleChange"
+            >
+              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
+                {{ pack }}
+              </option>
+            </select>
           </div>
           <hr class="settings-divider" />
           <div class="setting-row">
@@ -237,7 +266,6 @@
             </div>
           </div>
         </div>
-
         <div v-if="activeTab === 'help'" class="tab-panel help-panel">
           <div class="help-title">SLASH COMMANDS</div>
           <div class="help-row">
@@ -405,6 +433,8 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     theme: normalizedTheme,
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
+    spectrumBarCount: config.spectrumBarCount ?? 64,
+    spectrumFftSize: config.spectrumFftSize ?? 2048,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
     agentAmpDetached: config.agentAmpDetached ?? false,
     scanlines: config.scanlines ?? true,
@@ -426,7 +456,7 @@ const orderedThemes = computed(() => {
 });
 
 const localConfig = ref<AudioConfig>(normalizeConfig(props.config));
-const activeTab = ref<'general' | 'dm' | 'media' | 'help' | 'slash'>('general');
+const activeTab = ref<'general' | 'dm' | 'media' | 'agentamp' | 'help' | 'slash'>('general');
 const hasInitializedMediaForOpen = ref(false);
 const showEffectPreview = ref(false);
 const previewElement = ref<HTMLElement>();

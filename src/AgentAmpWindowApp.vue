@@ -10,7 +10,12 @@
     </div>
 
     <div ref="agentAmpWindowBodyRef" class="agentamp-window-body">
-      <AgentAmpPlayer :enabled="true" :detached="true" />
+      <AgentAmpPlayer
+        :enabled="true"
+        :detached="true"
+        :spectrum-bar-count="spectrumBarCount"
+        :spectrum-fft-size="spectrumFftSize"
+      />
     </div>
   </div>
 </template>
@@ -26,6 +31,10 @@ const agentAmpWindowBodyRef = ref<HTMLElement | null>(null);
 const { applyTheme } = useTheme();
 const THEME_STORAGE_KEY = 'agent_theme';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
+const SPECTRUM_BAR_COUNT_STORAGE_KEY = 'agent_spectrum_bar_count';
+const SPECTRUM_FFT_SIZE_STORAGE_KEY = 'agent_spectrum_fft_size';
+const spectrumBarCount = ref(64);
+const spectrumFftSize = ref(2048);
 let resizeObserver: ResizeObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
 let lastDesiredContentInnerHeight = -1;
@@ -53,7 +62,22 @@ async function applyPersistedTheme() {
     return;
   }
 
-  applyTheme('retro-terminal', { persist: false });
+  //applyTheme('retro-terminal', { persist: false });
+}
+
+async function applyPersistedSpectrumSettings() {
+  const [savedBarCount, savedFftSize] = await Promise.all([
+    getPersistedValue<number>(SPECTRUM_BAR_COUNT_STORAGE_KEY),
+    getPersistedValue<number>(SPECTRUM_FFT_SIZE_STORAGE_KEY),
+  ]);
+
+  if ([32, 48, 64, 96, 128].includes(savedBarCount ?? -1)) {
+    spectrumBarCount.value = savedBarCount as number;
+  }
+
+  if ([1024, 2048, 4096, 8192].includes(savedFftSize ?? -1)) {
+    spectrumFftSize.value = savedFftSize as number;
+  }
 }
 
 function updateDetachedPlaylistViewport(fixedContentHeight?: number, naturalPlaylistHeight?: number) {
@@ -227,6 +251,7 @@ async function handleClose() {
 
 onMounted(async () => {
   await applyPersistedTheme();
+  await applyPersistedSpectrumSettings();
   await nextTick();
 
   if (hasTauriWindow) {

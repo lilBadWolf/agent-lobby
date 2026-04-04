@@ -70,6 +70,13 @@
         {{ compactToggleGlyph }}
       </button>
     </div>
+    <SpectrumAnalyzer
+      v-show="!isCompact"
+      :audioEl="audioEl"
+      :enabled="props.enabled"
+      :bar-count="props.spectrumBarCount"
+      :fft-size="props.spectrumFftSize"
+    />
     <div class="agentamp-controls">
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" :data-tooltip="isPlaying ? 'PAUSE' : 'PLAY'" @click="togglePlayback">
@@ -173,6 +180,7 @@
 
     <audio
       ref="audioEl"
+      crossorigin="anonymous"
       @loadedmetadata="handleLoadedMetadata"
       @timeupdate="handleTimeUpdate"
       @ended="handleTrackEnded"
@@ -185,6 +193,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
+import SpectrumAnalyzer from './SpectrumAnalyzer.vue';
 
 type TauriDialogModule = typeof import('@tauri-apps/plugin-dialog');
 type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
@@ -193,6 +202,8 @@ type TauriPathModule = typeof import('@tauri-apps/api/path');
 const PLAYER_STORAGE_KEY = 'agent_amp_state_v1';
 const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
+const AGENTAMP_TRANSITION_KEY = 'agent_agentamp_transition';
+const AGENTAMP_STOP_CHANNEL = 'agent-lobby-agentamp-stop';
 
 type LoopMode = 'none' | 'all' | 'one';
 type PlaylistSource = 'path' | 'dataUrl';
@@ -219,6 +230,8 @@ type PersistedPlayerState = {
 const props = defineProps<{
   enabled: boolean;
   detached?: boolean;
+  spectrumBarCount?: number;
+  spectrumFftSize?: number;
 }>();
 
 const playlist = ref<PlaylistTrack[]>([]);
@@ -244,8 +257,10 @@ let tauriConvertFileSrcPromise: Promise<((filePath: string) => string) | null> |
 let tauriFsPromise: Promise<TauriFsModule | null> | null = null;
 let tauriPathPromise: Promise<TauriPathModule | null> | null = null;
 let pendingRestoreTime = 0;
+let pendingAutoplay = false;
 let lastPersistedPlaybackTime = -1;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
+let agentAmpStopChannel: BroadcastChannel | null = null;
 
 const currentTrack = computed(() => {
   if (currentIndex.value < 0 || currentIndex.value >= playlist.value.length) {
@@ -331,11 +346,11 @@ const cycleModes = computed<Array<'now' | 'next' | 'then'>>(() => {
 
 const loopModeLabel = computed(() => {
   if (loopMode.value === 'one') {
-    return '↺';
+    return 'ONE';
   }
 
   if (loopMode.value === 'all') {
-    return '∞';
+    return 'ALL';
   }
 
   return 'OFF';
@@ -377,7 +392,7 @@ const nowDisplayLabelClass = computed(() => {
   return 'label-now';
 });
 
-const compactToggleGlyph = computed(() => (isCompact.value ? '︽' : '︾'));
+const compactToggleGlyph = computed(() => (isCompact.value ? '︾' : '︽'));
 
 watch(audioEl, (element) => {
   if (!element) {
@@ -774,7 +789,10 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
 
   pendingRestoreTime = Number.isFinite(resumeTime) && resumeTime > 0 ? resumeTime : 0;
 
+  pendingAutoplay = autoplay;
+
   if (track.source === 'path') {
+    player.crossOrigin = 'anonymous';
     void getTauriConvertFileSrc().then((convertFileSrc) => {
       if (!convertFileSrc) {
         return;
@@ -784,12 +802,6 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
       player.currentTime = 0;
       currentTime.value = pendingRestoreTime;
       duration.value = 0;
-
-      if (autoplay) {
-        void player.play().catch(() => {
-          isPlaying.value = false;
-        });
-      }
     });
     return;
   }
@@ -798,12 +810,6 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
   player.currentTime = 0;
   currentTime.value = pendingRestoreTime;
   duration.value = 0;
-
-  if (autoplay) {
-    void player.play().catch(() => {
-      isPlaying.value = false;
-    });
-  }
 }
 
 function togglePlayback() {
@@ -1090,6 +1096,13 @@ function handleLoadedMetadata() {
     currentTime.value = seekTo;
     pendingRestoreTime = 0;
   }
+
+  if (pendingAutoplay) {
+    pendingAutoplay = false;
+    void player.play().catch(() => {
+      isPlaying.value = false;
+    });
+  }
 }
 
 function handleTimeUpdate() {
@@ -1334,7 +1347,33 @@ async function restorePlayerState() {
     isShuffle.value = Boolean(parsed.shuffle);
 
     if (currentIndex.value >= 0) {
-      loadCurrentTrack(false, currentTime.value);
+      // Check for a recent dock/window transition — resume playback if music was playing
+      let shouldAutoplay = false;
+      try {
+        type TransitionState = { wasPlaying?: boolean; timestamp?: number };
+        // Primary: read from shared Tauri store (works across windows)
+        const stored = await getPersistedValue<TransitionState>(AGENTAMP_TRANSITION_KEY);
+        if (stored?.wasPlaying === true && Date.now() - (stored.timestamp ?? 0) < 10_000) {
+          shouldAutoplay = true;
+        } else {
+          // Fallback: localStorage (same-window transitions)
+          const raw = localStorage.getItem(AGENTAMP_TRANSITION_KEY);
+          if (raw) {
+            const transition = JSON.parse(raw) as TransitionState;
+            const age = Date.now() - (transition.timestamp ?? 0);
+            if (transition.wasPlaying === true && age < 10_000) {
+              shouldAutoplay = true;
+            }
+          }
+        }
+        // Consume the transition key
+        void removePersistedValue(AGENTAMP_TRANSITION_KEY);
+        localStorage.removeItem(AGENTAMP_TRANSITION_KEY);
+      } catch {
+        // Ignore
+      }
+
+      loadCurrentTrack(shouldAutoplay, currentTime.value);
     }
   } catch {
     localStorage.removeItem(PLAYER_STORAGE_KEY);
@@ -1356,6 +1395,19 @@ function formatTime(value: number): string {
 onMounted(() => {
   window.addEventListener('pagehide', flushPlayerStateOnShutdown);
   window.addEventListener('beforeunload', flushPlayerStateOnShutdown);
+
+  // When detached, listen for a stop-for-transition signal from the main app
+  // so audio stops immediately before the docked player starts playing.
+  if (props.detached && typeof BroadcastChannel !== 'undefined') {
+    agentAmpStopChannel = new BroadcastChannel(AGENTAMP_STOP_CHANNEL);
+    agentAmpStopChannel.onmessage = (event) => {
+      if (event.data === 'stop-for-transition') {
+        audioEl.value?.pause();
+        isPlaying.value = false;
+      }
+    };
+  }
+
   restorePlayerState();
   restartNowCycle();
   publishPlaybackState();
@@ -1364,6 +1416,21 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushPlayerStateOnShutdown);
   window.removeEventListener('beforeunload', flushPlayerStateOnShutdown);
+
+  agentAmpStopChannel?.close();
+  agentAmpStopChannel = null;
+
+  // Synchronously write transition state so the other player can resume playback
+  try {
+    localStorage.setItem(AGENTAMP_TRANSITION_KEY, JSON.stringify({
+      wasPlaying: isPlaying.value,
+      timestamp: Date.now(),
+    }));
+  } catch {
+    // Ignore
+  }
+  void setPersistedValue(AGENTAMP_TRANSITION_KEY, { wasPlaying: isPlaying.value, timestamp: Date.now() });
+
   isPlaying.value = false;
   publishPlaybackState();
   flushPlayerStateOnShutdown();
@@ -1574,6 +1641,7 @@ onBeforeUnmount(() => {
   display: block;
   min-height: 30px;
   position: relative;
+  z-index: 2;
 }
 
 .agentamp-now-meta,

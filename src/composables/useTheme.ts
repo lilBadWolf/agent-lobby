@@ -5,10 +5,10 @@ import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 const DEFAULT_THEME = 'retro-terminal';
 const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
 const THEME_STORAGE_KEY = 'agent_theme';
+const LEGACY_THEME_STORAGE_KEY = 'agent_settings';
 const THEME_SYNC_CHANNEL = 'agent-lobby-theme-sync';
 const availableThemes = Object.keys(THEMES);
 const currentTheme = ref<string>(DEFAULT_THEME);
-let hasInitializedTheme = false;
 let hasHydratedTheme = false;
 let themeHydrationPromise: Promise<void> | null = null;
 let themeSyncChannel: BroadcastChannel | null = null;
@@ -36,6 +36,58 @@ function ensureThemeSyncChannel() {
   }
 
   return themeSyncChannel;
+}
+
+function parseLocalStorageValue<T>(rawValue: string): T {
+  try {
+    return JSON.parse(rawValue) as T;
+  } catch {
+    return rawValue as unknown as T;
+  }
+}
+
+export async function resolvePersistedTheme(): Promise<string | undefined> {
+  const persistedTheme = await getPersistedValue<string>(THEME_STORAGE_KEY);
+  if (typeof persistedTheme === 'string' && persistedTheme.trim()) {
+    return persistedTheme;
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (raw !== null) {
+        const parsed = parseLocalStorageValue<string>(raw);
+        if (typeof parsed === 'string' && parsed.trim()) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    try {
+      const legacyRaw = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+      if (legacyRaw) {
+        const legacy = JSON.parse(legacyRaw) as { theme?: unknown };
+        if (legacy && typeof legacy.theme === 'string' && legacy.theme.trim()) {
+          return legacy.theme;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  try {
+    const legacyStore = await getPersistedValue<Record<string, unknown>>(LEGACY_THEME_STORAGE_KEY);
+    if (legacyStore && typeof legacyStore.theme === 'string' && legacyStore.theme.trim()) {
+      return legacyStore.theme;
+    }
+  } catch {
+    // Ignore
+  }
+
+  return undefined;
 }
 
 function getThemeTokenValue(tokenName: string, fallback = ''): string {
@@ -96,8 +148,13 @@ export function useTheme() {
         return;
       }
 
-      if (event.newValue !== currentTheme.value) {
-        applyTheme(event.newValue, { persist: false });
+      const parsedTheme = parseLocalStorageValue<string>(event.newValue);
+      if (typeof parsedTheme !== 'string' || !parsedTheme.trim()) {
+        return;
+      }
+
+      if (parsedTheme !== currentTheme.value) {
+        applyTheme(parsedTheme, { persist: false });
       }
     });
   }
@@ -106,19 +163,26 @@ export function useTheme() {
     ? document.documentElement.getAttribute('data-theme')
     : null;
 
-  if (!hasInitializedTheme || !rootTheme) {
-    applyTheme(DEFAULT_THEME, { persist: false });
-    hasInitializedTheme = true;
+  if (typeof document !== 'undefined' && rootTheme) {
+    currentTheme.value = rootTheme;
   }
 
   if (!themeHydrationPromise) {
     themeHydrationPromise = (async () => {
       try {
-        const persistedTheme = await getPersistedValue<string>(THEME_STORAGE_KEY);
-        if (typeof persistedTheme === 'string' && THEMES[persistedTheme as keyof typeof THEMES]) {
-          if (currentTheme.value !== persistedTheme) {
-            applyTheme(persistedTheme, { persist: false });
-          }
+        const persistedTheme = await resolvePersistedTheme();
+        const currentDataTheme = typeof document !== 'undefined'
+          ? document.documentElement.getAttribute('data-theme')
+          : null;
+        const fallbackTheme = currentDataTheme && THEMES[currentDataTheme as keyof typeof THEMES]
+          ? currentDataTheme
+          : DEFAULT_THEME;
+        const nextTheme = typeof persistedTheme === 'string' && THEMES[persistedTheme as keyof typeof THEMES]
+          ? persistedTheme
+          : fallbackTheme;
+
+        if (currentTheme.value !== nextTheme) {
+          applyTheme(nextTheme, { persist: false });
         }
       } catch {
         // Ignore store read failures

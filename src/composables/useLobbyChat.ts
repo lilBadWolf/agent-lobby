@@ -18,6 +18,8 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   volume: 'agent_volume',
   autoAwayMinutes: 'agent_auto_away_minutes',
   autoUpdatePulseMinutes: 'agent_auto_update_pulse_minutes',
+  spectrumBarCount: 'agent_spectrum_bar_count',
+  spectrumFftSize: 'agent_spectrum_fft_size',
   dmEnabled: 'agent_dm_enabled',
   agentAmpEnabled: 'agent_agent_amp_enabled',
   agentAmpDetached: 'agent_agent_amp_detached',
@@ -40,6 +42,8 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   volume: 0.5,
   autoAwayMinutes: 10,
   autoUpdatePulseMinutes: 30,
+  spectrumBarCount: 64,
+  spectrumFftSize: 2048,
   soundpack: 'default',
   theme: 'retro-terminal',
   dmChatEffect: 'matrix',
@@ -90,6 +94,14 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.autoUpdatePulseMinutes = 30;
   }
 
+  if (![32, 48, 64, 96, 128].includes(normalized.spectrumBarCount ?? 64)) {
+    normalized.spectrumBarCount = DEFAULT_AUDIO_CONFIG.spectrumBarCount;
+  }
+
+  if (![1024, 2048, 4096, 8192].includes(normalized.spectrumFftSize ?? 2048)) {
+    normalized.spectrumFftSize = DEFAULT_AUDIO_CONFIG.spectrumFftSize;
+  }
+
   return normalized;
 }
 
@@ -99,6 +111,8 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.volume, nextConfig.volume),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes, nextConfig.autoAwayMinutes ?? DEFAULT_AUDIO_CONFIG.autoAwayMinutes),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes, nextConfig.autoUpdatePulseMinutes ?? DEFAULT_AUDIO_CONFIG.autoUpdatePulseMinutes),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount, nextConfig.spectrumBarCount ?? DEFAULT_AUDIO_CONFIG.spectrumBarCount),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize, nextConfig.spectrumFftSize ?? DEFAULT_AUDIO_CONFIG.spectrumFftSize),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached, nextConfig.agentAmpDetached ?? DEFAULT_AUDIO_CONFIG.agentAmpDetached),
@@ -119,6 +133,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     volume,
     autoAwayMinutes,
     autoUpdatePulseMinutes,
+    spectrumBarCount,
+    spectrumFftSize,
     dmEnabled,
     agentAmpEnabled,
     agentAmpDetached,
@@ -135,6 +151,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.volume),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
@@ -154,6 +172,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof volume === 'number') saved.volume = volume;
   if (typeof autoAwayMinutes === 'number') saved.autoAwayMinutes = autoAwayMinutes;
   if (typeof autoUpdatePulseMinutes === 'number') saved.autoUpdatePulseMinutes = autoUpdatePulseMinutes;
+  if (typeof spectrumBarCount === 'number') saved.spectrumBarCount = spectrumBarCount;
+  if (typeof spectrumFftSize === 'number') saved.spectrumFftSize = spectrumFftSize;
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;

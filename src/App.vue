@@ -118,6 +118,8 @@
       <AgentAmpPlayer
         v-if="config.agentAmpEnabled && !config.agentAmpDetached"
         :enabled="config.agentAmpEnabled"
+        :spectrum-bar-count="config.spectrumBarCount"
+        :spectrum-fft-size="config.spectrumFftSize"
       />
     </div>
   </div>
@@ -769,6 +771,40 @@ watch(
     enabled: config.value.agentAmpEnabled,
     detached: config.value.agentAmpDetached,
   }),
+  ({ enabled, detached }, previous) => {
+    // flush: 'pre' runs BEFORE the DOM update, so the transition key is written
+    // before the newly-mounted player calls restorePlayerState.
+    const wasDetached = previous?.detached ?? false;
+    const switchingToDocked = enabled && !detached && wasDetached;
+    const switchingToWindowed = enabled && detached && !wasDetached;
+
+    if (switchingToDocked && isAgentAmpPlaying.value) {
+      // Stop the detached window's audio immediately so it doesn't overlap
+      // with the docked player that is about to mount and autoplay.
+      try {
+        const stopChannel = new BroadcastChannel('agent-lobby-agentamp-stop');
+        stopChannel.postMessage('stop-for-transition');
+        stopChannel.close();
+      } catch {
+        // Ignore
+      }
+      // Write the transition key to the shared Tauri store so the docked player knows to autoplay
+      void setPersistedValue('agent_agentamp_transition', { wasPlaying: true, timestamp: Date.now() });
+    }
+
+    if (switchingToWindowed && isAgentAmpPlaying.value) {
+      // Write the transition key to the shared Tauri store so the new windowed player knows to autoplay
+      void setPersistedValue('agent_agentamp_transition', { wasPlaying: true, timestamp: Date.now() });
+    }
+  },
+  { flush: 'pre' }
+);
+
+watch(
+  () => ({
+    enabled: config.value.agentAmpEnabled,
+    detached: config.value.agentAmpDetached,
+  }),
   async ({ enabled, detached }) => {
     if (enabled && detached) {
       await openDetachedAgentAmpWindow();
@@ -962,6 +998,8 @@ function handleSettingsUpdate(newConfig: AudioConfig) {
     ...newConfig,
     autoAwayMinutes: newConfig.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
+    spectrumBarCount: newConfig.spectrumBarCount ?? 64,
+    spectrumFftSize: newConfig.spectrumFftSize ?? 2048,
     agentAmpDetached: newConfig.agentAmpDetached ?? false,
     customSlashCommands: newConfig.customSlashCommands ?? [],
   };

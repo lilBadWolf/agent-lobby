@@ -10,6 +10,19 @@ A theme is a collection of colors that changes the look and feel of Agent Lobby.
 
 Create a new file: `my-awesome-theme.css`
 
+Agent Lobby now ships with these theme presets in `src/themes/presets`:
+
+- `blue-sheets`
+- `mint-chocolate`
+- `mint-cream`
+- `neon-night`
+- `retro-terminal`
+- `soft-plum`
+- `sun-rise`
+- `sun-set`
+
+The new `retro-terminal` theme gives the app a bold neon-green terminal aesthetic: deep black panels, glowing accents, glassy overlays, and crisp contrast. Use it as the template for a hacker-console or cyber-retro look.
+
 Copy the contents below and customize the colors:
 
 ```css

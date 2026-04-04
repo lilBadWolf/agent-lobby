@@ -15,6 +15,7 @@
         :detached="true"
         :spectrum-bar-count="spectrumBarCount"
         :spectrum-fft-size="spectrumFftSize"
+        @toggle-detached="handleToggleDetached"
       />
     </div>
   </div>
@@ -30,6 +31,7 @@ const isMaximized = ref(false);
 const agentAmpWindowBodyRef = ref<HTMLElement | null>(null);
 const { applyTheme } = useTheme();
 const THEME_STORAGE_KEY = 'agent_theme';
+const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const SPECTRUM_BAR_COUNT_STORAGE_KEY = 'agent_spectrum_bar_count';
 const SPECTRUM_FFT_SIZE_STORAGE_KEY = 'agent_spectrum_fft_size';
@@ -50,6 +52,32 @@ function isTauriRuntime(): boolean {
 }
 
 const hasTauriWindow = isTauriRuntime();
+
+function sendAgentAmpAction(action: 'dock') {
+  const payload = { type: 'agentamp-action', action };
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    try {
+      const channel = new BroadcastChannel(AGENTAMP_ACTION_CHANNEL);
+      channel.postMessage(payload);
+      channel.close();
+    } catch {
+      // Ignore channel failures.
+    }
+  }
+
+  if (typeof window !== 'undefined' && window.opener && window.opener !== window) {
+    try {
+      window.opener.postMessage(payload, window.location.origin);
+    } catch {
+      // Ignore postMessage failures.
+    }
+  }
+}
+
+function handleToggleDetached() {
+  sendAgentAmpAction('dock');
+}
 
 function shouldAllowWindowClose(): boolean {
   return allowWindowClose;

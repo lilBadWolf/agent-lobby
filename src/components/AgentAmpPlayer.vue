@@ -61,14 +61,24 @@
           </transition>
         </div>
       </div>
-      <button
-        class="agentamp-btn compact-toggle-btn compact-toggle-pinned agentamp-compact-toggle-spaced"
-        type="button"
-        :data-tooltip="isCompact ? 'EXPAND' : 'COMPACT'"
-        @click="toggleCompactMode"
-      >
-        {{ compactToggleGlyph }}
-      </button>
+      <div class="agentamp-now-pinned-controls compact-toggle-pinned">
+        <button
+          class="agentamp-btn compact-toggle-btn agentamp-detached-toggle"
+          type="button"
+          :data-tooltip="props.detached ? 'DOCK AGENTAMP' : 'DETACH AGENTAMP'"
+          @click="requestToggleDetached"
+        >
+          ⇄
+        </button>
+        <button
+          class="agentamp-btn compact-toggle-btn agentamp-compact-toggle-spaced"
+          type="button"
+          :data-tooltip="isCompact ? 'EXPAND' : 'COMPACT'"
+          @click="toggleCompactMode"
+        >
+          {{ compactToggleGlyph }}
+        </button>
+      </div>
     </div>
     <SpectrumAnalyzer
       v-show="!isCompact"
@@ -234,12 +244,20 @@ type TransitionState = {
   playerState?: PersistedPlayerState;
 };
 
+const emit = defineEmits<{
+  'toggle-detached': [];
+}>();
+
 const props = defineProps<{
   enabled: boolean;
   detached?: boolean;
   spectrumBarCount?: number;
   spectrumFftSize?: number;
 }>();
+
+function requestToggleDetached() {
+  emit('toggle-detached');
+}
 
 const playlist = ref<PlaylistTrack[]>([]);
 const currentIndex = ref(-1);
@@ -1629,8 +1647,15 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.agentamp-now-playing .compact-toggle-pinned[data-tooltip] {
+.agentamp-now-playing .compact-toggle-pinned {
   position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
 }
 
 .agentamp-controls [data-tooltip]::after,
@@ -1758,7 +1783,7 @@ onBeforeUnmount(() => {
 .agentamp-now-playing {
   border: 1px solid var(--color-agentamp-panel-border);
   background: var(--color-agentamp-panel-bg);
-  padding: 6px 36px 6px 8px;
+  padding: 6px 92px 6px 8px;
   display: block;
   min-height: 30px;
   position: relative;
@@ -2050,7 +2075,11 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-compact-toggle-spaced {
-  margin-left: 16px !important;
+  margin-left: 4px !important;
+}
+
+.agentamp-detached-toggle {
+  margin-left: 4px;
 }
 
 .agentamp-dock.detached-window:not(.compact) .agentamp-now-playing .compact-toggle-pinned[data-tooltip]::after {

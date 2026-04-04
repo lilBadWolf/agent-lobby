@@ -120,6 +120,7 @@
         :enabled="config.agentAmpEnabled"
         :spectrum-bar-count="config.spectrumBarCount"
         :spectrum-fft-size="config.spectrumFftSize"
+        @toggle-detached="handleAgentAmpDetachRequest"
       />
     </div>
   </div>
@@ -366,6 +367,7 @@ const AGENTAMP_WINDOW_DEFAULT_HEIGHT = 320;
 const AGENTAMP_WINDOW_MIN_WIDTH = 560;
 const AGENTAMP_WINDOW_MIN_HEIGHT = 220;
 const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
+const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
@@ -421,6 +423,7 @@ let dmWebChannel: BroadcastChannel | null = null;
 let agentAmpPopupWindow: Window | null = null;
 let agentAmpPopupWatchIntervalId: number | null = null;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
+let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
 const relaySenders = new Map<string, RelaySenderEntry>();
 let cleanupDMActionListener: (() => void) | null = null;
@@ -679,10 +682,58 @@ function initializeAgentAmpStatusBridge() {
   };
 }
 
+function handleAgentAmpActionMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const message = event.data as { type?: string; action?: string };
+  if (message?.type !== 'agentamp-action' || message.action !== 'dock') {
+    return;
+  }
+
+  if (!config.value.agentAmpDetached) {
+    return;
+  }
+
+  config.value.agentAmpDetached = false;
+  updateSettings();
+}
+
+function initializeAgentAmpActionBridge() {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('message', handleAgentAmpActionMessage);
+  }
+
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  agentAmpActionChannel = new BroadcastChannel(AGENTAMP_ACTION_CHANNEL);
+  agentAmpActionChannel.onmessage = (event: MessageEvent) => {
+    const message = event.data as { type?: string; action?: string };
+    if (message?.type !== 'agentamp-action' || message.action !== 'dock') {
+      return;
+    }
+
+    if (!config.value.agentAmpDetached) {
+      return;
+    }
+
+    config.value.agentAmpDetached = false;
+    updateSettings();
+  };
+}
+
 function teardownAgentAmpStatusBridge() {
   if (agentAmpStatusChannel) {
     agentAmpStatusChannel.close();
     agentAmpStatusChannel = null;
+  }
+
+  if (agentAmpActionChannel) {
+    agentAmpActionChannel.close();
+    agentAmpActionChannel = null;
   }
 
   cleanupAgentAmpStorageListener?.();
@@ -692,6 +743,7 @@ onMounted(async () => {
   // window.addEventListener('contextmenu', (e) => e.preventDefault());
 
   initializeAgentAmpStatusBridge();
+  initializeAgentAmpActionBridge();
   initializeWebDMBridge();
   await initializeDetachedDMActionListener();
 
@@ -1005,6 +1057,15 @@ function handleShowAgentAmpWindow() {
   }
 
   void openDetachedAgentAmpWindow();
+}
+
+function handleAgentAmpDetachRequest() {
+  if (!config.value.agentAmpEnabled) {
+    return;
+  }
+
+  config.value.agentAmpDetached = true;
+  updateSettings();
 }
 
 function handleAmbience() {

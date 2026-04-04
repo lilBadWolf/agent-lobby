@@ -93,6 +93,8 @@ pub fn run() {
             };
 
             WebviewWindowBuilder::new(app, "main", url)
+                // Required on Windows for HTML5 drag/drop events (dragover/drop) inside the webview.
+                .disable_drag_drop_handler()
                 .title("AGENT // LOBBY")
                 .decorations(false)
                 .inner_size(800.0, 600.0)

@@ -20,6 +20,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   autoUpdatePulseMinutes: 'agent_auto_update_pulse_minutes',
   dmEnabled: 'agent_dm_enabled',
   agentAmpEnabled: 'agent_agent_amp_enabled',
+  scanlines: 'agent_scanlines',
   soundpack: 'agent_soundpack',
   theme: 'agent_theme',
   dmChatEffect: 'agent_dm_chat_effect',
@@ -32,6 +33,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
   agentAmpEnabled: false,
+  scanlines: true,
   audioEnabled: true,
   volume: 0.5,
   autoAwayMinutes: 10,
@@ -70,6 +72,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.agentAmpEnabled = DEFAULT_AUDIO_CONFIG.agentAmpEnabled;
   }
 
+  if (typeof normalized.scanlines !== 'boolean') {
+    normalized.scanlines = DEFAULT_AUDIO_CONFIG.scanlines;
+  }
+
   if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
     normalized.autoAwayMinutes = 10;
   }
@@ -89,6 +95,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes, nextConfig.autoUpdatePulseMinutes ?? DEFAULT_AUDIO_CONFIG.autoUpdatePulseMinutes),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.scanlines, nextConfig.scanlines ?? DEFAULT_AUDIO_CONFIG.scanlines),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
@@ -107,6 +114,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     autoUpdatePulseMinutes,
     dmEnabled,
     agentAmpEnabled,
+    scanlines,
     soundpack,
     theme,
     dmChatEffect,
@@ -121,6 +129,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.soundpack),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.theme),
     getPersistedValue<AudioConfig['dmChatEffect']>(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect),
@@ -139,6 +148,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;
+  }
+  if (typeof scanlines === 'boolean') {
+    saved.scanlines = scanlines;
   }
   if (typeof soundpack === 'string') saved.soundpack = soundpack;
   if (typeof theme === 'string') saved.theme = theme;

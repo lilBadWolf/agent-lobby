@@ -99,6 +99,15 @@
             </select>
           </div>
           <div class="setting-row">
+            <label>SCANLINES</label>
+            <input
+              v-model="localConfig.scanlines"
+              type="checkbox"
+              id="set-scanlines-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
             <label>AGENTAMP</label>
             <input
               v-model="localConfig.agentAmpEnabled"
@@ -387,6 +396,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
+    scanlines: config.scanlines ?? true,
     customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),
   };
 }

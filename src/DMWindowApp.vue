@@ -642,9 +642,7 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at top, rgba(57, 255, 20, 0.08), transparent 28%),
-    linear-gradient(180deg, #081008 0%, #020402 100%);
+  background: var(--color-dmwindow-bg);
   color: var(--color-accent);
 }
 
@@ -653,8 +651,8 @@ onBeforeUnmount(() => {
   height: 28px;
   padding: 0 92px 0 18px;
   box-sizing: border-box;
-  background: linear-gradient(180deg, rgba(17, 25, 17, 0.98), rgba(7, 11, 7, 0.94));
-  border-bottom: 1px solid rgba(57, 255, 20, 0.16);
+  background: var(--color-dmwindow-titlebar-bg);
+  border-bottom: 1px solid var(--color-dmwindow-titlebar-border);
   display: flex;
   justify-content: flex-start;
   align-items: center;
@@ -664,40 +662,15 @@ onBeforeUnmount(() => {
   font-size: 11px;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  text-shadow: 0 0 10px rgba(57, 255, 20, 0.45);
+  text-shadow: var(--color-dmwindow-titlebar-text-shadow);
 }
 
-.minimize-btn {
-  position: absolute;
-  top: 4px;
-  right: 66px;
-  background: none;
-  border: 1px solid rgba(57, 255, 20, 0.18);
-  color: var(--color-accent);
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0.8;
-  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
-  width: 22px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-}
-
-.minimize-btn:hover {
-  opacity: 1;
-  background: rgba(57, 255, 20, 0.08);
-  border-color: rgba(57, 255, 20, 0.4);
-}
-
+.minimize-btn,
 .maximize-btn {
   position: absolute;
   top: 4px;
-  right: 38px;
   background: none;
-  border: 1px solid rgba(57, 255, 20, 0.18);
+  border: 1px solid var(--color-dmwindow-button-border);
   color: var(--color-accent);
   font-size: 12px;
   cursor: pointer;
@@ -711,10 +684,19 @@ onBeforeUnmount(() => {
   border-radius: 4px;
 }
 
+.minimize-btn {
+  right: 66px;
+}
+
+.maximize-btn {
+  right: 38px;
+}
+
+.minimize-btn:hover,
 .maximize-btn:hover {
   opacity: 1;
-  background: rgba(57, 255, 20, 0.08);
-  border-color: rgba(57, 255, 20, 0.4);
+  background: var(--color-dmwindow-button-hover-bg);
+  border-color: var(--color-dmwindow-button-hover-border);
 }
 
 .window-icon {
@@ -743,7 +725,7 @@ onBeforeUnmount(() => {
   top: 4px;
   right: 10px;
   background: none;
-  border: 1px solid rgba(255, 59, 59, 0.18);
+  border: 1px solid var(--color-dmwindow-close-border);
   color: var(--color-danger);
   font-size: 12px;
   cursor: pointer;
@@ -759,8 +741,8 @@ onBeforeUnmount(() => {
 
 .titlebar-close-btn:hover {
   opacity: 1;
-  background: rgba(255, 59, 59, 0.12);
-  border-color: rgba(255, 59, 59, 0.45);
+  background: var(--color-dmwindow-close-hover-bg);
+  border-color: var(--color-dmwindow-close-hover-border);
 }
 
 .dm-window-root :deep(#dm-modal) {

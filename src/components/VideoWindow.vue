@@ -8,7 +8,7 @@
         autoplay
         playsinline
         :muted="false"
-        style="position: absolute; bottom: 10px; left: 10px; z-index: 100; width: 200px; background: #111;"
+        class="remote-audio"
       ></audio>
       <!-- Remote Video (main feed) -->
       <video
@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 90%;
   position: relative;
-  background: #000;
+  background: var(--color-video-container-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -541,8 +541,8 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   display: block;
-  border: 2px solid var(--color-accent);
-  box-shadow: 0 0 30px rgba(57, 255, 20, 0.3), inset 0 0 30px rgba(57, 255, 20, 0.1);
+  border: 2px solid var(--color-video-border);
+  box-shadow: var(--color-video-main-shadow);
 }
 
 .remote-chat-fallback {
@@ -553,11 +553,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  border: 2px solid var(--color-accent);
-  background:
-    radial-gradient(circle at 50% 45%, rgba(57, 255, 20, 0.16), rgba(0, 0, 0, 0.95) 60%),
-    linear-gradient(180deg, rgba(6, 15, 6, 0.95), rgba(1, 4, 1, 0.98));
-  box-shadow: inset 0 0 40px rgba(57, 255, 20, 0.15), 0 0 40px rgba(57, 255, 20, 0.15);
+  border: 2px solid var(--color-video-border);
+  background: var(--color-video-fallback-bg);
+  box-shadow: var(--color-video-fallback-box-shadow);
   text-align: center;
   padding: 24px;
   box-sizing: border-box;
@@ -567,7 +565,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
   letter-spacing: 2px;
   color: var(--color-accent);
-  text-shadow: 0 0 10px rgba(57, 255, 20, 0.8);
+  text-shadow: var(--color-video-fallback-header-text-shadow);
   font-weight: bold;
 }
 
@@ -583,7 +581,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  text-shadow: 0 0 18px rgba(57, 255, 20, 0.9), 0 0 28px rgba(57, 255, 20, 0.4);
+  text-shadow: var(--color-video-fallback-animation-text-shadow);
   word-break: break-word;
 }
 
@@ -600,9 +598,9 @@ onBeforeUnmount(() => {
   right: 9px;
   width: 23%;
   height: 30%;
-  border: 2px solid var(--color-accent);
-  box-shadow: 0 0 20px rgba(57, 255, 20, 0.5);
-  background: #000;
+  border: 2px solid var(--color-video-border);
+  box-shadow: var(--color-video-local-shadow);
+  background: var(--color-video-local-bg);
   overflow: hidden;
   border-radius: 2px;
   z-index: 20;
@@ -626,7 +624,7 @@ onBeforeUnmount(() => {
   height: 20px;
   border: 0;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-video-button-bg);
   color: var(--color-accent);
   display: inline-flex;
   align-items: center;
@@ -634,7 +632,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   line-height: 1;
   font-size: 11px;
-  text-shadow: 0 0 6px rgba(57, 255, 20, 0.7);
+  text-shadow: var(--color-video-button-text-shadow);
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
   transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
   padding: 0;
@@ -643,12 +641,12 @@ onBeforeUnmount(() => {
 .pip-control-btn:hover {
   transform: translateY(-1px);
   opacity: 0.9;
-  background: rgba(0, 0, 0, 0.75);
+  background: var(--color-video-button-hover-bg);
 }
 
 .pip-control-btn.btn-off {
   color: var(--color-danger);
-  text-shadow: 0 0 6px rgba(255, 57, 57, 0.7);
+  text-shadow: var(--color-video-button-off-text-shadow);
 }
 
 .pip-control-btn.btn-off:hover {
@@ -669,7 +667,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(3, 10, 3, 0.95);
+  background: var(--color-video-local-fallback-bg);
   color: var(--color-accent);
   padding: 8px;
   box-sizing: border-box;
@@ -680,26 +678,27 @@ onBeforeUnmount(() => {
   letter-spacing: 1px;
   font-weight: bold;
   text-transform: uppercase;
-  text-shadow: 0 0 8px rgba(57, 255, 20, 0.8);
+  text-shadow: var(--color-video-fallback-header-text-shadow);
 }
 
 .pip-border {
   position: absolute;
   inset: 0;
-  border: 2px solid var(--color-accent);
+  border: 2px solid var(--color-video-pip-border);
   pointer-events: none;
   animation: pip-flicker 0.15s infinite;
   opacity: 0.6;
+  box-shadow: var(--color-video-pip-shadow);
 }
 
 @keyframes pip-flicker {
   0%, 100% {
     opacity: 0.6;
-    box-shadow: 0 0 10px rgba(57, 255, 20, 0.4);
+    box-shadow: var(--color-video-pip-shadow);
   }
   50% {
     opacity: 0.8;
-    box-shadow: 0 0 20px rgba(57, 255, 20, 0.6);
+    box-shadow: var(--color-video-pip-flicker-shadow);
   }
 }
 
@@ -711,6 +710,15 @@ onBeforeUnmount(() => {
   background-size: 100% 3px;
   pointer-events: none;
   z-index: 5;
+}
+
+.remote-audio {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 100;
+  width: 200px;
+  background: var(--color-video-audio-bg);
 }
 
 /* Ensure video fills container */

@@ -638,6 +638,18 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => config.value.scanlines ?? true,
+  (enabled) => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    document.body.classList.toggle('scanlines-enabled', enabled);
+  },
+  { immediate: true }
+);
+
 function minimize() {
   if (!hasTauriWindow) {
     return;

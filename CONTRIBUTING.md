@@ -37,6 +37,27 @@ Copy the contents below and customize the colors:
   --color-chat-warning: #ffd36f;
   --color-chat-warning-contrast: #121212;
   
+  /* DM Chat Modal Colors */
+  --color-dmchatmodal-window-bg: linear-gradient(180deg, rgba(0, 255, 0, 0.08), rgba(0, 0, 0, 0.95));
+  --color-dmchatmodal-modal-shadow: 0 0 16px rgba(0, 255, 0, 0.22);
+  --color-dmchatmodal-modal-window-bg: linear-gradient(180deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.9));
+  --color-dmchatmodal-tab-hover-bg: rgba(0, 255, 0, 0.06);
+  --color-dmchatmodal-tab-active-bg: rgba(0, 255, 0, 0.14);
+  --color-dmchatmodal-tab-active-window-bg: rgba(0, 255, 0, 0.12);
+  --color-dmchatmodal-tab-bar-window-border: rgba(0, 255, 0, 0.18);
+  --color-dmchatmodal-notice-call-border: var(--color-accent);
+  --color-dmchatmodal-notice-call-bg: rgba(0, 255, 0, 0.08);
+  --color-dmchatmodal-notice-info-border: var(--color-accent-muted);
+  --color-dmchatmodal-notice-info-bg: rgba(0, 255, 0, 0.08);
+  --color-dmchatmodal-content-window-bg: rgba(0, 0, 0, 0.12);
+  --color-dmchatmodal-files-section-bg: rgba(0, 255, 0, 0.02);
+  --color-dmchatmodal-files-section-border: rgba(0, 255, 0, 0.14);
+  --color-dmchatmodal-drop-overlay-bg: rgba(0, 255, 0, 0.16);
+  --color-dmchatmodal-danger-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+  --color-dmchatmodal-send-btn-hover-shadow: 0 0 10px rgba(0, 255, 0, 0.45);
+  --color-dmchatmodal-progress-bar-bg: rgba(0, 255, 0, 0.1);
+  --color-dmchatmodal-effect-text-shadow: 0 0 18px rgba(0, 255, 0, 0.75);
+  
   /* Auth Screen Colors */
   --color-auth-surface: rgba(0, 20, 0, 0.8);
   --color-auth-surface-glow: rgba(0, 255, 0, 0.2);
@@ -124,6 +145,7 @@ That's it! The maintainers will test it and merge it into the app. Your theme wi
 - **--color-accent**: Your main highlight color—this is the most important one!
 - **--color-bg-base**: Keep this dark for that terminal feel
 - **--color-text-primary**: Must have good contrast against the background
+- **DM Chat Modal**: Theme the DM modal's window, tab bar, notice panels, file attachments, send button hover glow, and progress bar.
 - **User Colors**: These 15 distinct colors help users stand out in chat—vary the hue!
 - **Test in Dark Room**: See how your colors feel in low light
 - **Contrast Check**: Squint at your screen—can you still read everything?

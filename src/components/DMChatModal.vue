@@ -874,7 +874,7 @@ watch(
     textContainer.style.whiteSpace = 'pre-wrap';
     textContainer.style.overflowWrap = 'normal';
     textContainer.style.wordBreak = 'normal';
-    textContainer.style.textShadow = '0 0 20px rgba(57, 255, 20, 0.8)';
+    textContainer.style.textShadow = 'var(--color-dmchatmodal-effect-text-shadow, 0 0 20px rgba(57, 255, 20, 0.8))';
     textContainer.style.overflow = 'hidden';
     animContainer.appendChild(textContainer);
 
@@ -951,9 +951,7 @@ watch(
   height: 100%;
   justify-content: stretch;
   align-items: stretch;
-  background:
-    radial-gradient(circle at top, rgba(57, 255, 20, 0.09), transparent 34%),
-    linear-gradient(180deg, rgba(4, 8, 4, 0.98), rgba(0, 0, 0, 1));
+  background: var(--color-dmchatmodal-window-bg);
 }
 
 .modal-box {
@@ -964,7 +962,7 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 0 20px rgba(57, 255, 20, 0.3);
+  box-shadow: var(--color-dmchatmodal-modal-shadow);
   position: relative;
 }
 
@@ -972,12 +970,8 @@ watch(
   width: 100%;
   height: calc(100% - 34px);
   border: none;
-  box-shadow:
-    inset 0 1px 0 rgba(57, 255, 20, 0.16),
-    inset 0 0 36px rgba(57, 255, 20, 0.08);
-  background:
-    linear-gradient(180deg, rgba(5, 10, 5, 0.98), rgba(0, 0, 0, 1) 24%),
-    linear-gradient(135deg, rgba(57, 255, 20, 0.04), transparent 42%);
+  box-shadow: var(--color-dmchatmodal-modal-window-shadow);
+  background: var(--color-dmchatmodal-modal-window-bg);
 }
 
 :deep(.video-window) {
@@ -1009,9 +1003,9 @@ watch(
 }
 
 .notice-item {
-  border: 1px solid var(--color-danger);
-  background: rgba(255, 0, 0, 0.08);
-  color: #ff8d8d;
+  border: 1px solid var(--color-dmchatmodal-notice-danger-border);
+  background: var(--color-dmchatmodal-notice-danger-bg);
+  color: var(--color-dmchatmodal-notice-danger-color);
   padding: 8px 10px;
   font-size: 12px;
   text-transform: uppercase;
@@ -1024,21 +1018,21 @@ watch(
 
 .notice-item.audio-call,
 .notice-item.video-call {
-  border-color: var(--color-accent);
-  background: rgba(57, 255, 20, 0.08);
-  color: var(--color-accent);
+  border-color: var(--color-dmchatmodal-notice-call-border);
+  background: var(--color-dmchatmodal-notice-call-bg);
+  color: var(--color-dmchatmodal-notice-call-color);
 }
 
 .notice-item.file-offer {
-  border-color: #ffce6b;
-  background: rgba(255, 206, 107, 0.08);
-  color: #ffce6b;
+  border-color: var(--color-dmchatmodal-notice-file-offer-border);
+  background: var(--color-dmchatmodal-notice-file-offer-bg);
+  color: var(--color-dmchatmodal-notice-file-offer-color);
 }
 
 .notice-item.info {
-  border-color: var(--color-accent-muted);
-  background: rgba(57, 255, 20, 0.08);
-  color: var(--color-accent);
+  border-color: var(--color-dmchatmodal-notice-info-border);
+  background: var(--color-dmchatmodal-notice-info-bg);
+  color: var(--color-dmchatmodal-notice-info-color);
 }
 
 .notice-buttons {
@@ -1140,8 +1134,8 @@ watch(
 }
 
 #dm-modal.presentation-window .tab-bar {
-  border-bottom: 1px solid rgba(57, 255, 20, 0.16);
-  background: linear-gradient(180deg, rgba(10, 18, 10, 0.96), rgba(5, 10, 5, 0.92));
+  border-bottom: 1px solid var(--color-dmchatmodal-tab-bar-window-border);
+  background: var(--color-dmchatmodal-tab-bar-window-bg);
 }
 
 .tab {
@@ -1165,22 +1159,22 @@ watch(
 #dm-modal.presentation-window .tab {
   min-width: 144px;
   padding: 12px 16px;
-  border-right: 1px solid rgba(57, 255, 20, 0.1);
+  border-right: 1px solid var(--color-dmchatmodal-tab-border-window);
 }
 
 .tab:hover {
-  background: rgba(57, 255, 20, 0.05);
+  background: var(--color-dmchatmodal-tab-hover-bg);
 }
 
 .tab.active {
-  background: rgba(57, 255, 20, 0.1);
+  background: var(--color-dmchatmodal-tab-active-bg);
   color: var(--color-accent);
   border-bottom: 2px solid var(--color-accent);
 }
 
 #dm-modal.presentation-window .tab.active {
-  background: linear-gradient(180deg, rgba(57, 255, 20, 0.14), rgba(57, 255, 20, 0.04));
-  box-shadow: inset 0 1px 0 rgba(57, 255, 20, 0.16);
+  background: var(--color-dmchatmodal-tab-active-window-bg);
+  box-shadow: var(--color-dmchatmodal-tab-active-window-box-shadow);
 }
 
 .tab-label {
@@ -1256,9 +1250,7 @@ watch(
 }
 
 #dm-modal.presentation-window .modal-content {
-  background:
-    radial-gradient(circle at top right, rgba(57, 255, 20, 0.05), transparent 32%),
-    linear-gradient(180deg, rgba(2, 5, 2, 0.18), transparent 20%);
+  background: var(--color-dmchatmodal-content-window-bg);
 }
 
 .requests-section {
@@ -1285,7 +1277,7 @@ watch(
 }
 
 .request-item {
-  background: rgba(57, 255, 20, 0.05);
+  background: var(--color-dmchatmodal-request-item-bg);
   border: 1px solid var(--color-accent-muted);
   padding: 15px;
   margin-bottom: 12px;
@@ -1464,7 +1456,7 @@ watch(
 }
 
 .messages.drag-over {
-  background-color: rgba(57, 255, 20, 0.1);
+  background-color: var(--color-dmchatmodal-drag-over-bg);
 }
 
 .drop-overlay {
@@ -1473,7 +1465,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(57, 255, 20, 0.15);
+  background: var(--color-dmchatmodal-drop-overlay-bg);
   color: var(--color-accent);
   font-size: 16px;
   font-weight: bold;
@@ -1510,8 +1502,8 @@ watch(
 }
 
 #dm-modal.presentation-window .input-bar {
-  border-top: 1px solid rgba(57, 255, 20, 0.16);
-  background: linear-gradient(180deg, rgba(6, 10, 6, 0.96), rgba(2, 4, 2, 0.98));
+  border-top: 1px solid var(--color-dmchatmodal-input-bar-window-border);
+  background: var(--color-dmchatmodal-input-bar-window-bg);
 }
 
 #dm-modal.presentation-window .input-bar input {
@@ -1567,7 +1559,7 @@ watch(
 .cancel-btn:hover {
   background: var(--color-danger);
   color: var(--color-on-danger);
-  box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+  box-shadow: var(--color-dmchatmodal-danger-shadow);
 }
 
 .send-btn {
@@ -1586,7 +1578,7 @@ watch(
 
 .send-btn:hover:not(:disabled) {
   filter: brightness(1.08);
-  box-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+  box-shadow: var(--color-dmchatmodal-send-btn-hover-shadow);
 }
 
 .send-btn:disabled {
@@ -1645,16 +1637,16 @@ watch(
 /* Files Section */
 .files-section {
   padding: 12px 15px;
-  background: rgba(57, 255, 20, 0.02);
-  border-top: 1px solid var(--color-accent-muted);
+  background: var(--color-dmchatmodal-files-section-bg);
+  border-top: 1px solid var(--color-dmchatmodal-files-section-border);
   max-height: 200px;
   overflow-y: auto;
 }
 
 #dm-modal.presentation-window .files-section {
   padding: 12px 18px;
-  background: linear-gradient(180deg, rgba(57, 255, 20, 0.04), rgba(57, 255, 20, 0.015));
-  border-top: 1px solid rgba(57, 255, 20, 0.14);
+  background: var(--color-dmchatmodal-files-section-window-bg);
+  border-top: 1px solid var(--color-dmchatmodal-files-section-window-border);
 }
 
 .files-header {
@@ -1696,7 +1688,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-chat-surface);
+  background: var(--color-dmchatmodal-file-item-bg);
   border: 1px solid var(--color-accent-muted);
   padding: 8px 10px;
   border-radius: 2px;
@@ -1731,7 +1723,7 @@ watch(
 .progress-bar {
   flex: 1;
   height: 4px;
-  background: rgba(57, 255, 20, 0.1);
+  background: var(--color-dmchatmodal-progress-bar-bg);
   border: 1px solid var(--color-accent-muted);
   border-radius: 2px;
   overflow: hidden;
@@ -1817,7 +1809,7 @@ watch(
 .file-action-btn.reject:hover {
   background: var(--color-danger);
   color: var(--color-on-danger);
-  box-shadow: 0 0 10px rgba(255, 0, 0, 0.4);
+  box-shadow: var(--color-dmchatmodal-danger-shadow);
 }
 
 .file-action-btn.accept {

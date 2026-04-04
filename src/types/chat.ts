@@ -27,6 +27,7 @@ export interface AudioConfig {
   autoUpdatePulseMinutes?: number;
   dmEnabled: boolean;
   agentAmpEnabled: boolean;
+  scanlines?: boolean;
   soundpack: string;
   theme: string;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';

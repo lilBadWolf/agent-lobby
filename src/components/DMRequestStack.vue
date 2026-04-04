@@ -50,8 +50,8 @@ const hasEntries = computed(() =>
 <style scoped>
 .dm-request-stack {
   position: absolute;
-  right: 252px;
-  bottom: 72px;
+  right: 12px;
+  bottom: 126px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -71,8 +71,8 @@ const hasEntries = computed(() =>
   pointer-events: auto;
   border: none;
   border-radius: 10px;
-  background: rgba(5, 14, 5, 0.94);
-  box-shadow: 0 0 16px rgba(57, 255, 20, 0.18);
+  background: var(--color-dm-request-card-bg);
+  box-shadow: var(--color-dm-request-card-shadow);
   padding: 8px 10px;
   backdrop-filter: blur(4px);
 }
@@ -129,7 +129,7 @@ const hasEntries = computed(() =>
 }
 
 .accept-btn:hover {
-  background: rgba(57, 255, 20, 0.14);
+  background: var(--color-dm-request-accept-hover);
 }
 
 .reject-btn {
@@ -137,15 +137,15 @@ const hasEntries = computed(() =>
 }
 
 .reject-btn:hover {
-  background: rgba(255, 57, 57, 0.14);
+  background: var(--color-dm-request-reject-hover);
 }
 
 .info-card {
-  box-shadow: 0 0 14px rgba(57, 255, 20, 0.12);
+  box-shadow: var(--color-dm-request-info-shadow);
 }
 
 .call-card {
-  box-shadow: 0 0 14px rgba(57, 255, 20, 0.2);
+  box-shadow: var(--color-dm-request-call-shadow);
 }
 
 .transient-card .request-actions {

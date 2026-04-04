@@ -27,6 +27,7 @@ export interface AudioConfig {
   autoUpdatePulseMinutes?: number;
   dmEnabled: boolean;
   agentAmpEnabled: boolean;
+  agentAmpDetached?: boolean;
   scanlines?: boolean;
   soundpack: string;
   theme: string;

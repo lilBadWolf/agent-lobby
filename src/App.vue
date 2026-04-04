@@ -8,6 +8,14 @@
     >
       {{ isInstallingUpdate ? 'Installing...' : `Download ${availableVersion || 'Update'}` }}
     </button>
+    <button
+      v-if="config.agentAmpDetached"
+      class="titlebar-agentamp-btn"
+      :class="{ 'is-playing': isAgentAmpPlaying }"
+      @click="handleShowAgentAmpWindow"
+    >
+      agentAMP
+    </button>
     <button class="minimize-btn" @click="minimize">—</button>
     <button class="maximize-btn" @click="toggleMaximize">
       <span class="window-icon" :class="{ maximized: isMaximized }" aria-hidden="true"></span>
@@ -107,7 +115,7 @@
         />
       </div>
       <AgentAmpPlayer
-        v-if="config.agentAmpEnabled"
+        v-if="config.agentAmpEnabled && !config.agentAmpDetached"
         :enabled="config.agentAmpEnabled"
       />
     </div>
@@ -152,7 +160,7 @@
 
 .titlebar-update-btn {
   position: absolute;
-  right: 90px;
+  right: 190px;
   height: 16px;
   border: 1px solid var(--color-accent);
   background: transparent;
@@ -167,6 +175,34 @@
 }
 
 .titlebar-update-btn:hover {
+  opacity: 1;
+}
+
+.titlebar-agentamp-btn {
+  position: absolute;
+  right: 90px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 10px;
+  line-height: 1;
+  padding: 0 6px;
+  opacity: 0.85;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: opacity 0.2s, color 0.2s, text-shadow 0.2s, filter 0.2s;
+}
+
+.titlebar-agentamp-btn:hover {
+  opacity: 1;
+}
+
+.titlebar-agentamp-btn.is-playing {
+  color: var(--color-accent);
+  text-shadow: 0 0 8px var(--color-agentamp-track-active-glow, var(--color-accent-muted)), 0 0 14px var(--color-accent-muted);
+  filter: saturate(1.15);
   opacity: 1;
 }
 
@@ -251,6 +287,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import packageJson from '../package.json';
+import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
@@ -320,6 +357,14 @@ const DM_WINDOW_DEFAULT_WIDTH = 640;
 const DM_WINDOW_DEFAULT_HEIGHT = 400;
 const DM_WINDOW_MIN_WIDTH = 320;
 const DM_WINDOW_MIN_HEIGHT = 200;
+const AGENTAMP_WINDOW_LABEL = 'agentamp-window';
+const AGENTAMP_WINDOW_DEFAULT_WIDTH = 860;
+const AGENTAMP_WINDOW_DEFAULT_HEIGHT = 320;
+const AGENTAMP_WINDOW_MIN_WIDTH = 560;
+const AGENTAMP_WINDOW_MIN_HEIGHT = 220;
+const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
+const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
+const AGENTAMP_FORCE_CLOSE_STORAGE_KEY = 'agent_agentamp_force_close';
 const DM_WINDOW_MEDIA_EVENT = 'media-state';
 const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
@@ -369,11 +414,16 @@ const dmWindowOpen = ref(false);
 let dmPopupWindow: Window | null = null;
 let dmPopupWatchIntervalId: number | null = null;
 let dmWebChannel: BroadcastChannel | null = null;
+let agentAmpPopupWindow: Window | null = null;
+let agentAmpPopupWatchIntervalId: number | null = null;
+let agentAmpStatusChannel: BroadcastChannel | null = null;
+let cleanupAgentAmpStorageListener: (() => void) | null = null;
 const relaySenders = new Map<string, RelaySenderEntry>();
 let cleanupDMActionListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
 const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
+const isAgentAmpPlaying = ref(false);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
 
@@ -546,9 +596,69 @@ const pageTitle = computed(() => {
   return `${username.value} // ${isAway.value ? 'AWAY' : 'LISTENING'}`;
 });
 
+function readPersistedAgentAmpPlayingState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(AGENTAMP_PLAYING_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function updateAgentAmpPlayingState(nextPlaying: boolean) {
+  isAgentAmpPlaying.value = nextPlaying;
+}
+
+function initializeAgentAmpStatusBridge() {
+  updateAgentAmpPlayingState(readPersistedAgentAmpPlayingState());
+
+  if (typeof window !== 'undefined') {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== AGENTAMP_PLAYING_STORAGE_KEY) {
+        return;
+      }
+
+      updateAgentAmpPlayingState(event.newValue === '1');
+    };
+
+    window.addEventListener('storage', handleStorage);
+    cleanupAgentAmpStorageListener = () => {
+      window.removeEventListener('storage', handleStorage);
+      cleanupAgentAmpStorageListener = null;
+    };
+  }
+
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
+  agentAmpStatusChannel.onmessage = (event: MessageEvent) => {
+    const message = event.data as { type?: string; playing?: boolean };
+    if (message?.type !== 'playback-state' || typeof message.playing !== 'boolean') {
+      return;
+    }
+
+    updateAgentAmpPlayingState(message.playing);
+  };
+}
+
+function teardownAgentAmpStatusBridge() {
+  if (agentAmpStatusChannel) {
+    agentAmpStatusChannel.close();
+    agentAmpStatusChannel = null;
+  }
+
+  cleanupAgentAmpStorageListener?.();
+}
+
 onMounted(async () => {
   // window.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  initializeAgentAmpStatusBridge();
   initializeWebDMBridge();
   await initializeDetachedDMActionListener();
 
@@ -561,6 +671,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  teardownAgentAmpStatusBridge();
+  void closeDetachedAgentAmpWindow();
   teardownAllRelaySenders(false);
   if (dmPopupWatchIntervalId !== null) {
     window.clearInterval(dmPopupWatchIntervalId);
@@ -648,6 +760,22 @@ watch(
     document.body.classList.toggle('scanlines-enabled', enabled);
   },
   { immediate: true }
+);
+
+watch(
+  () => ({
+    enabled: config.value.agentAmpEnabled,
+    detached: config.value.agentAmpDetached,
+  }),
+  async ({ enabled, detached }) => {
+    if (enabled && detached) {
+      await openDetachedAgentAmpWindow();
+      return;
+    }
+
+    await closeDetachedAgentAmpWindow();
+  },
+  { immediate: true, deep: true }
 );
 
 function minimize() {
@@ -758,6 +886,14 @@ function handleShowDMWindow() {
   void openDetachedDMWindow();
 }
 
+function handleShowAgentAmpWindow() {
+  if (!config.value.agentAmpDetached) {
+    return;
+  }
+
+  void openDetachedAgentAmpWindow();
+}
+
 function handleAmbience() {
   tryPlayAmbience();
 }
@@ -770,6 +906,7 @@ function handleSettingsUpdate(newConfig: AudioConfig) {
     ...newConfig,
     autoAwayMinutes: newConfig.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
+    agentAmpDetached: newConfig.agentAmpDetached ?? false,
     customSlashCommands: newConfig.customSlashCommands ?? [],
   };
 
@@ -1539,6 +1676,151 @@ async function closeDetachedDMWindow() {
     window.clearInterval(dmPopupWatchIntervalId);
     dmPopupWatchIntervalId = null;
   }
+}
+
+function startAgentAmpWebPopupHeartbeat() {
+  if (agentAmpPopupWatchIntervalId !== null) {
+    return;
+  }
+
+  agentAmpPopupWatchIntervalId = window.setInterval(() => {
+    if (agentAmpPopupWindow?.closed) {
+      agentAmpPopupWindow = null;
+      window.clearInterval(agentAmpPopupWatchIntervalId!);
+      agentAmpPopupWatchIntervalId = null;
+    }
+  }, 750);
+}
+
+async function focusDetachedAgentAmpWindow(): Promise<boolean> {
+  if (hasTauriWindow) {
+    try {
+      return await invoke<boolean>('raise_agentamp_window');
+    } catch (error) {
+      console.debug('Unable to raise detached AgentAmp window via native command:', error);
+    }
+
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
+    if (!existingWindow) {
+      return false;
+    }
+
+    if (await existingWindow.isMinimized()) {
+      await existingWindow.unminimize();
+    }
+
+    await existingWindow.show();
+    await existingWindow.setFocus();
+    return true;
+  }
+
+  if (agentAmpPopupWindow && !agentAmpPopupWindow.closed) {
+    agentAmpPopupWindow.focus();
+    return true;
+  }
+
+  return false;
+}
+
+async function closeDetachedAgentAmpWindow() {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
+    if (existingWindow) {
+      try {
+        try {
+          window.localStorage.setItem(AGENTAMP_FORCE_CLOSE_STORAGE_KEY, '1');
+        } catch {
+          // Ignore localStorage write failures.
+        }
+        await existingWindow.close();
+      } catch (error) {
+        console.debug('Unable to close detached AgentAmp window:', error);
+      } finally {
+        try {
+          window.localStorage.removeItem(AGENTAMP_FORCE_CLOSE_STORAGE_KEY);
+        } catch {
+          // Ignore localStorage cleanup failures.
+        }
+      }
+    }
+
+    return;
+  }
+
+  if (agentAmpPopupWindow && !agentAmpPopupWindow.closed) {
+    agentAmpPopupWindow.close();
+  }
+
+  agentAmpPopupWindow = null;
+
+  if (agentAmpPopupWatchIntervalId !== null) {
+    window.clearInterval(agentAmpPopupWatchIntervalId);
+    agentAmpPopupWatchIntervalId = null;
+  }
+}
+
+async function openDetachedAgentAmpWindow() {
+  const focused = await focusDetachedAgentAmpWindow();
+  if (focused) {
+    return;
+  }
+
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const agentAmpWindowUrl = new URL(window.location.href);
+    agentAmpWindowUrl.searchParams.set('view', 'agentamp');
+
+    const windowHandle = new WebviewWindow(AGENTAMP_WINDOW_LABEL, {
+      url: agentAmpWindowUrl.toString(),
+      title: 'AGENT // AMP',
+      width: AGENTAMP_WINDOW_DEFAULT_WIDTH,
+      height: AGENTAMP_WINDOW_DEFAULT_HEIGHT,
+      minWidth: AGENTAMP_WINDOW_MIN_WIDTH,
+      minHeight: AGENTAMP_WINDOW_MIN_HEIGHT,
+      center: true,
+      resizable: true,
+      decorations: false,
+      transparent: false,
+      useHttpsScheme: true,
+      dragDropEnabled: false,
+    });
+
+    windowHandle.once('tauri://created', () => {
+      void focusDetachedAgentAmpWindow();
+    });
+
+    windowHandle.once('tauri://destroyed', () => {
+    });
+
+    windowHandle.once('tauri://error', (error) => {
+      console.error('Failed to create detached AgentAmp window:', error);
+    });
+
+    return;
+  }
+
+  const popupUrl = `${window.location.pathname}?view=agentamp`;
+  const popupFeatures = [
+    'popup=yes',
+    `width=${AGENTAMP_WINDOW_DEFAULT_WIDTH}`,
+    `height=${AGENTAMP_WINDOW_DEFAULT_HEIGHT}`,
+    'toolbar=no',
+    'menubar=no',
+    'location=no',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+  ].join(',');
+
+  const popup = window.open(popupUrl, 'agent-lobby-agentamp', popupFeatures);
+  if (!popup) {
+    return;
+  }
+
+  agentAmpPopupWindow = popup;
+  startAgentAmpWebPopupHeartbeat();
 }
 
 async function openDetachedDMWindow() {

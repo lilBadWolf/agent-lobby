@@ -1,5 +1,5 @@
 <template>
-  <section class="agentamp-dock" :class="{ compact: isCompact }">
+  <section class="agentamp-dock" :class="{ compact: isCompact, 'detached-window': props.detached }">
     <input
       ref="fileInputEl"
       class="agentamp-file-input"
@@ -140,10 +140,7 @@
       v-if="showPlaylist || isCompact"
       class="agentamp-playlist"
       role="listbox"
-      :style="{
-        maxHeight: (playlist.length > 0 ? (Math.min(playlist.length, 5) * 34) + 'px' : '140px'),
-        overflowY: playlist.length > 5 ? 'auto' : 'hidden',
-      }"
+      :style="playlistStyle"
     >
       <li
         v-for="(track, index) in playlist"
@@ -186,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
 
 type TauriDialogModule = typeof import('@tauri-apps/plugin-dialog');
@@ -194,6 +191,8 @@ type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
 type TauriPathModule = typeof import('@tauri-apps/api/path');
 
 const PLAYER_STORAGE_KEY = 'agent_amp_state_v1';
+const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
+const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 
 type LoopMode = 'none' | 'all' | 'one';
 type PlaylistSource = 'path' | 'dataUrl';
@@ -208,14 +207,18 @@ type PlaylistTrack = {
 type PersistedPlayerState = {
   playlist: PlaylistTrack[];
   currentIndex: number;
+  nowPlayingTrackId?: string | null;
+  currentTime?: number;
   loopMode: LoopMode;
   volume: number;
   compactMode?: boolean;
+  showPlaylist?: boolean;
   shuffle?: boolean;
 };
 
 const props = defineProps<{
   enabled: boolean;
+  detached?: boolean;
 }>();
 
 const playlist = ref<PlaylistTrack[]>([]);
@@ -240,6 +243,9 @@ let tauriDialogPromise: Promise<TauriDialogModule | null> | null = null;
 let tauriConvertFileSrcPromise: Promise<((filePath: string) => string) | null> | null = null;
 let tauriFsPromise: Promise<TauriFsModule | null> | null = null;
 let tauriPathPromise: Promise<TauriPathModule | null> | null = null;
+let pendingRestoreTime = 0;
+let lastPersistedPlaybackTime = -1;
+let agentAmpStatusChannel: BroadcastChannel | null = null;
 
 const currentTrack = computed(() => {
   if (currentIndex.value < 0 || currentIndex.value >= playlist.value.length) {
@@ -291,6 +297,25 @@ const nextTrack = computed(() => {
 
 const thenTrack = computed(() => {
   return getUpcomingTrack(2);
+});
+
+const playlistStyle = computed<CSSProperties>(() => {
+  const preferredHeight = playlist.value.length > 0 ? `${Math.min(playlist.value.length, 5) * 34}px` : '140px';
+
+  if (props.detached && !isCompact.value) {
+    return {
+      height: 'var(--agentamp-detached-playlist-height, auto)',
+      maxHeight: 'var(--agentamp-detached-playlist-max-height, 999px)',
+      overflowY: 'auto',
+      minHeight: 0,
+      flex: '0 0 auto',
+    };
+  }
+
+  return {
+    maxHeight: preferredHeight,
+    overflowY: playlist.value.length > 5 ? 'auto' : 'hidden',
+  };
 });
 
 const cycleModes = computed<Array<'now' | 'next' | 'then'>>(() => {
@@ -369,7 +394,7 @@ watch(volume, (nextVolume) => {
 });
 
 watch(
-  [playlist, currentIndex, loopMode, isShuffle, volume, isCompact],
+  [playlist, currentIndex, loopMode, isShuffle, volume, isCompact, showPlaylist],
   () => {
     void persistPlayerState();
   },
@@ -391,6 +416,30 @@ watch(
     isPlaying.value = false;
   }
 );
+
+watch([isPlaying, currentTrack], () => {
+  publishPlaybackState();
+});
+
+function publishPlaybackState() {
+  const playing = Boolean(isPlaying.value && currentTrack.value);
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(AGENTAMP_PLAYING_STORAGE_KEY, playing ? '1' : '0');
+    } catch {
+      // Ignore localStorage write failures.
+    }
+  }
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    if (!agentAmpStatusChannel) {
+      agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
+    }
+
+    agentAmpStatusChannel.postMessage({ type: 'playback-state', playing });
+  }
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -716,12 +765,14 @@ async function handleFileSelection(event: Event) {
   input.value = '';
 }
 
-function loadCurrentTrack(autoplay: boolean) {
+function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
   const player = audioEl.value;
   const track = currentTrack.value;
   if (!player || !track) {
     return;
   }
+
+  pendingRestoreTime = Number.isFinite(resumeTime) && resumeTime > 0 ? resumeTime : 0;
 
   if (track.source === 'path') {
     void getTauriConvertFileSrc().then((convertFileSrc) => {
@@ -731,7 +782,7 @@ function loadCurrentTrack(autoplay: boolean) {
 
       player.src = convertFileSrc(track.location);
       player.currentTime = 0;
-      currentTime.value = 0;
+      currentTime.value = pendingRestoreTime;
       duration.value = 0;
 
       if (autoplay) {
@@ -745,7 +796,7 @@ function loadCurrentTrack(autoplay: boolean) {
 
   player.src = track.location;
   player.currentTime = 0;
-  currentTime.value = 0;
+  currentTime.value = pendingRestoreTime;
   duration.value = 0;
 
   if (autoplay) {
@@ -1014,6 +1065,8 @@ function clearPlaylist() {
   currentTime.value = 0;
   duration.value = 0;
   shuffleHistory.value = [];
+  pendingRestoreTime = 0;
+  lastPersistedPlaybackTime = -1;
 
   if (audioEl.value) {
     audioEl.value.pause();
@@ -1029,6 +1082,14 @@ function handleLoadedMetadata() {
   }
 
   duration.value = Number.isFinite(player.duration) ? player.duration : 0;
+
+  if (pendingRestoreTime > 0) {
+    const maxDuration = Number.isFinite(player.duration) ? player.duration : pendingRestoreTime;
+    const seekTo = Math.max(0, Math.min(pendingRestoreTime, maxDuration));
+    player.currentTime = seekTo;
+    currentTime.value = seekTo;
+    pendingRestoreTime = 0;
+  }
 }
 
 function handleTimeUpdate() {
@@ -1038,6 +1099,11 @@ function handleTimeUpdate() {
   }
 
   currentTime.value = Number.isFinite(player.currentTime) ? player.currentTime : 0;
+
+  if (Math.abs(currentTime.value - lastPersistedPlaybackTime) >= 2) {
+    lastPersistedPlaybackTime = currentTime.value;
+    void persistPlayerState();
+  }
 }
 
 function handleTrackEnded() {
@@ -1158,9 +1224,12 @@ async function persistPlayerState() {
     const serialized: PersistedPlayerState = {
       playlist: playlist.value,
       currentIndex: currentIndex.value,
+      nowPlayingTrackId: currentTrack.value?.id ?? null,
+      currentTime: currentTime.value,
       loopMode: loopMode.value,
       volume: volume.value,
       compactMode: isCompact.value,
+      showPlaylist: showPlaylist.value,
       shuffle: isShuffle.value,
     };
 
@@ -1232,10 +1301,23 @@ async function restorePlayerState() {
       : [];
 
     playlist.value = restoredTracks;
-    currentIndex.value =
-      restoredTracks.length > 0
-        ? Math.max(0, Math.min(Number(parsed.currentIndex ?? 0), restoredTracks.length - 1))
-        : -1;
+
+    const persistedTrackId = typeof parsed.nowPlayingTrackId === 'string' ? parsed.nowPlayingTrackId : null;
+    const persistedIndex = Number(parsed.currentIndex ?? 0);
+    const trackIndexById = persistedTrackId
+      ? restoredTracks.findIndex((track) => track.id === persistedTrackId)
+      : -1;
+
+    const resolvedIndex = trackIndexById >= 0
+      ? trackIndexById
+      : Math.max(0, Math.min(persistedIndex, restoredTracks.length - 1));
+
+    currentIndex.value = restoredTracks.length > 0 ? resolvedIndex : -1;
+
+    const persistedCurrentTime = Number(parsed.currentTime);
+    currentTime.value = Number.isFinite(persistedCurrentTime) && persistedCurrentTime > 0
+      ? persistedCurrentTime
+      : 0;
 
     const parsedLoopMode = parsed.loopMode;
     loopMode.value = parsedLoopMode === 'all' || parsedLoopMode === 'one' ? parsedLoopMode : 'none';
@@ -1246,10 +1328,13 @@ async function restorePlayerState() {
     }
 
     isCompact.value = Boolean(parsed.compactMode);
+    if (typeof parsed.showPlaylist === 'boolean') {
+      showPlaylist.value = parsed.showPlaylist;
+    }
     isShuffle.value = Boolean(parsed.shuffle);
 
     if (currentIndex.value >= 0) {
-      loadCurrentTrack(false);
+      loadCurrentTrack(false, currentTime.value);
     }
   } catch {
     localStorage.removeItem(PLAYER_STORAGE_KEY);
@@ -1273,16 +1358,24 @@ onMounted(() => {
   window.addEventListener('beforeunload', flushPlayerStateOnShutdown);
   restorePlayerState();
   restartNowCycle();
+  publishPlaybackState();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pagehide', flushPlayerStateOnShutdown);
   window.removeEventListener('beforeunload', flushPlayerStateOnShutdown);
+  isPlaying.value = false;
+  publishPlaybackState();
   flushPlayerStateOnShutdown();
 
   if (nowCycleInterval) {
     clearInterval(nowCycleInterval);
     nowCycleInterval = null;
+  }
+
+  if (agentAmpStatusChannel) {
+    agentAmpStatusChannel.close();
+    agentAmpStatusChannel = null;
   }
 });
 </script>
@@ -1609,6 +1702,10 @@ onBeforeUnmount(() => {
   box-shadow: var(--color-agentamp-playlist-shadow);
 }
 
+.agentamp-dock.detached-window .agentamp-playlist {
+  transition: box-shadow 0.18s;
+}
+
 .agentamp-toggle-playlist-btn {
   min-width: 28px;
   height: 24px;
@@ -1735,6 +1832,10 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
 }
 
+.agentamp-dock.compact.detached-window {
+  padding-top: 8px;
+}
+
 .agentamp-dock.compact .agentamp-playlist {
   display: none;
 }
@@ -1761,6 +1862,51 @@ onBeforeUnmount(() => {
 
 .agentamp-compact-toggle-spaced {
   margin-left: 16px !important;
+}
+
+.agentamp-dock.detached-window:not(.compact) .agentamp-now-playing .compact-toggle-pinned[data-tooltip]::after {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: calc(100% + 8px);
+  transform: translateY(-50%) translateX(2px);
+}
+
+.agentamp-dock.detached-window:not(.compact) .agentamp-now-playing .compact-toggle-pinned[data-tooltip]::before {
+  top: 50%;
+  bottom: auto;
+  left: auto;
+  right: calc(100% + 3px);
+  transform: translateY(-50%);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 5px solid var(--color-accent);
+  border-right: none;
+}
+
+.agentamp-dock.detached-window:not(.compact) .agentamp-now-playing .compact-toggle-pinned[data-tooltip]:hover:not(:disabled)::after,
+.agentamp-dock.detached-window:not(.compact) .agentamp-now-playing .compact-toggle-pinned[data-tooltip]:focus-visible:not(:disabled)::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+.agentamp-dock.detached-window.compact .agentamp-now-playing [data-tooltip]::after {
+  top: calc(100% + 7px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.agentamp-dock.detached-window.compact .agentamp-now-playing [data-tooltip]::before {
+  top: calc(100% + 2px);
+  bottom: auto;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid var(--color-accent);
+  border-top: none;
+}
+
+.agentamp-dock.detached-window.compact .agentamp-now-playing [data-tooltip]:hover:not(:disabled)::after,
+.agentamp-dock.detached-window.compact .agentamp-now-playing [data-tooltip]:focus-visible:not(:disabled)::after {
+  transform: translateX(-50%) translateY(0);
 }
 
 @media (max-width: 820px) {

@@ -152,6 +152,19 @@ body > #app {
   min-height: 0;
 }
 
+html[data-app-view='agentamp'],
+body[data-app-view='agentamp'] {
+  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body[data-app-view='agentamp'] > #app {
+  height: 100%;
+  min-height: 0;
+}
+
 #app-shell {
   position: relative;
   width: 100%;
@@ -160,6 +173,10 @@ body > #app {
   background: var(--color-bg-base);
   transform-origin: center;
   overflow: hidden;
+}
+
+body[data-app-view='agentamp'] {
+  text-transform: uppercase;
 }
 
 @keyframes turn-off {

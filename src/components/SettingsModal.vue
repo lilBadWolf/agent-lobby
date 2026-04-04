@@ -116,6 +116,16 @@
               @change="handleChange"
             />
           </div>
+          <div class="setting-row">
+            <label>DETACH AGENTAMP</label>
+            <input
+              v-model="localConfig.agentAmpDetached"
+              type="checkbox"
+              id="set-agentamp-detach-toggle"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            />
+          </div>
         </div>
 
         <div v-if="activeTab === 'dm'" class="tab-panel">
@@ -396,6 +406,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
+    agentAmpDetached: config.agentAmpDetached ?? false,
     scanlines: config.scanlines ?? true,
     customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),
   };

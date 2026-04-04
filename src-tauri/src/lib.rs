@@ -40,6 +40,34 @@ fn raise_dm_window(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
+#[tauri::command]
+fn raise_agentamp_window(app: tauri::AppHandle) -> Result<bool, String> {
+    let Some(window) = app.get_webview_window("agentamp-window") else {
+        return Ok(false);
+    };
+
+    if window.is_minimized().map_err(|error| error.to_string())? {
+        window.unminimize().map_err(|error| error.to_string())?;
+    }
+
+    window.show().map_err(|error| error.to_string())?;
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .request_user_attention(Some(UserAttentionType::Critical))
+        .map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    window
+        .set_always_on_top(false)
+        .map_err(|error| error.to_string())?;
+    window
+        .request_user_attention(None)
+        .map_err(|error| error.to_string())?;
+
+    Ok(true)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = portpicker::pick_unused_port().expect("failed to find unused port");
@@ -64,8 +92,9 @@ pub fn run() {
                 app.add_capability(
                     CapabilityBuilder::new("localhost")
                         .remote(url.to_string())
-                        .windows(["main", "dm-window"])
+                        .windows(["main", "dm-window", "agentamp-window"])
                         .permission("core:default")
+                        .permission("core:window:allow-set-size")
                         .permission("fs:default")
                         .permission("fs:allow-download-write")
                         .permission("dialog:default")
@@ -73,6 +102,7 @@ pub fn run() {
                         .permission("core:window:allow-create")
                         .permission("core:webview:allow-create-webview-window")
                         .permission("core:window:allow-close")
+                        .permission("core:window:allow-hide")
                         .permission("core:window:allow-start-dragging")
                         .permission("core:window:allow-maximize")
                         .permission("core:window:allow-unmaximize")
@@ -102,7 +132,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, raise_dm_window])
+        .invoke_handler(tauri::generate_handler![greet, raise_dm_window, raise_agentamp_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

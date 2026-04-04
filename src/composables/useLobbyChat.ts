@@ -20,6 +20,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   autoUpdatePulseMinutes: 'agent_auto_update_pulse_minutes',
   dmEnabled: 'agent_dm_enabled',
   agentAmpEnabled: 'agent_agent_amp_enabled',
+  agentAmpDetached: 'agent_agent_amp_detached',
   scanlines: 'agent_scanlines',
   soundpack: 'agent_soundpack',
   theme: 'agent_theme',
@@ -33,6 +34,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
   agentAmpEnabled: false,
+  agentAmpDetached: false,
   scanlines: true,
   audioEnabled: true,
   volume: 0.5,
@@ -72,6 +74,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.agentAmpEnabled = DEFAULT_AUDIO_CONFIG.agentAmpEnabled;
   }
 
+  if (typeof normalized.agentAmpDetached !== 'boolean') {
+    normalized.agentAmpDetached = DEFAULT_AUDIO_CONFIG.agentAmpDetached;
+  }
+
   if (typeof normalized.scanlines !== 'boolean') {
     normalized.scanlines = DEFAULT_AUDIO_CONFIG.scanlines;
   }
@@ -95,6 +101,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes, nextConfig.autoUpdatePulseMinutes ?? DEFAULT_AUDIO_CONFIG.autoUpdatePulseMinutes),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached, nextConfig.agentAmpDetached ?? DEFAULT_AUDIO_CONFIG.agentAmpDetached),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.scanlines, nextConfig.scanlines ?? DEFAULT_AUDIO_CONFIG.scanlines),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
@@ -114,6 +121,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     autoUpdatePulseMinutes,
     dmEnabled,
     agentAmpEnabled,
+    agentAmpDetached,
     scanlines,
     soundpack,
     theme,
@@ -129,6 +137,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.soundpack),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.theme),
@@ -148,6 +157,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;
+  }
+  if (typeof agentAmpDetached === 'boolean') {
+    saved.agentAmpDetached = agentAmpDetached;
   }
   if (typeof scanlines === 'boolean') {
     saved.scanlines = scanlines;

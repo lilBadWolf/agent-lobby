@@ -5,14 +5,37 @@ import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 const DEFAULT_THEME = 'retro-terminal';
 const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
 const THEME_STORAGE_KEY = 'agent_theme';
+const THEME_SYNC_CHANNEL = 'agent-lobby-theme-sync';
 const availableThemes = Object.keys(THEMES);
 const currentTheme = ref<string>(DEFAULT_THEME);
 let hasInitializedTheme = false;
 let hasHydratedTheme = false;
 let themeHydrationPromise: Promise<void> | null = null;
+let themeSyncChannel: BroadcastChannel | null = null;
+let hasBoundThemeSyncListeners = false;
 
 async function persistTheme(themeName: string) {
   await setPersistedValue(THEME_STORAGE_KEY, themeName);
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, themeName);
+    } catch {
+      // Ignore localStorage write failures.
+    }
+  }
+}
+
+function ensureThemeSyncChannel() {
+  if (typeof BroadcastChannel === 'undefined') {
+    return null;
+  }
+
+  if (!themeSyncChannel) {
+    themeSyncChannel = new BroadcastChannel(THEME_SYNC_CHANNEL);
+  }
+
+  return themeSyncChannel;
 }
 
 function getThemeTokenValue(tokenName: string, fallback = ''): string {
@@ -47,7 +70,36 @@ export function useTheme() {
     const shouldPersist = options?.persist ?? hasHydratedTheme;
     if (shouldPersist) {
       void persistTheme(nextTheme);
+      ensureThemeSyncChannel()?.postMessage({ type: 'theme-changed', theme: nextTheme });
     }
+  }
+
+  if (!hasBoundThemeSyncListeners && typeof window !== 'undefined') {
+    hasBoundThemeSyncListeners = true;
+
+    const syncChannel = ensureThemeSyncChannel();
+    if (syncChannel) {
+      syncChannel.onmessage = (event: MessageEvent) => {
+        const message = event.data as { type?: string; theme?: string };
+        if (message?.type !== 'theme-changed' || typeof message.theme !== 'string') {
+          return;
+        }
+
+        if (message.theme !== currentTheme.value) {
+          applyTheme(message.theme, { persist: false });
+        }
+      };
+    }
+
+    window.addEventListener('storage', (event: StorageEvent) => {
+      if (event.key !== THEME_STORAGE_KEY || typeof event.newValue !== 'string') {
+        return;
+      }
+
+      if (event.newValue !== currentTheme.value) {
+        applyTheme(event.newValue, { persist: false });
+      }
+    });
   }
 
   const rootTheme = typeof document !== 'undefined'

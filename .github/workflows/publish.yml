@@ -41,6 +41,15 @@ jobs:
             librsvg2-dev
       - name: install frontend dependencies
         run: npm install # or yarn install / pnpm install
+      - name: load release notes from RELEASE.md
+        run: |
+          if [ ! -f RELEASE.md ]; then
+            echo "RELEASE.md not found. Create RELEASE.md with your release notes." >&2
+            exit 1
+          fi
+          echo "RELEASE_BODY<<'EOF'" >> $GITHUB_ENV
+          cat RELEASE.md >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
       - uses: tauri-apps/tauri-action@action-v0.6.2
         id: tauri
         env:
@@ -50,8 +59,8 @@ jobs:
         with:
           tagName: app-v__VERSION__ # the action will replace this with your tauri.conf.json version
           releaseName: 'AgentLobby v__VERSION__'
-          releaseBody: 'See the assets below to download.'
-          releaseDraft: true
+          releaseBody: ${{ env.RELEASE_BODY }}
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
       - name: upload updater artifacts

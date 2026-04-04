@@ -2386,6 +2386,10 @@ onBeforeUnmount(() => {
   background: var(--color-chat-bg);
 }
 
+.input-bar:focus-within {
+  z-index: 100;
+}
+
 #chat-msg {
   background: transparent;
   border: none;

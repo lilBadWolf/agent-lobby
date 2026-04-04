@@ -80,6 +80,35 @@ async function applyPersistedSpectrumSettings() {
   }
 }
 
+function handleStorageUpdate(event: StorageEvent) {
+  if (!event.key) {
+    return;
+  }
+
+  if (event.key === SPECTRUM_BAR_COUNT_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if ([32, 48, 64, 96, 128].includes(nextValue)) {
+      spectrumBarCount.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === SPECTRUM_FFT_SIZE_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if ([1024, 2048, 4096, 8192].includes(nextValue)) {
+      spectrumFftSize.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === THEME_STORAGE_KEY) {
+    const nextTheme = event.newValue ? JSON.parse(event.newValue) : event.newValue;
+    if (typeof nextTheme === 'string' && nextTheme.trim()) {
+      applyTheme(nextTheme, { persist: false });
+    }
+  }
+}
+
 function updateDetachedPlaylistViewport(fixedContentHeight?: number, naturalPlaylistHeight?: number) {
   const body = agentAmpWindowBodyRef.value;
   if (!body) {
@@ -333,6 +362,7 @@ onMounted(async () => {
     updateDetachedPlaylistViewport();
   };
   window.addEventListener('resize', windowResizeHandler);
+  window.addEventListener('storage', handleStorageUpdate);
 
   updateDetachedPlaylistViewport();
   void resizeWindowToContent();
@@ -344,6 +374,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('storage', handleStorageUpdate);
   if (cleanupCloseRequestedListener) {
     cleanupCloseRequestedListener();
     cleanupCloseRequestedListener = null;

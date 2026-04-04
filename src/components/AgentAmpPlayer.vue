@@ -38,6 +38,16 @@
           >
             {{ loopModeLabel }}
           </button>
+          <button
+            class="agentamp-btn transport-btn"
+            :class="{ 'shuffle-active': isShuffle }"
+            type="button"
+            :disabled="!hasTracks"
+            data-tooltip="SHUFFLE"
+            @click="toggleShuffle"
+          >
+            ⌥
+          </button>
           <button class="agentamp-icon-btn" type="button" data-tooltip="ADD" @click="openFilePicker">+</button>
         </div>
       </div>
@@ -68,7 +78,7 @@
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="STOP" @click="stopPlayback">[]</button>
       <button class="agentamp-btn transport-btn" type="button" :disabled="!canGoNext" data-tooltip="NEXT" @click="playNext">&gt;&gt;</button>
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="CLEAR PLAYLIST" @click="clearPlaylist">X</button>
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="SAVE PLAYLIST" @click="savePlaylistToFile">SAVE</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="SAVE PLAYLIST" @click="savePlaylistToFile">⤓</button>
       <div class="agentamp-seek-wrap">
         <span class="agentamp-timecode">{{ formatTime(currentTime) }}</span>
         <input
@@ -105,13 +115,23 @@
         {{ loopModeLabel }}
       </button>
       <button
+        class="agentamp-btn transport-btn"
+        :class="{ 'shuffle-active': isShuffle }"
+        type="button"
+        :disabled="!hasTracks"
+        data-tooltip="SHUFFLE"
+        @click="toggleShuffle"
+      >
+        ⌥
+      </button>
+      <button
         v-if="!isCompact"
         :class="['agentamp-btn', 'transport-btn', 'agentamp-toggle-playlist-btn', { 'playlist-visible': showPlaylist }]"
         type="button"
         :data-tooltip="showPlaylist ? 'HIDE PLAYLIST' : 'SHOW PLAYLIST'"
         @click="showPlaylist = !showPlaylist"
       >
-        <span v-if="showPlaylist">▲</span><span v-else>▼</span>
+        <span v-if="showPlaylist">☰</span><span v-else>☰</span>
       </button>
       <button class="agentamp-icon-btn" type="button" data-tooltip="ADD" @click="openFilePicker">+</button>
     </div>
@@ -191,6 +211,7 @@ type PersistedPlayerState = {
   loopMode: LoopMode;
   volume: number;
   compactMode?: boolean;
+  shuffle?: boolean;
 };
 
 const props = defineProps<{
@@ -204,6 +225,8 @@ const currentTime = ref(0);
 const duration = ref(0);
 const volume = ref(0.82);
 const loopMode = ref<LoopMode>('none');
+const isShuffle = ref(false);
+const shuffleHistory = ref<number[]>([]);
 const isCompact = ref(false);
 const showPlaylist = ref(true);
 const isNowHovered = ref(false);
@@ -283,14 +306,14 @@ const cycleModes = computed<Array<'now' | 'next' | 'then'>>(() => {
 
 const loopModeLabel = computed(() => {
   if (loopMode.value === 'one') {
-    return 'ONE';
+    return '↺';
   }
 
   if (loopMode.value === 'all') {
-    return 'ALL';
+    return '∞';
   }
 
-  return 'NONE';
+  return 'OFF';
 });
 
 const nowDisplayLabel = computed(() => {
@@ -346,7 +369,7 @@ watch(volume, (nextVolume) => {
 });
 
 watch(
-  [playlist, currentIndex, loopMode, volume, isCompact],
+  [playlist, currentIndex, loopMode, isShuffle, volume, isCompact],
   () => {
     void persistPlayerState();
   },
@@ -763,6 +786,20 @@ function stopPlayback() {
   currentTime.value = 0;
 }
 
+function pickShuffleIndex(): number {
+  const total = playlist.value.length;
+  if (total <= 1) {
+    return 0;
+  }
+
+  let next: number;
+  do {
+    next = Math.floor(Math.random() * total);
+  } while (next === currentIndex.value);
+
+  return next;
+}
+
 function playNext() {
   if (!playlist.value.length) {
     return;
@@ -770,6 +807,15 @@ function playNext() {
 
   if (loopMode.value === 'one') {
     restartCurrentTrack();
+    return;
+  }
+
+  if (isShuffle.value) {
+    if (currentIndex.value >= 0) {
+      shuffleHistory.value.push(currentIndex.value);
+    }
+    currentIndex.value = pickShuffleIndex();
+    loadCurrentTrack(true);
     return;
   }
 
@@ -800,6 +846,17 @@ function playPrevious() {
 
   if (loopMode.value === 'one') {
     restartCurrentTrack();
+    return;
+  }
+
+  if (isShuffle.value) {
+    const prev = shuffleHistory.value.pop();
+    if (prev !== undefined) {
+      currentIndex.value = prev;
+      loadCurrentTrack(true);
+    } else {
+      restartCurrentTrack();
+    }
     return;
   }
 
@@ -956,6 +1013,7 @@ function clearPlaylist() {
   currentIndex.value = -1;
   currentTime.value = 0;
   duration.value = 0;
+  shuffleHistory.value = [];
 
   if (audioEl.value) {
     audioEl.value.pause();
@@ -1003,7 +1061,7 @@ function handleTrackEnded() {
   }
 
   const isLastTrack = currentIndex.value >= trackCount - 1;
-  if (isLastTrack && loopMode.value === 'none') {
+  if (isLastTrack && loopMode.value === 'none' && !isShuffle.value) {
     stopPlayback();
     return;
   }
@@ -1023,6 +1081,10 @@ function cycleLoopMode() {
   }
 
   loopMode.value = 'none';
+}
+
+function toggleShuffle() {
+  isShuffle.value = !isShuffle.value;
 }
 
 function toggleCompactMode() {
@@ -1099,6 +1161,7 @@ async function persistPlayerState() {
       loopMode: loopMode.value,
       volume: volume.value,
       compactMode: isCompact.value,
+      shuffle: isShuffle.value,
     };
 
     localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(serialized));
@@ -1183,6 +1246,7 @@ async function restorePlayerState() {
     }
 
     isCompact.value = Boolean(parsed.compactMode);
+    isShuffle.value = Boolean(parsed.shuffle);
 
     if (currentIndex.value >= 0) {
       loadCurrentTrack(false);
@@ -1378,6 +1442,18 @@ onBeforeUnmount(() => {
 .loop-mode-none:hover:not(:disabled) {
   background: var(--color-agentamp-button-muted-hover-bg);
   color: var(--color-agentamp-button-muted-hover-text);
+}
+
+.shuffle-active {
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+  background: var(--color-accent);
+}
+
+.shuffle-active:hover:not(:disabled) {
+  filter: brightness(1.1);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .agentamp-btn:disabled {

@@ -616,6 +616,35 @@ function updateAgentAmpPlayingState(nextPlaying: boolean) {
   isAgentAmpPlaying.value = nextPlaying;
 }
 
+function markAgentAmpStopped() {
+  updateAgentAmpPlayingState(false);
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(AGENTAMP_PLAYING_STORAGE_KEY, '0');
+    } catch {
+      // Ignore localStorage write failures.
+    }
+  }
+
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  try {
+    if (agentAmpStatusChannel) {
+      agentAmpStatusChannel.postMessage({ type: 'playback-state', playing: false });
+      return;
+    }
+
+    const channel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
+    channel.postMessage({ type: 'playback-state', playing: false });
+    channel.close();
+  } catch {
+    // Ignore channel failures.
+  }
+}
+
 function initializeAgentAmpStatusBridge() {
   updateAgentAmpPlayingState(readPersistedAgentAmpPlayingState());
 
@@ -675,6 +704,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  markAgentAmpStopped();
   teardownAgentAmpStatusBridge();
   void closeDetachedAgentAmpWindow();
   teardownAllRelaySenders(false);
@@ -846,6 +876,7 @@ function handleLogin(handle: string) {
 function quit() {
   showShutdownAnim.value = true;
   setTimeout(async () => {
+    markAgentAmpStopped();
     disconnect();
     showShutdownAnim.value = false;
 

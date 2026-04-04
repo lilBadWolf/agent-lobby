@@ -1196,18 +1196,10 @@ function toggleCompactMode() {
 }
 
 function handleNowHover(hovered: boolean) {
-  if (!isCompact.value) {
-    return;
-  }
-
   isNowHovered.value = hovered;
 }
 
 function handleNowFocusOut(event: FocusEvent) {
-  if (!isCompact.value) {
-    return;
-  }
-
   const currentTarget = event.currentTarget as HTMLElement | null;
   const relatedTarget = event.relatedTarget as Node | null;
   if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
@@ -1226,7 +1218,7 @@ function restartNowCycle() {
   nowDisplayMode.value = 'now';
 
   const modes = cycleModes.value;
-  const canCycle = isCompact.value && !isNowHovered.value && modes.length > 1;
+  const canCycle = !isNowHovered.value && modes.length > 1;
   if (!canCycle) {
     return;
   }

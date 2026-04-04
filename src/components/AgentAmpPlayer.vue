@@ -1,5 +1,5 @@
 <template>
-  <section class="agentamp-dock" :class="{ compact: isCompact }" aria-label="agentAMP player">
+  <section class="agentamp-dock" :class="{ compact: isCompact }">
     <input
       ref="fileInputEl"
       class="agentamp-file-input"
@@ -22,24 +22,23 @@
           <span class="agentamp-track-name">{{ nowDisplayTrackName }}</span>
         </div>
         <div class="agentamp-now-inline-btns">
-          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" title="Previous" aria-label="Previous" @click="playPrevious">&lt;&lt;</button>
-          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" :title="isPlaying ? 'Pause' : 'Play'" :aria-label="isPlaying ? 'Pause' : 'Play'" @click="togglePlayback">
+          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
+          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" :data-tooltip="isPlaying ? 'PAUSE' : 'PLAY'" @click="togglePlayback">
             {{ isPlaying ? '||' : '>' }}
           </button>
-          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" title="Stop" aria-label="Stop" @click="stopPlayback">[]</button>
-          <button class="agentamp-btn transport-btn" type="button" :disabled="!canGoNext" title="Next" aria-label="Next" @click="playNext">&gt;&gt;</button>
+          <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="STOP" @click="stopPlayback">[]</button>
+          <button class="agentamp-btn transport-btn" type="button" :disabled="!canGoNext" data-tooltip="NEXT" @click="playNext">&gt;&gt;</button>
           <button
             class="agentamp-btn transport-btn"
             :class="`loop-mode-${loopMode}`"
             type="button"
             :disabled="!hasTracks"
-            :title="`Loop mode: ${loopModeLabel}`"
-            aria-label="Cycle loop mode"
+            :data-tooltip="`LOOP: ${loopModeLabel}`"
             @click="cycleLoopMode"
           >
             {{ loopModeLabel }}
           </button>
-          <button class="agentamp-icon-btn" type="button" title="Add MP3 files" aria-label="Add MP3 files" @click="openFilePicker">+</button>
+          <button class="agentamp-icon-btn" type="button" data-tooltip="ADD" @click="openFilePicker">+</button>
         </div>
       </div>
       <div v-else class="agentamp-now-meta">
@@ -55,21 +54,21 @@
       <button
         class="agentamp-btn compact-toggle-btn compact-toggle-pinned agentamp-compact-toggle-spaced"
         type="button"
-        :title="isCompact ? 'Expand agentAMP' : 'Compact agentAMP'"
-        :aria-label="isCompact ? 'Expand agentAMP' : 'Compact agentAMP'"
+        :data-tooltip="isCompact ? 'EXPAND' : 'COMPACT'"
         @click="toggleCompactMode"
       >
         {{ compactToggleGlyph }}
       </button>
     </div>
     <div class="agentamp-controls">
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" title="Previous" aria-label="Previous" @click="playPrevious">&lt;&lt;</button>
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" :title="isPlaying ? 'Pause' : 'Play'" :aria-label="isPlaying ? 'Pause' : 'Play'" @click="togglePlayback">
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" :data-tooltip="isPlaying ? 'PAUSE' : 'PLAY'" @click="togglePlayback">
         {{ isPlaying ? '||' : '>' }}
       </button>
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" title="Stop" aria-label="Stop" @click="stopPlayback">[]</button>
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!canGoNext" title="Next" aria-label="Next" @click="playNext">&gt;&gt;</button>
-      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" title="Clear playlist" aria-label="Clear playlist" @click="clearPlaylist">X</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="STOP" @click="stopPlayback">[]</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!canGoNext" data-tooltip="NEXT" @click="playNext">&gt;&gt;</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="CLEAR PLAYLIST" @click="clearPlaylist">X</button>
+      <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="SAVE PLAYLIST" @click="savePlaylistToFile">SAVE</button>
       <div class="agentamp-seek-wrap">
         <span class="agentamp-timecode">{{ formatTime(currentTime) }}</span>
         <input
@@ -100,8 +99,7 @@
         :class="`loop-mode-${loopMode}`"
         type="button"
         :disabled="!hasTracks"
-        :title="`Loop mode: ${loopModeLabel}`"
-        aria-label="Cycle loop mode"
+        :data-tooltip="`LOOP: ${loopModeLabel}`"
         @click="cycleLoopMode"
       >
         {{ loopModeLabel }}
@@ -110,21 +108,18 @@
         v-if="!isCompact"
         :class="['agentamp-btn', 'transport-btn', 'agentamp-toggle-playlist-btn', { 'playlist-visible': showPlaylist }]"
         type="button"
-        :aria-pressed="showPlaylist"
-        :title="showPlaylist ? 'Hide Playlist' : 'Show Playlist'"
-        aria-label="Toggle playlist visibility"
+        :data-tooltip="showPlaylist ? 'HIDE PLAYLIST' : 'SHOW PLAYLIST'"
         @click="showPlaylist = !showPlaylist"
       >
         <span v-if="showPlaylist">▲</span><span v-else>▼</span>
       </button>
-      <button class="agentamp-icon-btn" type="button" title="Add MP3 files" aria-label="Add MP3 files" @click="openFilePicker">+</button>
+      <button class="agentamp-icon-btn" type="button" data-tooltip="ADD" @click="openFilePicker">+</button>
     </div>
 
     <ul
       v-if="showPlaylist || isCompact"
       class="agentamp-playlist"
       role="listbox"
-      aria-label="agentAMP playlist"
       :style="{
         maxHeight: (playlist.length > 0 ? (Math.min(playlist.length, 5) * 34) + 'px' : '140px'),
         overflowY: playlist.length > 5 ? 'auto' : 'hidden',
@@ -151,7 +146,6 @@
         <button
           class="agentamp-remove-btn"
           type="button"
-          :aria-label="`Remove ${track.name}`"
           @click="removeTrack(index)"
         >
           X
@@ -174,6 +168,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
+
+type TauriDialogModule = typeof import('@tauri-apps/plugin-dialog');
+type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
+type TauriPathModule = typeof import('@tauri-apps/api/path');
 
 const PLAYER_STORAGE_KEY = 'agent_amp_state_v1';
 
@@ -215,8 +213,10 @@ const dragOverIndex = ref<number | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const audioEl = ref<HTMLAudioElement | null>(null);
 let nowCycleInterval: ReturnType<typeof setInterval> | null = null;
-let tauriDialogOpenPromise: Promise<any | null> | null = null;
+let tauriDialogPromise: Promise<TauriDialogModule | null> | null = null;
 let tauriConvertFileSrcPromise: Promise<((filePath: string) => string) | null> | null = null;
+let tauriFsPromise: Promise<TauriFsModule | null> | null = null;
+let tauriPathPromise: Promise<TauriPathModule | null> | null = null;
 
 const currentTrack = computed(() => {
   if (currentIndex.value < 0 || currentIndex.value >= playlist.value.length) {
@@ -329,7 +329,7 @@ const nowDisplayLabelClass = computed(() => {
   return 'label-now';
 });
 
-const compactToggleGlyph = computed(() => (isCompact.value ? '>>' : '<<'));
+const compactToggleGlyph = computed(() => (isCompact.value ? '︽' : '︾'));
 
 watch(audioEl, (element) => {
   if (!element) {
@@ -378,13 +378,27 @@ async function getTauriDialogOpen() {
     return null;
   }
 
-  if (!tauriDialogOpenPromise) {
-    tauriDialogOpenPromise = import('@tauri-apps/plugin-dialog')
-      .then((mod) => mod.open)
+  if (!tauriDialogPromise) {
+    tauriDialogPromise = import('@tauri-apps/plugin-dialog')
       .catch(() => null);
   }
 
-  return tauriDialogOpenPromise;
+  const dialog = await tauriDialogPromise;
+  return dialog?.open ?? null;
+}
+
+async function getTauriDialogSave() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriDialogPromise) {
+    tauriDialogPromise = import('@tauri-apps/plugin-dialog')
+      .catch(() => null);
+  }
+
+  const dialog = await tauriDialogPromise;
+  return dialog?.save ?? null;
 }
 
 async function getTauriConvertFileSrc() {
@@ -399,6 +413,32 @@ async function getTauriConvertFileSrc() {
   }
 
   return tauriConvertFileSrcPromise;
+}
+
+async function getTauriFs() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriFsPromise) {
+    tauriFsPromise = import('@tauri-apps/plugin-fs')
+      .catch(() => null);
+  }
+
+  return tauriFsPromise;
+}
+
+async function getTauriPath() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriPathPromise) {
+    tauriPathPromise = import('@tauri-apps/api/path')
+      .catch(() => null);
+  }
+
+  return tauriPathPromise;
 }
 
 function extractNameFromPath(path: string): string {
@@ -433,6 +473,152 @@ async function addTracksFromPaths(paths: string[]) {
   await persistPlayerState();
 }
 
+function isPlaylistPath(path: string): boolean {
+  return /\.(m3u8?|pls)$/i.test(path);
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(path) || /^\\\\/.test(path) || path.startsWith('/');
+}
+
+function parsePlaylistEntries(content: string): string[] {
+  const entries: string[] = [];
+  const lines = content.split(/\r?\n/);
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const plsMatch = line.match(/^File\d+\s*=\s*(.+)$/i);
+    if (plsMatch?.[1]) {
+      entries.push(plsMatch[1].trim());
+      continue;
+    }
+
+    entries.push(line);
+  }
+
+  return entries.filter((entry) => /\.mp3(\?|$)/i.test(entry));
+}
+
+async function resolvePlaylistEntryPath(entry: string, playlistPath: string): Promise<string | null> {
+  if (!entry) {
+    return null;
+  }
+
+  if (isAbsolutePath(entry)) {
+    return entry;
+  }
+
+  const pathApi = await getTauriPath();
+  if (!pathApi) {
+    return null;
+  }
+
+  try {
+    const playlistDir = await pathApi.dirname(playlistPath);
+    return await pathApi.join(playlistDir, entry);
+  } catch {
+    return null;
+  }
+}
+
+async function addTracksFromPlaylistFile(playlistPath: string) {
+  const fsApi = await getTauriFs();
+  if (!fsApi) {
+    return;
+  }
+
+  try {
+    const content = await fsApi.readTextFile(playlistPath);
+    const entries = parsePlaylistEntries(content);
+    if (!entries.length) {
+      return;
+    }
+
+    const resolvedEntries = await Promise.all(
+      entries.map((entry) => resolvePlaylistEntryPath(entry, playlistPath))
+    );
+
+    const tracks = resolvedEntries.filter((entry): entry is string => Boolean(entry));
+    if (!tracks.length) {
+      return;
+    }
+
+    await addTracksFromPaths(tracks);
+  } catch {
+    // Ignore malformed or unreadable playlist files.
+  }
+}
+
+function serializePlaylistAsM3u(): string {
+  const lines = ['#EXTM3U'];
+
+  for (const track of playlist.value) {
+    if (track.source !== 'path') {
+      continue;
+    }
+
+    lines.push(`#EXTINF:-1,${track.name}`);
+    lines.push(track.location);
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
+function triggerTextDownload(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+async function savePlaylistToFile() {
+  if (!playlist.value.length) {
+    return;
+  }
+
+  const content = serializePlaylistAsM3u();
+
+  if (!isTauriRuntime()) {
+    triggerTextDownload(content, 'agentamp-playlist.m3u', 'audio/x-mpegurl');
+    return;
+  }
+
+  const dialogSave = await getTauriDialogSave();
+  if (!dialogSave) {
+    return;
+  }
+
+  const targetPath = await dialogSave({
+    defaultPath: 'agentamp-playlist.m3u',
+    filters: [{ name: 'M3U Playlist', extensions: ['m3u'] }],
+  });
+
+  if (!targetPath) {
+    return;
+  }
+
+  const fsApi = await getTauriFs();
+  if (!fsApi) {
+    return;
+  }
+
+  try {
+    await fsApi.writeTextFile(targetPath, content);
+  } catch {
+    // Ignore save failures.
+  }
+}
+
 async function openFilePicker() {
   if (isTauriRuntime()) {
     const dialogOpen = await getTauriDialogOpen();
@@ -442,7 +628,11 @@ async function openFilePicker() {
 
     const selection = await dialogOpen({
       multiple: true,
-      filters: [{ name: 'MP3 Audio', extensions: ['mp3'] }],
+      filters: [
+        { name: 'Audio and Playlists', extensions: ['mp3', 'm3u', 'm3u8', 'pls'] },
+        { name: 'MP3 Audio', extensions: ['mp3'] },
+        { name: 'Playlists', extensions: ['m3u', 'm3u8', 'pls'] },
+      ],
     });
 
     if (!selection) {
@@ -450,7 +640,17 @@ async function openFilePicker() {
     }
 
     const selectedPaths = Array.isArray(selection) ? selection : [selection];
-    await addTracksFromPaths(selectedPaths);
+    const audioPaths = selectedPaths.filter((path) => !isPlaylistPath(path));
+    const playlistPaths = selectedPaths.filter((path) => isPlaylistPath(path));
+
+    if (audioPaths.length) {
+      await addTracksFromPaths(audioPaths);
+    }
+
+    for (const playlistPath of playlistPaths) {
+      await addTracksFromPlaylistFile(playlistPath);
+    }
+
     return;
   }
 
@@ -1077,6 +1277,73 @@ onBeforeUnmount(() => {
 .agentamp-btn:hover:not(:disabled) {
   background: var(--color-accent);
   color: var(--color-on-accent);
+}
+
+.agentamp-controls [data-tooltip],
+.agentamp-now-playing [data-tooltip] {
+  position: relative;
+}
+
+.agentamp-now-playing .compact-toggle-pinned[data-tooltip] {
+  position: absolute;
+}
+
+.agentamp-controls [data-tooltip]::after,
+.agentamp-now-playing [data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%) translateY(2px);
+  border: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
+  color: var(--color-chat-text);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.55px;
+  white-space: nowrap;
+  padding: 3px 7px;
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 22;
+  box-shadow: 0 0 10px var(--color-accent-muted);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.agentamp-controls [data-tooltip]::before,
+.agentamp-now-playing [data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--color-accent);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 21;
+  transition: opacity 0.16s ease, visibility 0.16s ease;
+}
+
+.agentamp-controls [data-tooltip]:hover:not(:disabled)::after,
+.agentamp-controls [data-tooltip]:focus-visible:not(:disabled)::after,
+.agentamp-now-playing [data-tooltip]:hover:not(:disabled)::after,
+.agentamp-now-playing [data-tooltip]:focus-visible:not(:disabled)::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.agentamp-controls [data-tooltip]:hover:not(:disabled)::before,
+.agentamp-controls [data-tooltip]:focus-visible:not(:disabled)::before,
+.agentamp-now-playing [data-tooltip]:hover:not(:disabled)::before,
+.agentamp-now-playing [data-tooltip]:focus-visible:not(:disabled)::before {
+  opacity: 1;
+  visibility: visible;
 }
 
 .transport-btn {

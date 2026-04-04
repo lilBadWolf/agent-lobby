@@ -25,7 +25,7 @@ const isMaximized = ref(false);
 const agentAmpWindowBodyRef = ref<HTMLElement | null>(null);
 const { applyTheme } = useTheme();
 const THEME_STORAGE_KEY = 'agent_theme';
-const FORCE_CLOSE_STORAGE_KEY = 'agent_agentamp_force_close';
+const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 let resizeObserver: ResizeObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
 let lastDesiredContentInnerHeight = -1;
@@ -33,6 +33,7 @@ let userHasManualHeightOverride = false;
 let windowResizeHandler: (() => void) | null = null;
 let isApplyingProgrammaticResize = false;
 let cleanupCloseRequestedListener: (() => void) | null = null;
+let cleanupForceCloseListener: (() => void) | null = null;
 let allowWindowClose = false;
 
 function isTauriRuntime(): boolean {
@@ -42,23 +43,7 @@ function isTauriRuntime(): boolean {
 const hasTauriWindow = isTauriRuntime();
 
 function shouldAllowWindowClose(): boolean {
-  if (allowWindowClose) {
-    return true;
-  }
-
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    const shouldForceClose = window.localStorage.getItem(FORCE_CLOSE_STORAGE_KEY) === '1';
-    if (shouldForceClose) {
-      window.localStorage.removeItem(FORCE_CLOSE_STORAGE_KEY);
-    }
-    return shouldForceClose;
-  } catch {
-    return false;
-  }
+  return allowWindowClose;
 }
 
 async function applyPersistedTheme() {
@@ -262,6 +247,23 @@ onMounted(async () => {
         await getCurrentWindow().close();
       }
     });
+
+    // Listen for force-close signal from main app
+    const forceCloseChannel = new BroadcastChannel(AGENTAMP_FORCE_CLOSE_CHANNEL);
+    forceCloseChannel.onmessage = async (event) => {
+      if (event.data === 'force-close') {
+        allowWindowClose = true;
+        try {
+          const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+          await getCurrentWebviewWindow().close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
+    };
+    cleanupForceCloseListener = () => {
+      forceCloseChannel.close();
+    };
   }
 
   const body = agentAmpWindowBodyRef.value;
@@ -320,6 +322,11 @@ onBeforeUnmount(() => {
   if (cleanupCloseRequestedListener) {
     cleanupCloseRequestedListener();
     cleanupCloseRequestedListener = null;
+  }
+
+  if (cleanupForceCloseListener) {
+    cleanupForceCloseListener();
+    cleanupForceCloseListener = null;
   }
 
   if (resizeObserver) {

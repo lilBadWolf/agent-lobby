@@ -44,7 +44,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import SinewaveBackground from './SinewaveBackground.vue';
 
 function isTauriRuntime(): boolean {
@@ -65,6 +64,7 @@ const emit = defineEmits<{
   login: [handle: string];
   ambience: [];
   'config-clicked': [];
+  quit: [];
 }>();
 
 const usernameInput = ref('');
@@ -113,13 +113,8 @@ function handleInputClick() {
 function handleConfigClick() {
   emit('config-clicked');
 }
-const quit = async () => {
-  if (!hasTauriWindow) {
-    return;
-  }
-
-  const appWindow = getCurrentWindow();
-  await appWindow.close();
+const quit = () => {
+  emit('quit');
 }
 </script>
 

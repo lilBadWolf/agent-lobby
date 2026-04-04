@@ -63,7 +63,10 @@ const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
 const DM_WINDOW_MEDIA_RELAY_ICE_EVENT = 'media-relay-ice';
 const DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT = 'media-relay-close';
+const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
 const DM_WINDOW_LOG_PREFIX = '[DMWindowApp]';
+let allowWindowClose = false;
+let cleanupForceCloseListener: (() => void) | null = null;
 
 type RelayStreamKind = 'local' | 'remote';
 
@@ -591,10 +594,44 @@ onMounted(async () => {
     debugLog('BroadcastChannel unavailable in this environment');
   }
 
+  // Set up force-close listener
+  if (typeof BroadcastChannel !== 'undefined') {
+    const forceCloseChannel = new BroadcastChannel(DM_WINDOW_FORCE_CLOSE_CHANNEL);
+    forceCloseChannel.onmessage = async (event) => {
+      if (event.data === 'force-close') {
+        allowWindowClose = true;
+        try {
+          const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+          await getCurrentWebviewWindow().close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
+    };
+    cleanupForceCloseListener = () => {
+      forceCloseChannel.close();
+    };
+  }
+
   if (hasTauriWindow) {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const appWindow = getCurrentWindow();
     isMaximized.value = await appWindow.isMaximized();
+
+    // Listen for close requests to prevent accidental closes (user must properly close via main window quit)
+    await appWindow.onCloseRequested(async (event) => {
+      if (allowWindowClose) {
+        return;
+      }
+
+      event.preventDefault();
+
+      try {
+        await appWindow.hide();
+      } catch (error) {
+        // Ignore hide errors
+      }
+    });
   }
 
   if (isTauriRuntime()) {
@@ -632,6 +669,8 @@ onBeforeUnmount(() => {
   }
   cleanupTauriListener?.();
   cleanupTauriListener = null;
+  cleanupForceCloseListener?.();
+  cleanupForceCloseListener = null;
   webChannel?.close();
   webChannel = null;
 });

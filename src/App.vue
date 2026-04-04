@@ -78,6 +78,7 @@
       @login="handleLogin"
       @ambience="handleAmbience"
       @config-clicked="toggleNetworkConfig"
+      @quit="quit"
     />
 
     <div v-if="!showAuth" class="workspace-shell">
@@ -363,8 +364,9 @@ const AGENTAMP_WINDOW_DEFAULT_HEIGHT = 320;
 const AGENTAMP_WINDOW_MIN_WIDTH = 560;
 const AGENTAMP_WINDOW_MIN_HEIGHT = 220;
 const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
+const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
-const AGENTAMP_FORCE_CLOSE_STORAGE_KEY = 'agent_agentamp_force_close';
+const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
 const DM_WINDOW_MEDIA_EVENT = 'media-state';
 const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
@@ -825,8 +827,62 @@ function quit() {
       return;
     }
 
-    const appWindow = getCurrentWindow();
-    await appWindow.close();
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+
+      const agentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
+      const dmWindow = await WebviewWindow.getByLabel('dm-window');
+
+      if (agentAmpWindow) {
+        const agentAmpChannel = new BroadcastChannel(AGENTAMP_FORCE_CLOSE_CHANNEL);
+        agentAmpChannel.postMessage('force-close');
+        agentAmpChannel.close();
+      }
+
+      if (dmWindow) {
+        const dmChannel = new BroadcastChannel(DM_WINDOW_FORCE_CLOSE_CHANNEL);
+        dmChannel.postMessage('force-close');
+        dmChannel.close();
+      }
+
+      await new Promise<void>((resolve) => {
+        let closedCount = 0;
+        const expectedCount = (agentAmpWindow ? 1 : 0) + (dmWindow ? 1 : 0);
+
+        if (expectedCount === 0) {
+          resolve();
+          return;
+        }
+
+        const checkInterval = setInterval(async () => {
+          const currentAgentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL).catch(() => null);
+          const currentDmWindow = await WebviewWindow.getByLabel('dm-window').catch(() => null);
+
+          if (!currentAgentAmpWindow && agentAmpWindow) {
+            closedCount++;
+          }
+          if (!currentDmWindow && dmWindow) {
+            closedCount++;
+          }
+
+          if (closedCount === expectedCount) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve();
+        }, 2000);
+      });
+
+      const appWindow = getCurrentWindow();
+      await appWindow.close();
+    } catch (error) {
+      const appWindow = getCurrentWindow();
+      await appWindow.close();
+    }
   }, 600);
 }
 
@@ -1729,20 +1785,9 @@ async function closeDetachedAgentAmpWindow() {
     const existingWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
     if (existingWindow) {
       try {
-        try {
-          window.localStorage.setItem(AGENTAMP_FORCE_CLOSE_STORAGE_KEY, '1');
-        } catch {
-          // Ignore localStorage write failures.
-        }
-        await existingWindow.close();
+        await existingWindow.hide();
       } catch (error) {
-        console.debug('Unable to close detached AgentAmp window:', error);
-      } finally {
-        try {
-          window.localStorage.removeItem(AGENTAMP_FORCE_CLOSE_STORAGE_KEY);
-        } catch {
-          // Ignore localStorage cleanup failures.
-        }
+        // Ignore hide errors
       }
     }
 

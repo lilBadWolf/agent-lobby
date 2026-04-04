@@ -1,11 +1,39 @@
 use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Manager, UserAttentionType};
+use serde::Serialize;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[cfg(not(dev))]
 use tauri::{ipc::CapabilityBuilder, Url, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(dev)]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+const REQUIRED_SOUNDPACK_FILES: [&str; 7] = [
+    "startup-sound.mp3",
+    "shutdown-sound.mp3",
+    "join-sound.mp3",
+    "part-sound.mp3",
+    "message-sound.mp3",
+    "system-sound.mp3",
+    "signal-station.mp3",
+];
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomAssetEntry {
+    name: String,
+    path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomAssetsResult {
+    themes: Vec<CustomAssetEntry>,
+    soundpacks: Vec<CustomAssetEntry>,
+}
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -97,6 +125,193 @@ fn raise_agentamp_window(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
+fn ensure_custom_asset_folders(app_data_dir: &Path) -> Result<(), String> {
+    let themes_dir = app_data_dir.join("themes");
+    fs::create_dir_all(&themes_dir)
+        .map_err(|error| format!("Failed to create themes directory: {}", error))?;
+
+    let soundpacks_dir = app_data_dir.join("soundpacks");
+    fs::create_dir_all(&soundpacks_dir)
+        .map_err(|error| format!("Failed to create soundpacks directory: {}", error))?;
+
+    let template_path = themes_dir.join("mint-cream.css");
+    if !template_path.exists() {
+        let template_content = include_str!("../../src/themes/templates/mint-cream.css");
+        fs::write(&template_path, template_content)
+            .map_err(|error| format!("Failed to write mint-cream.css template: {}", error))?;
+    }
+
+    Ok(())
+}
+
+fn init_custom_folders(app_data_dir: &PathBuf) {
+    if let Err(error) = ensure_custom_asset_folders(app_data_dir) {
+        eprintln!("Warning: {}", error);
+    }
+}
+
+fn is_valid_custom_theme_css(theme_name: &str, css_content: &str) -> bool {
+    let css = css_content.trim();
+    if css.is_empty() || !css.contains('{') || !css.contains('}') {
+        return false;
+    }
+
+    let expected_selector_single = format!(":root[data-theme='{}']", theme_name);
+    let expected_selector_double = format!(":root[data-theme=\"{}\"]", theme_name);
+
+    css.contains(&expected_selector_single)
+        || css.contains(&expected_selector_double)
+        || (css.contains(":root[data-theme=") && css.contains("--color-"))
+}
+
+fn discover_custom_themes(app_data_dir: &Path) -> Vec<CustomAssetEntry> {
+    let themes_dir = app_data_dir.join("themes");
+    let Ok(entries) = fs::read_dir(themes_dir) else {
+        return Vec::new();
+    };
+
+    let mut themes: Vec<CustomAssetEntry> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .extension()
+                    .map(|ext| ext.eq_ignore_ascii_case("css"))
+                    .unwrap_or(false)
+        })
+        .filter_map(|path| {
+            let theme_name = path.file_stem()?.to_string_lossy().trim().to_string();
+            if theme_name.is_empty() {
+                return None;
+            }
+
+            let css_content = fs::read_to_string(&path).ok()?;
+            if !is_valid_custom_theme_css(&theme_name, &css_content) {
+                return None;
+            }
+
+            Some(CustomAssetEntry {
+                name: theme_name,
+                path: path.to_string_lossy().to_string(),
+            })
+        })
+        .collect();
+
+    themes.sort_by(|a, b| a.name.cmp(&b.name));
+    themes
+}
+
+fn discover_custom_soundpacks(app_data_dir: &Path) -> Vec<CustomAssetEntry> {
+    let soundpacks_dir = app_data_dir.join("soundpacks");
+    let Ok(entries) = fs::read_dir(soundpacks_dir) else {
+        return Vec::new();
+    };
+
+    let mut soundpacks: Vec<CustomAssetEntry> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .filter_map(|path| {
+            let pack_name = path.file_name()?.to_string_lossy().trim().to_string();
+            if pack_name.is_empty() {
+                return None;
+            }
+
+            let has_all_required_files = REQUIRED_SOUNDPACK_FILES
+                .iter()
+                .all(|required_file| path.join(required_file).is_file());
+
+            if !has_all_required_files {
+                return None;
+            }
+
+            Some(CustomAssetEntry {
+                name: pack_name,
+                path: path.to_string_lossy().to_string(),
+            })
+        })
+        .collect();
+
+    soundpacks.sort_by(|a, b| a.name.cmp(&b.name));
+    soundpacks
+}
+
+fn open_folder_in_os(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Failed to open folder: {}", error))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Failed to open folder: {}", error))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| format!("Failed to open folder: {}", error))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn setup_custom_folders(app: tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+
+    ensure_custom_asset_folders(&app_data_dir)
+}
+
+#[tauri::command]
+fn discover_custom_assets(app: tauri::AppHandle) -> Result<CustomAssetsResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+
+    ensure_custom_asset_folders(&app_data_dir)?;
+
+    Ok(CustomAssetsResult {
+        themes: discover_custom_themes(&app_data_dir),
+        soundpacks: discover_custom_soundpacks(&app_data_dir),
+    })
+}
+
+#[tauri::command]
+fn open_themes_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+
+    ensure_custom_asset_folders(&app_data_dir)?;
+    open_folder_in_os(&app_data_dir.join("themes"))
+}
+
+#[tauri::command]
+fn open_soundpacks_folder(app: tauri::AppHandle) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+
+    ensure_custom_asset_folders(&app_data_dir)?;
+    open_folder_in_os(&app_data_dir.join("soundpacks"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = portpicker::pick_unused_port().expect("failed to find unused port");
@@ -111,6 +326,10 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                init_custom_folders(&app_data_dir);
+            }
+
             #[cfg(dev)]
             let url = WebviewUrl::App(std::path::PathBuf::from("/"));
 
@@ -164,7 +383,16 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, compute_spectrum, raise_dm_window, raise_agentamp_window])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            compute_spectrum,
+            raise_dm_window,
+            raise_agentamp_window,
+            setup_custom_folders,
+            discover_custom_assets,
+            open_themes_folder,
+            open_soundpacks_folder
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

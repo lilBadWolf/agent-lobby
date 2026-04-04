@@ -7,12 +7,106 @@ const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
 const THEME_STORAGE_KEY = 'agent_theme';
 const LEGACY_THEME_STORAGE_KEY = 'agent_settings';
 const THEME_SYNC_CHANNEL = 'agent-lobby-theme-sync';
-const availableThemes = Object.keys(THEMES);
+const BUILTIN_THEMES = Object.keys(THEMES);
+const availableThemes = ref<string[]>([...BUILTIN_THEMES]);
 const currentTheme = ref<string>(DEFAULT_THEME);
 let hasHydratedTheme = false;
 let themeHydrationPromise: Promise<void> | null = null;
 let themeSyncChannel: BroadcastChannel | null = null;
 let hasBoundThemeSyncListeners = false;
+let customThemeLoadPromise: Promise<void> | null = null;
+let tauriCoreModulePromise: Promise<typeof import('@tauri-apps/api/core') | null> | null = null;
+
+interface CustomAssetEntry {
+  name: string;
+  path: string;
+}
+
+interface CustomAssetsResult {
+  themes: CustomAssetEntry[];
+  soundpacks: CustomAssetEntry[];
+}
+
+const customThemePathByName = new Map<string, string>();
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
+}
+
+function setAvailableThemes(themeNames: string[]) {
+  const unique = Array.from(new Set(themeNames.filter((themeName) => typeof themeName === 'string' && themeName.trim())));
+  const hasDefault = unique.includes(DEFAULT_THEME);
+  const withoutDefault = unique.filter((themeName) => themeName !== DEFAULT_THEME).sort((a, b) => a.localeCompare(b));
+  availableThemes.value = hasDefault ? [DEFAULT_THEME, ...withoutDefault] : [DEFAULT_THEME, ...withoutDefault];
+}
+
+async function getTauriCoreModule() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  if (!tauriCoreModulePromise) {
+    tauriCoreModulePromise = import('@tauri-apps/api/core').catch(() => null);
+  }
+
+  return tauriCoreModulePromise;
+}
+
+async function loadCustomThemes() {
+  if (!isTauriRuntime()) {
+    setAvailableThemes(BUILTIN_THEMES);
+    return;
+  }
+
+  try {
+    const tauriCore = await getTauriCoreModule();
+    if (!tauriCore) {
+      setAvailableThemes(BUILTIN_THEMES);
+      return;
+    }
+
+    const assets = await tauriCore.invoke<CustomAssetsResult>('discover_custom_assets');
+    const customThemes = Array.isArray(assets?.themes)
+      ? assets.themes.filter((entry): entry is CustomAssetEntry => !!entry && typeof entry.name === 'string' && typeof entry.path === 'string')
+      : [];
+
+    customThemePathByName.clear();
+    for (const entry of customThemes) {
+      const name = entry.name.trim();
+      const path = entry.path.trim();
+      if (!name || !path) {
+        continue;
+      }
+      customThemePathByName.set(name, path);
+    }
+
+    setAvailableThemes([...BUILTIN_THEMES, ...customThemePathByName.keys()]);
+
+    const convertFileSrc = tauriCore.convertFileSrc;
+    for (const [themeName, themePath] of customThemePathByName.entries()) {
+      const styleId = `custom-theme-${themeName}`;
+      if (document.getElementById(styleId)) {
+        continue;
+      }
+
+      const link = document.createElement('link');
+      link.id = styleId;
+      link.rel = 'stylesheet';
+      link.href = convertFileSrc(themePath);
+      document.head.appendChild(link);
+    }
+  } catch {
+    setAvailableThemes(BUILTIN_THEMES);
+  }
+}
+
+function ensureCustomThemesLoaded() {
+  if (!customThemeLoadPromise) {
+    customThemeLoadPromise = loadCustomThemes();
+  }
+
+  return customThemeLoadPromise;
+}
 
 async function persistTheme(themeName: string) {
   await setPersistedValue(THEME_STORAGE_KEY, themeName);
@@ -112,7 +206,7 @@ function getThemeUserColors(): string[] {
 
 export function useTheme() {
   function applyTheme(themeName: string, options?: { persist?: boolean }) {
-    const nextTheme = THEMES[themeName as keyof typeof THEMES] ? themeName : DEFAULT_THEME;
+    const nextTheme = availableThemes.value.includes(themeName) ? themeName : DEFAULT_THEME;
 
     const root = document.documentElement;
     root.setAttribute('data-theme', nextTheme);
@@ -170,14 +264,16 @@ export function useTheme() {
   if (!themeHydrationPromise) {
     themeHydrationPromise = (async () => {
       try {
+        await ensureCustomThemesLoaded();
+
         const persistedTheme = await resolvePersistedTheme();
         const currentDataTheme = typeof document !== 'undefined'
           ? document.documentElement.getAttribute('data-theme')
           : null;
-        const fallbackTheme = currentDataTheme && THEMES[currentDataTheme as keyof typeof THEMES]
+        const fallbackTheme = currentDataTheme && availableThemes.value.includes(currentDataTheme)
           ? currentDataTheme
           : DEFAULT_THEME;
-        const nextTheme = typeof persistedTheme === 'string' && THEMES[persistedTheme as keyof typeof THEMES]
+        const nextTheme = typeof persistedTheme === 'string' && availableThemes.value.includes(persistedTheme)
           ? persistedTheme
           : fallbackTheme;
 
@@ -191,6 +287,8 @@ export function useTheme() {
       }
     })();
   }
+
+  void ensureCustomThemesLoaded();
 
   const getUserColor = computed(() => {
     return (str: string): string => {

@@ -48,6 +48,19 @@
 
         <div v-if="activeTab === 'general'" class="tab-panel">
           <div class="setting-row">
+            <label>COLOR THEME</label>
+            <button class="preview-btn" @click="openThemesFolder">📁</button>
+            <select
+              v-model="localConfig.theme"
+              id="set-theme"
+              @change="handleChange"
+            >
+              <option v-for="themeName in orderedThemes" :key="themeName" :value="themeName">
+                {{ themeName }}
+              </option>
+            </select>
+          </div>
+          <div class="setting-row">
             <label>SCANLINES</label>
             <input
               v-model="localConfig.scanlines"
@@ -56,6 +69,7 @@
               @change="handleChange"
             />
           </div>
+          <hr class="settings-divider" />
           <div class="setting-row">
             <label>DM ENABLED</label>
             <input
@@ -106,19 +120,6 @@
               <option :value="60">1HR</option>
               <option :value="120">2HR</option>
               <option :value="0">OFF</option>
-            </select>
-          </div>
-          <hr class="settings-divider" />
-          <div class="setting-row">
-            <label>COLOR THEME</label>
-            <select
-              v-model="localConfig.theme"
-              id="set-theme"
-              @change="handleChange"
-            >
-              <option v-for="themeName in orderedThemes" :key="themeName" :value="themeName">
-                {{ themeName }}
-              </option>
             </select>
           </div>
         </div>
@@ -197,6 +198,7 @@
           </div>
           <div class="setting-row">
             <label>SOUNDPACK</label>
+            <button class="preview-btn" @click="openSoundpacksFolder">📁</button>
             <select
               v-model="localConfig.soundpack"
               id="set-soundpack"
@@ -357,6 +359,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
@@ -696,6 +699,22 @@ async function toggleVideoPreview() {
   } catch (error) {
     console.error('Failed to start video preview:', error);
     stopVideoPreview();
+  }
+}
+
+async function openThemesFolder() {
+  try {
+    await invoke('open_themes_folder');
+  } catch (error) {
+    console.error('Failed to open themes folder:', error);
+  }
+}
+
+async function openSoundpacksFolder() {
+  try {
+    await invoke('open_soundpacks_folder');
+  } catch (error) {
+    console.error('Failed to open soundpacks folder:', error);
   }
 }
 
@@ -1110,5 +1129,29 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.folder-btn {
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.folder-btn:hover {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  box-shadow: 0 0 10px var(--color-settings-accent-glow);
 }
 </style>

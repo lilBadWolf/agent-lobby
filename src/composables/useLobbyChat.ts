@@ -3,6 +3,20 @@ import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashComman
 import mqtt from 'mqtt';
 import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 
+interface CustomAssetEntry {
+  name: string;
+  path: string;
+}
+
+interface CustomAssetsResult {
+  themes: CustomAssetEntry[];
+  soundpacks: CustomAssetEntry[];
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
+}
+
 const RESERVED_SLASH_COMMANDS = new Set([
   '/away',
   '/back',
@@ -292,6 +306,9 @@ export function useLobbyChat() {
 
   const config = ref<AudioConfig>(normalizeAudioConfig());
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
+  const customSoundpackPathByName = ref<Record<string, string>>({});
+  let tauriCoreModulePromise: Promise<typeof import('@tauri-apps/api/core') | null> | null = null;
+  let tauriConvertFileSrc: ((filePath: string) => string) | null = null;
 
   const isAway = ref(false);
   let awaySource: 'auto' | 'manual' | null = null;
@@ -759,15 +776,29 @@ export function useLobbyChat() {
 
   function initAudio() {
     const soundpack = config.value.soundpack;
-    audio.value.numberStation = new Audio(getPublicAssetUrl(`sounds/${soundpack}/signal-station.mp3`));
+
+    const getSoundUrl = (fileName: string): string => {
+      const customBasePath = customSoundpackPathByName.value[soundpack];
+      if (!customBasePath) {
+        return getPublicAssetUrl(`sounds/${soundpack}/${fileName}`);
+      }
+
+      if (!tauriConvertFileSrc) {
+        return getPublicAssetUrl(`sounds/default/${fileName}`);
+      }
+
+      return toAssetAudioUrl(customBasePath, fileName, tauriConvertFileSrc);
+    };
+
+    audio.value.numberStation = new Audio(getSoundUrl('signal-station.mp3'));
     (audio.value.numberStation as HTMLAudioElement).loop = true;
     audio.value.alerts = {
-      startup: new Audio(getPublicAssetUrl(`sounds/${soundpack}/startup-sound.mp3`)),
-      system: new Audio(getPublicAssetUrl(`sounds/${soundpack}/system-sound.mp3`)),
-      join: new Audio(getPublicAssetUrl(`sounds/${soundpack}/join-sound.mp3`)),
-      part: new Audio(getPublicAssetUrl(`sounds/${soundpack}/part-sound.mp3`)),
-      message: new Audio(getPublicAssetUrl(`sounds/${soundpack}/message-sound.mp3`)),
-      shutdown: new Audio(getPublicAssetUrl(`sounds/${soundpack}/shutdown-sound.mp3`))
+      startup: new Audio(getSoundUrl('startup-sound.mp3')),
+      system: new Audio(getSoundUrl('system-sound.mp3')),
+      join: new Audio(getSoundUrl('join-sound.mp3')),
+      part: new Audio(getSoundUrl('part-sound.mp3')),
+      message: new Audio(getSoundUrl('message-sound.mp3')),
+      shutdown: new Audio(getSoundUrl('shutdown-sound.mp3'))
     };
     applyAudioSettings();
   }
@@ -1099,17 +1130,77 @@ export function useLobbyChat() {
 
   const availableSoundpacks = ref<string[]>(['default']);
 
+  function setAvailableSoundpackList(soundpackNames: string[]) {
+    const unique = Array.from(new Set(soundpackNames.filter((name) => typeof name === 'string' && name.trim())));
+    const sortedOthers = unique.filter((name) => name !== 'default').sort((a, b) => a.localeCompare(b));
+    availableSoundpacks.value = ['default', ...sortedOthers];
+  }
+
+  async function getTauriCoreModule() {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+
+    if (!tauriCoreModulePromise) {
+      tauriCoreModulePromise = import('@tauri-apps/api/core').catch(() => null);
+    }
+
+    const tauriCore = await tauriCoreModulePromise;
+    tauriConvertFileSrc = tauriCore?.convertFileSrc ?? null;
+    return tauriCore;
+  }
+
+  function toAssetAudioUrl(basePath: string, fileName: string, convertFileSrc: (filePath: string) => string): string {
+    const normalizedBase = basePath.replace(/[\\/]+$/, '');
+    return convertFileSrc(`${normalizedBase}/${fileName}`);
+  }
+
   async function loadAvailableSoundpacks() {
+    const builtinPacks: string[] = ['default'];
+
     try {
       const soundModules = import.meta.glob('/public/sounds/*/');
       const packs = Object.keys(soundModules)
         .map(path => path.replace('/public/sounds/', '').replace('/', ''))
         .filter(pack => pack.length > 0);
+
       if (packs.length > 0) {
-        availableSoundpacks.value = packs;
+        builtinPacks.push(...packs);
       }
     } catch {
-      availableSoundpacks.value = ['default'];
+      // Keep default only.
+    }
+
+    const customSoundpacks: string[] = [];
+    customSoundpackPathByName.value = {};
+
+    try {
+      const tauriCore = await getTauriCoreModule();
+      if (tauriCore) {
+        const assets = await tauriCore.invoke<CustomAssetsResult>('discover_custom_assets');
+        const discovered = Array.isArray(assets?.soundpacks)
+          ? assets.soundpacks.filter((entry): entry is CustomAssetEntry => !!entry && typeof entry.name === 'string' && typeof entry.path === 'string')
+          : [];
+
+        for (const pack of discovered) {
+          const packName = pack.name.trim();
+          const packPath = pack.path.trim();
+          if (!packName || !packPath) {
+            continue;
+          }
+
+          customSoundpacks.push(packName);
+          customSoundpackPathByName.value[packName] = packPath;
+        }
+      }
+    } catch {
+      customSoundpackPathByName.value = {};
+    }
+
+    setAvailableSoundpackList([...builtinPacks, ...customSoundpacks]);
+
+    if (!availableSoundpacks.value.includes(config.value.soundpack)) {
+      config.value.soundpack = 'default';
     }
   }
 

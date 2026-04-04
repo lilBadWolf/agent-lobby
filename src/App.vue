@@ -325,7 +325,7 @@ const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
 const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
 const DM_WINDOW_MEDIA_RELAY_ICE_EVENT = 'media-relay-ice';
 const DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT = 'media-relay-close';
-const DM_APP_LOG_PREFIX = '[AppDMBridge]';
+//const DM_APP_LOG_PREFIX = '[AppDMBridge]';
 
 type RelayStreamKind = 'local' | 'remote';
 
@@ -385,21 +385,21 @@ function debugEnabled(): boolean {
   try {
     return window.localStorage.getItem('dm-window-debug') !== '0';
   } catch {
-    return true;
+    return false;
   }
 }
 
-function debugLog(message: string, details?: unknown) {
+function debugLog(_message: string, details?: unknown) {
   if (!debugEnabled()) {
     return;
   }
 
   if (details === undefined) {
-    console.log(`${DM_APP_LOG_PREFIX} ${message}`);
+    //console.log(`${DM_APP_LOG_PREFIX} ${message}`);
     return;
   }
 
-  console.log(`${DM_APP_LOG_PREFIX} ${message}`, details);
+  //console.log(`${DM_APP_LOG_PREFIX} ${message}`, details);
 }
 
 function describeStream(stream: MediaStream | null | undefined) {

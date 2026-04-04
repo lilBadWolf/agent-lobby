@@ -42,6 +42,7 @@ jobs:
       - name: install frontend dependencies
         run: npm install # or yarn install / pnpm install
       - name: load release notes from RELEASE.md
+        shell: bash
         run: |
           if [ ! -f RELEASE.md ]; then
             echo "RELEASE.md not found. Create RELEASE.md with your release notes." >&2

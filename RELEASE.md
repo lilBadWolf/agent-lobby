@@ -1,11 +1,9 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.2.9**
+🎉 **Release highlights for agent-lobby 0.3.0**
 
-- 🧹 **Cleaned up lingering tooltips**: stray playlist and UI tooltips are gone for a tidier, less distracting experience.
-- 🎵 **Full AgentAMP genre list**: browse and select from the complete genre library for better music tagging.
-- 🆕 **Standardized genre metadata**: genre labels now follow a consistent naming style across the app.
-- 💾 **Metadata save hotfix**: edits now persist reliably without losing track changes.
-- 🔄 **Stability polish**: republished packaging for all bundle targets and improved idle presence handling.
+- 🎶 **AgentAMP playlist improvements**: playlist handling and playback flow now feel smoother and more responsive.
+- 🔐 **CSP / IPC hotfix**: resolved the recent content-security and IPC regression for safer, more stable app connectivity.
+- 🛠️ **Polish and reliability**: tightened startup behavior for AgentAMP and reduced edge-case playback glitches.
 
-> This patch delivers a smoother AgentAMP workflow and tighter metadata behavior with reliability improvements across the app.
+> This release sharpens the AgentAMP experience and fixes a critical security/connectivity regression for more dependable app performance.

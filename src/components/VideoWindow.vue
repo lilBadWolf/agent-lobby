@@ -111,6 +111,8 @@ const videoEnabled = ref(true);
 const lastAnimatedRemoteMessageKey = ref('');
 const fallbackLocalPreviewStream = ref<MediaStream | null>(null);
 const localPreviewUnavailable = ref(false);
+const remoteVideoElementStream = ref<MediaStream | null>(null);
+const remoteAudioElementStream = ref<MediaStream | null>(null);
 const remoteTrackRevision = ref(0);
 let remoteDiagnosticsIntervalId: number | null = null;
 const { playAnimation } = useMessageAnimations();
@@ -150,6 +152,14 @@ function debugLog(message: string, details?: unknown) {
   }
 
   console.log(`[VideoWindow:${props.peerName}] ${message}`, details);
+}
+
+function shouldSplitRemoteStreamsForPlatform(): boolean {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /Windows/i.test(navigator.userAgent);
 }
 
 function describeStream(stream: MediaStream | null | undefined) {
@@ -225,6 +235,15 @@ function setMediaElementStream(element: HTMLMediaElement, stream: MediaStream | 
   }
 }
 
+function buildTrackOnlyStream(stream: MediaStream, kind: 'audio' | 'video'): MediaStream | null {
+  const tracks = stream.getTracks().filter((track) => track.kind === kind && track.readyState === 'live');
+  if (tracks.length === 0) {
+    return null;
+  }
+
+  return new MediaStream(tracks);
+}
+
 async function safePlayMediaElement(element: HTMLMediaElement, label: string) {
   try {
     await element.play();
@@ -234,6 +253,96 @@ async function safePlayMediaElement(element: HTMLMediaElement, label: string) {
       return;
     }
     console.error(`VideoWindow: ${label} play error:`, error);
+  }
+}
+
+async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
+  if (!sourceStream) {
+    remoteVideoElementStream.value = null;
+    remoteAudioElementStream.value = null;
+    if (remoteVideoRef.value) setMediaElementStream(remoteVideoRef.value, null);
+    if (remoteAudioRef.value) setMediaElementStream(remoteAudioRef.value, null);
+    return;
+  }
+
+  const splitByKind = shouldSplitRemoteStreamsForPlatform();
+
+  if (!splitByKind) {
+    remoteVideoElementStream.value = sourceStream;
+    remoteAudioElementStream.value = sourceStream;
+
+    if (remoteVideoRef.value) {
+      remoteVideoRef.value.muted = true;
+      remoteVideoRef.value.defaultMuted = true;
+      remoteVideoRef.value.volume = 0;
+      setMediaElementStream(remoteVideoRef.value, remoteVideoElementStream.value);
+      debugLog('remote video srcObject set', {
+        source: describeStream(sourceStream),
+        bound: describeStream(remoteVideoElementStream.value),
+        splitByKind,
+        element: describeMediaElement(remoteVideoRef.value),
+      });
+
+      await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
+      debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
+    }
+
+    if (remoteAudioRef.value) {
+      remoteAudioRef.value.defaultMuted = false;
+      remoteAudioRef.value.muted = false;
+      remoteAudioRef.value.volume = 1;
+      setMediaElementStream(remoteAudioRef.value, remoteAudioElementStream.value);
+      debugLog('remote audio srcObject set', {
+        source: describeStream(sourceStream),
+        bound: describeStream(remoteAudioElementStream.value),
+        splitByKind,
+        element: describeMediaElement(remoteAudioRef.value),
+      });
+
+      await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
+      debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
+    }
+
+    return;
+  }
+
+  remoteVideoElementStream.value = buildTrackOnlyStream(sourceStream, 'video');
+  remoteAudioElementStream.value = buildTrackOnlyStream(sourceStream, 'audio');
+
+  if (remoteVideoRef.value) {
+    remoteVideoRef.value.muted = true;
+    remoteVideoRef.value.defaultMuted = true;
+    remoteVideoRef.value.volume = 0;
+    setMediaElementStream(remoteVideoRef.value, remoteVideoElementStream.value);
+    debugLog('remote video srcObject set', {
+      source: describeStream(sourceStream),
+      bound: describeStream(remoteVideoElementStream.value),
+      splitByKind,
+      element: describeMediaElement(remoteVideoRef.value),
+    });
+
+    if (remoteVideoElementStream.value) {
+      await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
+      debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
+    }
+  }
+
+  if (remoteAudioRef.value) {
+    remoteAudioRef.value.defaultMuted = false;
+    remoteAudioRef.value.muted = false;
+    remoteAudioRef.value.volume = 1;
+    setMediaElementStream(remoteAudioRef.value, remoteAudioElementStream.value);
+    debugLog('remote audio srcObject set', {
+      source: describeStream(sourceStream),
+      bound: describeStream(remoteAudioElementStream.value),
+      splitByKind,
+      element: describeMediaElement(remoteAudioRef.value),
+    });
+
+    if (remoteAudioElementStream.value) {
+      await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
+      debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
+    }
   }
 }
 
@@ -342,6 +451,7 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
     const refreshTrackState = () => {
       remoteTrackRevision.value += 1;
       debugLog('remote stream track topology changed', describeStream(stream));
+      void applyRemoteElementStreams(stream);
     };
 
     const trackTeardowns: Array<() => void> = [];
@@ -379,8 +489,7 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
 
   if (!stream) {
     debugLog('remote stream missing, clearing media elements');
-    if (remoteVideoRef.value) setMediaElementStream(remoteVideoRef.value, null);
-    if (remoteAudioRef.value) setMediaElementStream(remoteAudioRef.value, null);
+    await applyRemoteElementStreams(null);
     return;
   }
 
@@ -414,31 +523,7 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
     clearAudioEvents();
   });
 
-  if (remoteVideoRef.value) {
-    remoteVideoRef.value.muted = true;
-    remoteVideoRef.value.defaultMuted = true;
-    remoteVideoRef.value.volume = 0;
-    setMediaElementStream(remoteVideoRef.value, stream);
-    debugLog('remote video srcObject set', {
-      stream: describeStream(stream),
-      element: describeMediaElement(remoteVideoRef.value),
-    });
-    await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
-    debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
-  }
-
-  if (remoteAudioRef.value) {
-    remoteAudioRef.value.defaultMuted = false;
-    remoteAudioRef.value.muted = false;
-    remoteAudioRef.value.volume = 1;
-    setMediaElementStream(remoteAudioRef.value, stream);
-    debugLog('remote audio srcObject set', {
-      stream: describeStream(stream),
-      element: describeMediaElement(remoteAudioRef.value),
-    });
-    await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
-    debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
-  }
+  await applyRemoteElementStreams(stream);
 }, { immediate: true });
 
 watch(() => props.peerHasVideo, (value) => {
@@ -505,6 +590,9 @@ onBeforeUnmount(() => {
   if (remoteAudioRef.value) {
     remoteAudioRef.value.srcObject = null;
   }
+
+  remoteVideoElementStream.value = null;
+  remoteAudioElementStream.value = null;
 });
 </script>
 

@@ -1,11 +1,10 @@
 # Release Notes
 
-🎉 **Release highlights for end users, theme creators, and soundpack makers**
+🎉 **Release highlights for agent-lobby 0.2.6**
 
-- ✅ **Stable native update**: This patch release improves desktop reliability for the Tauri v2 app.
-- 🎨 **Better theme behavior**: Theme assets now load more consistently, with fewer refresh glitches when switching palettes.
-- 🔊 **Soundpack polish**: Audio pack handling is more reliable, making custom sound themes feel smoother and more responsive.
-- 🚀 **Packaging improvements**: Creator assets and bundled themes are more robust during build and install.
-- 🛠️ **Quality-of-life fixes**: Under-the-hood stability updates for a cleaner experience across Windows/macOS/Linux.
+- ✅ **Direct Message playback reliability**: Fixed an issue where DM effects could replay previously animated messages when chat state resynchronized.
+- 💬 **Cleaner typing/DM state handling**: The DM system now preserves delivery confirmation and avoids stale playback during peer typing.
+- 🧠 **More robust message dedupe**: Message playback now uses stable IDs to ensure each DM effect only runs once.
+- 🚀 **General polish**: Under-the-hood improvements for smoother direct messaging and more reliable desktop behavior.
 
-> If you’re building themes or soundpacks, expect more dependable asset loading and fewer “just works” surprises when your package is installed by end users.
+> This patch is focused on making direct message playback feel consistent and dependable, especially during active peer conversations.

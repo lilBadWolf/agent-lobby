@@ -18,8 +18,12 @@
     >
       <div v-if="isCompact" class="agentamp-now-inline-controls agentamp-now-inline-row">
         <div class="agentamp-now-inline-title">
-          <span class="agentamp-label" :class="nowDisplayLabelClass">{{ nowDisplayLabel }}</span>
-          <span class="agentamp-track-name">{{ nowDisplayTrackName }}</span>
+          <transition name="agentamp-now-cycle">
+            <div :key="`${nowDisplayLabel}:${nowDisplayTrackName}`" class="agentamp-now-copy">
+              <span class="agentamp-label" :class="nowDisplayLabelClass">{{ nowDisplayLabel }}</span>
+              <span class="agentamp-track-name">{{ nowDisplayTrackName }}</span>
+            </div>
+          </transition>
         </div>
         <div class="agentamp-now-inline-btns">
           <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
@@ -155,6 +159,7 @@
 
     <ul
       v-if="showPlaylist || isCompact"
+      ref="playlistContainerEl"
       class="agentamp-playlist"
       role="listbox"
       :style="playlistStyle"
@@ -201,7 +206,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
 import SpectrumAnalyzer from './SpectrumAnalyzer.vue';
 
@@ -276,6 +281,7 @@ const dragFromIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const audioEl = ref<HTMLAudioElement | null>(null);
+const playlistContainerEl = ref<HTMLElement | null>(null);
 let nowCycleInterval: ReturnType<typeof setInterval> | null = null;
 let tauriDialogPromise: Promise<TauriDialogModule | null> | null = null;
 let tauriConvertFileSrcPromise: Promise<((filePath: string) => string) | null> | null = null;
@@ -323,6 +329,10 @@ function getUpcomingTrack(offset: number): PlaylistTrack | null {
     return idx < total ? playlist.value[idx] : null;
   }
 
+  if (isShuffle.value) {
+    return null;
+  }
+
   if (loopMode.value === 'none') {
     const idx = currentIndex.value + offset;
     return idx < total ? playlist.value[idx] : null;
@@ -358,8 +368,30 @@ const playlistStyle = computed<CSSProperties>(() => {
   };
 });
 
+function scrollActiveTrackIntoView() {
+  if (!playlistContainerEl.value) {
+    return;
+  }
+
+  const activeTrack = playlistContainerEl.value.querySelector<HTMLElement>('.agentamp-track-row.active');
+  if (!activeTrack) {
+    return;
+  }
+
+  activeTrack.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+}
+
 const cycleModes = computed<Array<'now' | 'next' | 'then'>>(() => {
   const modes: Array<'now' | 'next' | 'then'> = ['now'];
+  if (isShuffle.value) {
+    if (playlist.value.length > 1) {
+      modes.push('next');
+    }
+    if (playlist.value.length > 2) {
+      modes.push('then');
+    }
+    return modes;
+  }
   if (nextTrack.value) {
     modes.push('next');
   }
@@ -382,11 +414,19 @@ const loopModeLabel = computed(() => {
 });
 
 const nowDisplayLabel = computed(() => {
-  if (isCompact.value && nowDisplayMode.value === 'next' && nextTrack.value && nextTrack.value !== currentTrack.value) {
+  if (isShuffle.value && nowDisplayMode.value === 'next') {
     return 'NEXT:';
   }
 
-  if (isCompact.value && nowDisplayMode.value === 'then' && thenTrack.value && thenTrack.value !== currentTrack.value) {
+  if (isShuffle.value && nowDisplayMode.value === 'then') {
+    return 'THEN:';
+  }
+
+  if (nowDisplayMode.value === 'next' && nextTrack.value && nextTrack.value !== currentTrack.value) {
+    return 'NEXT:';
+  }
+
+  if (nowDisplayMode.value === 'then' && thenTrack.value && thenTrack.value !== currentTrack.value) {
     return 'THEN:';
   }
 
@@ -394,11 +434,15 @@ const nowDisplayLabel = computed(() => {
 });
 
 const nowDisplayTrackName = computed(() => {
-  if (isCompact.value && nowDisplayMode.value === 'next' && nextTrack.value && nextTrack.value !== currentTrack.value) {
+  if (isShuffle.value && (nowDisplayMode.value === 'next' || nowDisplayMode.value === 'then')) {
+    return 'SHUFFLE';
+  }
+
+  if (nowDisplayMode.value === 'next' && nextTrack.value && nextTrack.value !== currentTrack.value) {
     return nextTrack.value.name;
   }
 
-  if (isCompact.value && nowDisplayMode.value === 'then' && thenTrack.value && thenTrack.value !== currentTrack.value) {
+  if (nowDisplayMode.value === 'then' && thenTrack.value && thenTrack.value !== currentTrack.value) {
     return thenTrack.value.name;
   }
 
@@ -440,6 +484,15 @@ watch(
   },
   { deep: true }
 );
+
+watch(showPlaylist, async (visible) => {
+  if (!visible) {
+    return;
+  }
+
+  await nextTick();
+  scrollActiveTrackIntoView();
+});
 
 watch([isCompact, isNowHovered, playlist, currentIndex], () => {
   restartNowCycle();

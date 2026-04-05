@@ -226,7 +226,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../types/directMessage';
 import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -288,7 +288,27 @@ const currentTab = ref<string>('');
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement>();
 const audioElement = ref<HTMLAudioElement>();
-const animationElements = new Map<string, HTMLElement>(); // Track animation DOM elements
+const isMessageAnimationActive = ref(false);
+const playedMessageIds = new Set<string>();
+
+function getStableMessageId(message: { user: string; message: string; effect?: string; duration?: number; messageId?: string }) {
+  if (message.messageId) {
+    return message.messageId;
+  }
+
+  return `${message.user}_${message.message}_${message.effect ?? 'none'}_${message.duration ?? 0}`;
+}
+
+function ensureMessageId(message: { user: string; message: string; effect?: string; duration?: number; messageId?: string }) {
+  if (message.messageId) {
+    return message.messageId;
+  }
+
+  const generatedId = `${message.user}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  message.messageId = generatedId;
+  return generatedId;
+}
+
 const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
 const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
 const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state per user
@@ -832,100 +852,127 @@ async function downloadFile(transfer: FileTransferState) {
   }
 }
 
-// Watch for new messages and play animations
-watch(
-  () => {
-    const chat = getCurrentChat();
-    return chat?.messages.length ?? 0;
-  },
-  async (newLen) => {
-    if (!newLen || !currentTab.value) return;
+async function processPendingMessage(): Promise<void> {
+  const chat = getCurrentChat();
+  if (!chat || isMessageAnimationActive.value || chat.messages.length === 0) return;
 
-    const chat = getCurrentChat();
-    if (!chat || chat.messages.length === 0) return;
+  // Remove any already-played messages from the current queue
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const msg = chat.messages[i];
+    const stableId = msg.messageId ?? getStableMessageId(msg as any);
+    if (playedMessageIds.has(stableId)) {
+      chat.messages.splice(i, 1);
+    }
+  }
 
-    const lastMsg = chat.messages[chat.messages.length - 1];
-    const msgKey = `${lastMsg.user}_${chat.messages.length - 1}`;
+  if (chat.messages.length === 0) {
+    return;
+  }
 
-    // Skip if already animated
-    if (animationElements.has(msgKey)) return;
+  let nextIndex = -1;
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const msg = chat.messages[i];
+    const stableId = msg.messageId ?? getStableMessageId(msg as any);
+    if (!playedMessageIds.has(stableId)) {
+      nextIndex = i;
+      break;
+    }
+  }
 
-    // Create animation container - full window, centered
-    const animContainer = document.createElement('div');
-    animContainer.className = 'animation-container';
-    animContainer.style.position = 'absolute';
-    animContainer.style.top = '0';
-    animContainer.style.left = '0';
-    animContainer.style.width = '100%';
-    animContainer.style.height = '100%';
-    animContainer.style.display = 'flex';
-    animContainer.style.alignItems = 'center';
-    animContainer.style.justifyContent = 'center';
-    animContainer.style.padding = '20px';
-    animContainer.style.boxSizing = 'border-box';
+  if (nextIndex === -1) {
+    return;
+  }
 
-    // Add text container for animation (no sender label)
-    const textContainer = document.createElement('span');
-    textContainer.className = 'animation-text';
-    textContainer.style.color = 'var(--color-accent, #39ff14)';
-    textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
-    textContainer.style.fontWeight = 'bold';
-    textContainer.style.textAlign = 'center';
-    textContainer.style.whiteSpace = 'pre-wrap';
-    textContainer.style.overflowWrap = 'normal';
-    textContainer.style.wordBreak = 'normal';
-    textContainer.style.textShadow = 'var(--color-dmchatmodal-effect-text-shadow, 0 0 20px rgba(57, 255, 20, 0.8))';
-    textContainer.style.overflow = 'hidden';
-    animContainer.appendChild(textContainer);
+  const nextMsg = chat.messages[nextIndex];
+  const animatedMessageId = ensureMessageId(nextMsg);
 
-    if (messagesContainer.value) {
-      messagesContainer.value.style.position = 'relative';
-      messagesContainer.value.appendChild(animContainer);
+  isMessageAnimationActive.value = true;
+  const animatedUser = currentTab.value;
+
+  const animContainer = document.createElement('div');
+  animContainer.className = 'animation-container';
+  animContainer.style.position = 'absolute';
+  animContainer.style.top = '0';
+  animContainer.style.left = '0';
+  animContainer.style.width = '100%';
+  animContainer.style.height = '100%';
+  animContainer.style.display = 'flex';
+  animContainer.style.alignItems = 'center';
+  animContainer.style.justifyContent = 'center';
+  animContainer.style.padding = '20px';
+  animContainer.style.boxSizing = 'border-box';
+
+  const textContainer = document.createElement('span');
+  textContainer.className = 'animation-text';
+  textContainer.style.color = 'var(--color-accent, #39ff14)';
+  textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
+  textContainer.style.fontWeight = 'bold';
+  textContainer.style.textAlign = 'center';
+  textContainer.style.whiteSpace = 'pre-wrap';
+  textContainer.style.overflowWrap = 'normal';
+  textContainer.style.wordBreak = 'normal';
+  textContainer.style.textShadow = 'var(--color-dmchatmodal-effect-text-shadow, 0 0 20px rgba(57, 255, 20, 0.8))';
+  textContainer.style.overflow = 'hidden';
+  animContainer.appendChild(textContainer);
+
+  if (messagesContainer.value) {
+    messagesContainer.value.style.position = 'relative';
+    messagesContainer.value.appendChild(animContainer);
+  }
+
+  const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
+  try {
+    await playAnimation(effect, nextMsg.message, textContainer);
+  } catch (e) {
+    console.error('Animation error:', e);
+    textContainer.textContent = nextMsg.message;
+  }
+
+  const animatedChat = props.activeChats.get(animatedUser);
+  if (animatedChat) {
+    const index = animatedChat.messages.findIndex((msg) => msg.messageId === animatedMessageId);
+    if (index !== -1) {
+      animatedChat.messages.splice(index, 1);
     }
 
-    animationElements.set(msgKey, animContainer);
-
-    // Play animation
-    const effect = (lastMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
-    try {
-      await playAnimation(effect, lastMsg.message, textContainer);
-    } catch (e) {
-      console.error('Animation error:', e);
-      textContainer.textContent = lastMsg.message;
-    }
-
-    // Remove from messages array (ephemeral)
-    chat.messages.pop();
-
-    // Remove animation container
-    if (animContainer.parentNode) {
-      animContainer.parentNode.removeChild(animContainer);
-    }
-
-    animationElements.delete(msgKey);
-
-    // If this was OUR message, remove it from pending display queue
-    if (lastMsg.user === props.username && lastMsg.messageId) {
-      chat.pendingDisplayMessages = chat.pendingDisplayMessages.filter(
-        (msg) => msg.id !== lastMsg.messageId
+    if (nextMsg.user === props.username) {
+      animatedChat.pendingDisplayMessages = animatedChat.pendingDisplayMessages.filter(
+        (msg) => msg.id !== animatedMessageId
       );
     }
 
-    // Send ACK if message was from peer (not from current user)
-    if (lastMsg.user !== props.username) {
-      // Send ACK to peer
-      if (chat.dataChannel && chat.dataChannel.readyState === 'open') {
-        try {
-          chat.dataChannel.send(JSON.stringify({
-            u: props.username,
-            ack: true,
-            msgId: lastMsg.messageId
-          }));
-        } catch (e) {
-          console.error('Failed to send ACK:', e);
-        }
+    if (nextMsg.user !== props.username && animatedChat.dataChannel && animatedChat.dataChannel.readyState === 'open') {
+      try {
+        animatedChat.dataChannel.send(JSON.stringify({
+          u: props.username,
+          ack: true,
+          msgId: animatedMessageId
+        }));
+      } catch (e) {
+        console.error('Failed to send ACK:', e);
       }
     }
+  }
+
+  playedMessageIds.add(animatedMessageId);
+
+  if (animContainer.parentNode) {
+    animContainer.parentNode.removeChild(animContainer);
+  }
+
+  isMessageAnimationActive.value = false;
+
+  if (currentTab.value === animatedUser) {
+    await nextTick();
+    await processPendingMessage();
+  }
+}
+
+watch(
+  [() => currentTab.value, () => getCurrentChat()?.messages.length],
+  async ([newTab, newLength]) => {
+    if (!newTab || !newLength) return;
+    await processPendingMessage();
   }
 );
 </script>

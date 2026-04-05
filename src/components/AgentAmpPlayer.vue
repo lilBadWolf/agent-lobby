@@ -220,10 +220,66 @@
         >
           X
         </button>
+        <div
+          v-if="item.originalIndex === visibleMetadataIndex"
+          :class="['agentamp-track-tooltip-card', item.originalIndex === 0 ? 'agentamp-track-tooltip-card--first-row' : 'agentamp-track-tooltip-card--other-row']"
+          @mouseenter="cancelMetadataTooltipHide"
+          @mouseleave="hideTrackTooltip(item.originalIndex, $event)"
+          @click.stop
+        >
+          <div class="agentamp-track-tooltip-copy">{{ getTrackMetadataTooltip(item.track) }}</div>
+          <button
+            v-if="isMetadataEditable(item.track)"
+            class="agentamp-metadata-edit-link"
+            type="button"
+            @click.stop="openMetadataEditor(item.originalIndex)"
+          >
+            ✎
+          </button>
+        </div>
       </li>
       <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3 FILES TO BUILD A PLAYLIST.</li>
     </ul>
 
+    <div v-if="editingMetadataIndex !== null" class="agentamp-modal-backdrop" @click.self="closeMetadataEditor">
+      <div class="agentamp-modal-card">
+        <div class="agentamp-modal-header">
+          <span>EDIT TRACK METADATA</span>
+          <button class="agentamp-modal-close" type="button" @click="closeMetadataEditor">✕</button>
+        </div>
+        <form class="agentamp-modal-form" @submit.prevent="saveTrackMetadata">
+          <label>
+            ARTIST
+            <input v-model="metadataEditorForm.artist" type="text" />
+          </label>
+          <label>
+            TITLE
+            <input v-model="metadataEditorForm.title" type="text" />
+          </label>
+          <label>
+            ALBUM
+            <input v-model="metadataEditorForm.album" type="text" />
+          </label>
+          <label>
+            YEAR
+            <input v-model="metadataEditorForm.year" type="text" />
+          </label>
+          <label>
+            GENRE
+            <input v-model="metadataEditorForm.genre" type="text" />
+          </label>
+          <label>
+            TRACK #
+            <input v-model="metadataEditorForm.trackNumber" type="text" />
+          </label>
+          <div class="agentamp-modal-actions">
+            <button type="button" class="agentamp-btn" @click="closeMetadataEditor">CANCEL</button>
+            <button type="submit" class="agentamp-btn" :disabled="metadataEditorSaving">{{ metadataEditorSaving ? 'SAVING...' : 'SAVE' }}</button>
+          </div>
+          <p v-if="metadataEditorError" class="agentamp-modal-error">{{ metadataEditorError }}</p>
+        </form>
+      </div>
+    </div>
     <audio
       ref="audioEl"
       crossorigin="anonymous"
@@ -272,6 +328,15 @@ type PlaylistTrack = {
 type PlaylistDisplayItem = {
   track: PlaylistTrack;
   originalIndex: number;
+};
+
+type MetadataEditFields = {
+  artist: string;
+  title: string;
+  album: string;
+  year: string;
+  genre: string;
+  trackNumber: string;
 };
 
 type PersistedPlayerState = {
@@ -323,6 +388,17 @@ const isNowHovered = ref(false);
 const nowDisplayMode = ref<'now' | 'next' | 'then'>('now');
 const visibleMetadataIndex = ref<number | null>(null);
 let metadataTooltipHideTimer: number | null = null;
+const editingMetadataIndex = ref<number | null>(null);
+const metadataEditorForm = ref<MetadataEditFields>({
+  artist: '',
+  title: '',
+  album: '',
+  year: '',
+  genre: '',
+  trackNumber: '',
+});
+const metadataEditorSaving = ref(false);
+const metadataEditorError = ref<string | null>(null);
 const playlistSortField = ref<'order' | 'artist' | 'title' | 'genre' | 'duration' | null>(null);
 const playlistSortDirection = ref<'asc' | 'desc'>('asc');
 const dragFromIndex = ref<number | null>(null);
@@ -406,7 +482,7 @@ const playlistStyle = computed<CSSProperties>(() => {
 
   if (props.detached && !isCompact.value) {
     return {
-      height: 'auto)',
+      height: 'auto',
       maxHeight: 'var(--agentamp-detached-playlist-max-height, 999px)',
       overflowY: 'auto',
       minHeight: 0,
@@ -550,9 +626,17 @@ function handleTrackContextMenu(index: number, event: MouseEvent) {
   visibleMetadataIndex.value = visibleMetadataIndex.value === index ? null : index;
 }
 
-function hideTrackTooltip(index: number) {
+function hideTrackTooltip(index: number, event?: MouseEvent) {
   if (visibleMetadataIndex.value !== index) {
     return;
+  }
+
+  if (event) {
+    const currentTarget = event.currentTarget as HTMLElement | null;
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+      return;
+    }
   }
 
   if (metadataTooltipHideTimer !== null) {
@@ -564,7 +648,14 @@ function hideTrackTooltip(index: number) {
       visibleMetadataIndex.value = null;
     }
     metadataTooltipHideTimer = null;
-  }, 120);
+  }, 180);
+}
+
+function cancelMetadataTooltipHide() {
+  if (metadataTooltipHideTimer !== null) {
+    window.clearTimeout(metadataTooltipHideTimer);
+    metadataTooltipHideTimer = null;
+  }
 }
 
 function transferTrackTooltip(index: number) {
@@ -583,6 +674,179 @@ function transferTrackTooltip(index: number) {
 function handleTrackDblClick(index: number) {
   visibleMetadataIndex.value = null;
   selectTrack(index);
+}
+
+function isMetadataEditable(track: PlaylistTrack): boolean {
+  return track.source === 'path' && track.location.trim().length > 0;
+}
+
+function openMetadataEditor(index: number) {
+  const track = playlist.value[index];
+  if (!track) {
+    return;
+  }
+
+  editingMetadataIndex.value = index;
+  metadataEditorForm.value = {
+    artist: track.artist ?? '',
+    title: track.title ?? '',
+    album: track.album ?? '',
+    year: track.year ?? '',
+    genre: track.genre ?? '',
+    trackNumber: track.trackNumber ?? '',
+  };
+  metadataEditorError.value = null;
+}
+
+function closeMetadataEditor() {
+  editingMetadataIndex.value = null;
+  metadataEditorError.value = null;
+}
+
+function normalizeMetadataValue(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : undefined;
+}
+
+async function saveTrackMetadata() {
+  if (editingMetadataIndex.value === null) {
+    return;
+  }
+
+  const track = playlist.value[editingMetadataIndex.value];
+  if (!track) {
+    closeMetadataEditor();
+    return;
+  }
+
+  const updated: MetadataEditFields = {
+    artist: normalizeMetadataValue(metadataEditorForm.value.artist) ?? '',
+    title: normalizeMetadataValue(metadataEditorForm.value.title) ?? '',
+    album: normalizeMetadataValue(metadataEditorForm.value.album) ?? '',
+    year: normalizeMetadataValue(metadataEditorForm.value.year) ?? '',
+    genre: normalizeMetadataValue(metadataEditorForm.value.genre) ?? '',
+    trackNumber: normalizeMetadataValue(metadataEditorForm.value.trackNumber) ?? '',
+  };
+
+  if (!isMetadataEditable(track)) {
+    metadataEditorError.value = 'Cannot save metadata for this track source.';
+    return;
+  }
+
+  metadataEditorSaving.value = true;
+  metadataEditorError.value = null;
+
+  try {
+    await writeTrackMetadataToFile(track, updated);
+    track.artist = updated.artist ?? track.artist;
+    track.title = updated.title ?? track.title;
+    track.album = updated.album ?? track.album;
+    track.year = updated.year ?? track.year;
+    track.genre = updated.genre ?? track.genre;
+    track.trackNumber = updated.trackNumber ?? track.trackNumber;
+
+    playlist.value = [...playlist.value];
+    closeMetadataEditor();
+  } catch (error) {
+    metadataEditorError.value = 'Unable to save metadata. Please try again.';
+    console.error('Failed to save metadata:', error);
+  } finally {
+    metadataEditorSaving.value = false;
+  }
+}
+
+async function writeTrackMetadataToFile(track: PlaylistTrack, metadata: MetadataEditFields): Promise<void> {
+  const fsApi = await getTauriFs();
+  if (!fsApi) {
+    throw new Error('Tauri FS not available');
+  }
+
+  const rawBytes = await fsApi.readFile(track.location);
+  const bytes = new Uint8Array(rawBytes);
+  const cleanedAudio = stripExistingId3(bytes);
+  const newTag = buildId3v2Tag(metadata);
+  const output = concatUint8Arrays(newTag, cleanedAudio);
+
+  await fsApi.writeFile(track.location, output);
+}
+
+function stripExistingId3(data: Uint8Array): Uint8Array {
+  if (data.length >= 10 && String.fromCharCode(...data.slice(0, 3)) === 'ID3') {
+    const tagSize = readSyncSafeInteger(data.slice(6, 10));
+    const frameEnd = 10 + tagSize;
+    if (frameEnd <= data.length) {
+      return data.slice(frameEnd);
+    }
+  }
+
+  if (data.length >= 128 && String.fromCharCode(...data.slice(data.length - 128, data.length - 125)) === 'TAG') {
+    return data.slice(0, data.length - 128);
+  }
+
+  return data;
+}
+
+function buildId3v2Tag(metadata: MetadataEditFields): Uint8Array {
+  const frames: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+
+  function addTextFrame(frameId: string, text?: string | undefined) {
+    if (!text) {
+      return;
+    }
+
+    const payload = encoder.encode(text);
+    const frameData = new Uint8Array(1 + payload.length);
+    frameData[0] = 3;
+    frameData.set(payload, 1);
+
+    const header = new Uint8Array(10);
+    header.set(new TextEncoder().encode(frameId), 0);
+    header[4] = (frameData.length >>> 24) & 0xff;
+    header[5] = (frameData.length >>> 16) & 0xff;
+    header[6] = (frameData.length >>> 8) & 0xff;
+    header[7] = frameData.length & 0xff;
+
+    frames.push(concatUint8Arrays(header, frameData));
+  }
+
+  addTextFrame('TPE1', metadata.artist);
+  addTextFrame('TIT2', metadata.title);
+  addTextFrame('TALB', metadata.album);
+  addTextFrame('TDRC', metadata.year);
+  addTextFrame('TCON', metadata.genre);
+  addTextFrame('TRCK', metadata.trackNumber);
+
+  const body = concatUint8Arrays(...frames);
+  const header = new Uint8Array(10);
+  header.set([0x49, 0x44, 0x33], 0);
+  header[3] = 3;
+  header[4] = 0;
+  header[5] = 0;
+  const sizeBytes = toSyncSafeInteger(body.length);
+  header.set(sizeBytes, 6);
+
+  return concatUint8Arrays(header, body);
+}
+
+function toSyncSafeInteger(value: number): Uint8Array {
+  return new Uint8Array([
+    (value >>> 21) & 0x7f,
+    (value >>> 14) & 0x7f,
+    (value >>> 7) & 0x7f,
+    value & 0x7f,
+  ]);
+}
+
+function concatUint8Arrays(...arrays: Uint8Array[]): Uint8Array {
+  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
 }
 
 function refreshPlaylistOrder() {
@@ -2306,6 +2570,11 @@ onBeforeUnmount(() => {
   transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
 }
 
+.agentamp-track-btn.metadata-visible[data-tooltip]::after,
+.agentamp-track-btn.metadata-visible[data-tooltip]::before {
+  display: none;
+}
+
 .agentamp-track-btn[data-tooltip]::after {
   text-transform: none;
 }
@@ -2352,6 +2621,65 @@ onBeforeUnmount(() => {
   bottom: auto;
   top: calc(100% + 7px);
   transform: translateX(-50%) translateY(-2px);
+}
+
+.agentamp-track-tooltip-card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  min-width: 220px;
+  max-width: 280px;
+  background: var(--color-chat-surface-strong);
+  border: 1px solid var(--color-accent);
+  border-radius: 3px;
+  padding: 8px 10px;
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.2);
+  color: var(--color-chat-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.agentamp-track-tooltip-card--first-row {
+  top: 100%;
+}
+
+.agentamp-track-tooltip-card--other-row {
+  top: 0;
+}
+
+.agentamp-track-tooltip-copy {
+  flex: 1 1 auto;
+  font-size: 11px;
+  line-height: 1.4;
+  margin-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentamp-metadata-edit-link {
+  flex: 0 0 auto;
+}
+
+.agentamp-metadata-edit-link {
+  background: transparent;
+  border: none;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.agentamp-metadata-edit-link:hover {
+  text-decoration: underline;
 }
 
 .agentamp-playlist-header + .agentamp-track-row .agentamp-track-btn[data-tooltip]::before,
@@ -2624,6 +2952,10 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.agentamp-track-row {
+  position: relative;
+}
+
 .agentamp-playlist-header {
   padding: 8px 8px;
   border-bottom: 1px solid var(--color-agentamp-track-row-border);
@@ -2882,5 +3214,84 @@ onBeforeUnmount(() => {
     min-width: 0;
     width: 100%;
   }
+}
+
+.agentamp-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.agentamp-modal-card {
+  background: rgba(0, 0, 0, 0.92);
+  border: 1px solid var(--color-agentamp-border);
+  border-radius: 8px;
+  box-shadow: 0 0 32px rgba(0, 0, 0, 0.25);
+  width: min(420px, calc(100vw - 32px));
+  max-width: 100%;
+  min-height: min(420px, calc(100vh - 32px));
+  max-height: min(90vh, calc(100vh - 32px));
+  overflow: auto;
+}
+
+.agentamp-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-agentamp-track-row-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.agentamp-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.agentamp-modal-form {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.agentamp-modal-form label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.agentamp-modal-form input {
+  width: 100%;
+  border: 1px solid var(--color-agentamp-track-row-border);
+  background: var(--color-agentamp-bg);
+  color: var(--color-text-primary);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.agentamp-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.agentamp-modal-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 11px;
 }
 </style>

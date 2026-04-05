@@ -7,7 +7,6 @@
           class="away-toggle-btn"
           :class="{ active: props.isAway }"
           type="button"
-          :title="props.isAway ? 'Set status to active' : 'Set status to away'"
           :aria-label="props.isAway ? 'Set status to active' : 'Set status to away'"
           @click="emit('toggleAway')"
         >
@@ -21,7 +20,6 @@
         class="away-toggle-btn compact-away-toggle-btn"
         :class="{ active: props.isAway }"
         type="button"
-        :title="props.isAway ? 'Set status to active' : 'Set status to away'"
         :aria-label="props.isAway ? 'Set status to active' : 'Set status to away'"
         @click="emit('toggleAway')"
       >
@@ -41,7 +39,6 @@
           type="button"
           class="user-handle-btn"
           :class="{ 'compact-user-handle-btn': props.isCompact, 'typing-user': user.isTyping }"
-          :title="user.username"
           :aria-label="`Mention ${user.username}`"
           @click="emit('mentionRequest', user.username)"
         >
@@ -51,7 +48,6 @@
           v-if="user.dmAvailable && !user.isAway"
           class="dm-btn"
           :class="[{ 'compact-dm-btn': props.isCompact }, getDMBubbleClass(user.username)]"
-          :title="getDMBubbleTitle(user.username)"
           :aria-label="getDMBubbleTitle(user.username)"
           @click="emit('dmRequest', user.username)"
         >

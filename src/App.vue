@@ -27,7 +27,6 @@
       v-if="!showAuth"
       class="sidebar-pane-toggle-btn"
       type="button"
-      :title="isSidebarVisible ? 'Compact agent pane' : 'Expand agent pane'"
       :aria-label="isSidebarVisible ? 'Compact agent pane' : 'Expand agent pane'"
       @click="toggleSidebarPane"
     >

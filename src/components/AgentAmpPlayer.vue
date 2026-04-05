@@ -182,6 +182,9 @@
         >
           {{ index + 1 }}. {{ track.name }}
         </button>
+        <span v-if="track.duration && track.duration > 0" class="agentamp-track-duration">
+          {{ formatTrackDuration(track.duration) }}
+        </span>
         <button
           class="agentamp-remove-btn"
           type="button"
@@ -228,6 +231,7 @@ type PlaylistTrack = {
   name: string;
   source: PlaylistSource;
   location: string;
+  duration?: number;
 };
 
 type PersistedPlayerState = {
@@ -635,7 +639,58 @@ async function addTracksFromPaths(paths: string[]) {
     loadCurrentTrack(false);
   }
 
+  void loadPlaylistMetadata(nextTracks);
   await persistPlayerState();
+}
+
+async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
+  if (typeof track.duration === 'number' && track.duration > 0) {
+    return;
+  }
+
+  const metadataAudio = document.createElement('audio');
+  metadataAudio.preload = 'metadata';
+
+  if (track.source === 'path') {
+    const convertFileSrc = await getTauriConvertFileSrc();
+    if (!convertFileSrc) {
+      return;
+    }
+
+    metadataAudio.src = convertFileSrc(track.location);
+  } else {
+    metadataAudio.src = track.location;
+  }
+
+  await new Promise<void>((resolve) => {
+    const cleanup = () => {
+      metadataAudio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      metadataAudio.removeEventListener('error', onError);
+      resolve();
+    };
+
+    const onLoadedMetadata = () => {
+      const trackDuration = Number.isFinite(metadataAudio.duration) ? metadataAudio.duration : 0;
+      if (trackDuration > 0) {
+        track.duration = trackDuration;
+      }
+      cleanup();
+    };
+
+    const onError = () => {
+      cleanup();
+    };
+
+    metadataAudio.addEventListener('loadedmetadata', onLoadedMetadata);
+    metadataAudio.addEventListener('error', onError);
+    metadataAudio.load();
+  });
+}
+
+async function loadPlaylistMetadata(tracks: PlaylistTrack[]) {
+  for (const track of tracks) {
+    await loadTrackMetadata(track);
+  }
 }
 
 function isPlaylistPath(path: string): boolean {
@@ -853,6 +908,7 @@ async function handleFileSelection(event: Event) {
     loadCurrentTrack(false);
   }
 
+  void loadPlaylistMetadata(nextTracks);
   await persistPlayerState();
 
   input.value = '';
@@ -1175,12 +1231,24 @@ function handleLoadedMetadata() {
     pendingRestoreTime = 0;
   }
 
+  if (currentTrack.value && Number.isFinite(duration.value) && duration.value > 0) {
+    currentTrack.value.duration = duration.value;
+  }
+
   if (pendingAutoplay) {
     pendingAutoplay = false;
     void player.play().catch(() => {
       isPlaying.value = false;
     });
   }
+}
+
+function formatTrackDuration(value: number | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return '';
+  }
+
+  return formatTime(value);
 }
 
 function handleTimeUpdate() {
@@ -1554,6 +1622,10 @@ async function restorePlayerState() {
 
     if (currentIndex.value >= 0) {
       loadCurrentTrack(shouldAutoplay, currentTime.value);
+    }
+
+    if (playlist.value.length > 0) {
+      void loadPlaylistMetadata(playlist.value);
     }
   } catch {
     localStorage.removeItem(PLAYER_STORAGE_KEY);
@@ -2053,6 +2125,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.agentamp-track-duration {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  margin: 0 6px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .agentamp-track-btn:hover {

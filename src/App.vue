@@ -275,14 +275,18 @@
 .workspace-shell {
   height: 100%;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .workspace-shell .main-view {
-  flex: 1 1 auto;
   min-height: 0;
   height: auto;
+}
+
+.workspace-shell > .main-view {
+  min-height: 0;
 }
 
 </style>
@@ -364,7 +368,7 @@ const AGENTAMP_WINDOW_LABEL = 'agentamp-window';
 const AGENTAMP_WINDOW_DEFAULT_WIDTH = 860;
 const AGENTAMP_WINDOW_DEFAULT_HEIGHT = 320;
 const AGENTAMP_WINDOW_MIN_WIDTH = 560;
-const AGENTAMP_WINDOW_MIN_HEIGHT = 220;
+const AGENTAMP_WINDOW_MIN_HEIGHT = 380;
 const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
 const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';

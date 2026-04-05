@@ -157,6 +157,17 @@
       <button class="agentamp-icon-btn" type="button" data-tooltip="ADD" @click="openFilePicker">+</button>
     </div>
 
+    <div
+      v-if="!props.detached && !isCompact && showPlaylist"
+      class="agentamp-docked-resize-handle"
+      role="separator"
+      aria-label="Resize AgentAmp playlist"
+      aria-orientation="horizontal"
+      @mousedown.prevent="startDockedPlaylistResize"
+    >
+      <span class="agentamp-docked-resize-grip" aria-hidden="true"></span>
+    </div>
+
     <ul
       v-if="showPlaylist || isCompact"
       ref="playlistContainerEl"
@@ -197,6 +208,7 @@
       >
         <span class="agentamp-track-order">{{ item.track.order + 1 }}</span>
         <button
+          :key="getTrackMetadataRenderKey(item.track)"
           class="agentamp-track-btn"
           :class="{ 'metadata-visible': item.originalIndex === visibleMetadataIndex }"
           type="button"
@@ -327,6 +339,11 @@ const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const AGENTAMP_TRANSITION_KEY = 'agent_agentamp_transition';
 const AGENTAMP_STOP_CHANNEL = 'agent-lobby-agentamp-stop';
+const DOCKED_MIN_TRACK_ROWS = 5;
+const DOCKED_TRACK_ROW_HEIGHT = 34;
+const DOCKED_TRACK_HEADER_HEIGHT = 34;
+const DOCKED_TRACK_BREATHING_ROOM = 12;
+const DOCKED_MAX_VIEWPORT_RATIO = 0.33;
 
 type LoopMode = 'none' | 'all' | 'one';
 type PlaylistSource = 'path' | 'dataUrl';
@@ -578,6 +595,7 @@ const dragOverIndex = ref<number | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
 const audioEl = ref<HTMLAudioElement | null>(null);
 const playlistContainerEl = ref<HTMLElement | null>(null);
+const dockedPlaylistHeightOverride = ref<number | null>(null);
 let nowCycleInterval: ReturnType<typeof setInterval> | null = null;
 let tauriDialogPromise: Promise<TauriDialogModule | null> | null = null;
 let tauriConvertFileSrcPromise: Promise<((filePath: string) => string) | null> | null = null;
@@ -588,6 +606,7 @@ let pendingAutoplay = false;
 let lastPersistedPlaybackTime = -1;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpStopChannel: BroadcastChannel | null = null;
+let activeDockedResize: { startY: number; startHeight: number } | null = null;
 
 const currentTrack = computed(() => {
   if (currentIndex.value < 0 || currentIndex.value >= playlist.value.length) {
@@ -689,23 +708,95 @@ const thenTrack = computed(() => {
 });
 
 const playlistStyle = computed<CSSProperties>(() => {
-  const preferredHeight = playlist.value.length > 0 ? `${Math.min(playlist.value.length, 5) * 34}px` : '140px';
+  const trackCount = playlist.value.length;
+  const visibleRows = Math.min(Math.max(trackCount, 1), 16);
+  const rowHeight = DOCKED_TRACK_ROW_HEIGHT;
+  const headerHeight = trackCount > 0 ? DOCKED_TRACK_HEADER_HEIGHT : 0;
+  const breathingRoom = DOCKED_TRACK_BREATHING_ROOM;
+  const naturalHeightPx = trackCount > 0
+    ? (visibleRows * rowHeight) + headerHeight + breathingRoom
+    : 140;
 
   if (props.detached && !isCompact.value) {
     return {
       height: 'auto',
+      minHeight: 'var(--agentamp-detached-playlist-min-height, 216px)',
       maxHeight: 'var(--agentamp-detached-playlist-max-height, 999px)',
       overflowY: 'auto',
-      minHeight: 0,
       flex: '0 0 auto',
     };
   }
 
+  const viewportCapPx = typeof window !== 'undefined'
+    ? Math.max(140, Math.floor(window.innerHeight * DOCKED_MAX_VIEWPORT_RATIO))
+    : 320;
+  const dockedMaxHeightPx = Math.min(naturalHeightPx, viewportCapPx);
+  const minimumRows = Math.min(Math.max(trackCount, 1), DOCKED_MIN_TRACK_ROWS);
+  const dockedMinHeightPx = trackCount > 0
+    ? (minimumRows * DOCKED_TRACK_ROW_HEIGHT) + DOCKED_TRACK_HEADER_HEIGHT + DOCKED_TRACK_BREATHING_ROOM
+    : 140;
+  const resolvedHeightPx = dockedPlaylistHeightOverride.value === null
+    ? dockedMaxHeightPx
+    : Math.max(dockedMinHeightPx, Math.min(dockedPlaylistHeightOverride.value, dockedMaxHeightPx));
+
   return {
-    maxHeight: preferredHeight,
-    overflowY: playlist.value.length > 5 ? 'auto' : 'hidden',
+    height: `${resolvedHeightPx}px`,
+    maxHeight: `${resolvedHeightPx}px`,
+    overflowY: naturalHeightPx > resolvedHeightPx ? 'auto' : 'hidden',
   };
 });
+
+function getDockedPlaylistResizeBounds(): { min: number; max: number } {
+  const trackCount = playlist.value.length;
+  const visibleRows = Math.min(Math.max(trackCount, 1), 16);
+  const naturalHeightPx = trackCount > 0
+    ? (visibleRows * DOCKED_TRACK_ROW_HEIGHT) + DOCKED_TRACK_HEADER_HEIGHT + DOCKED_TRACK_BREATHING_ROOM
+    : 140;
+  const minimumRows = Math.min(Math.max(trackCount, 1), DOCKED_MIN_TRACK_ROWS);
+  const minHeight = trackCount > 0
+    ? (minimumRows * DOCKED_TRACK_ROW_HEIGHT) + DOCKED_TRACK_HEADER_HEIGHT + DOCKED_TRACK_BREATHING_ROOM
+    : 140;
+  const viewportCap = typeof window !== 'undefined'
+    ? Math.max(140, Math.floor(window.innerHeight * DOCKED_MAX_VIEWPORT_RATIO))
+    : 320;
+
+  return {
+    min: minHeight,
+    max: Math.max(minHeight, Math.min(naturalHeightPx, viewportCap)),
+  };
+}
+
+function handleDockedPlaylistResizeMove(event: MouseEvent) {
+  if (!activeDockedResize) {
+    return;
+  }
+
+  const deltaY = event.clientY - activeDockedResize.startY;
+  const nextHeight = activeDockedResize.startHeight - deltaY;
+  const bounds = getDockedPlaylistResizeBounds();
+  dockedPlaylistHeightOverride.value = Math.max(bounds.min, Math.min(nextHeight, bounds.max));
+}
+
+function stopDockedPlaylistResize() {
+  activeDockedResize = null;
+  window.removeEventListener('mousemove', handleDockedPlaylistResizeMove);
+  window.removeEventListener('mouseup', stopDockedPlaylistResize);
+}
+
+function startDockedPlaylistResize(event: MouseEvent) {
+  const bounds = getDockedPlaylistResizeBounds();
+  const currentHeight = playlistContainerEl.value
+    ? Math.ceil(playlistContainerEl.value.getBoundingClientRect().height)
+    : bounds.max;
+
+  activeDockedResize = {
+    startY: event.clientY,
+    startHeight: Math.max(bounds.min, Math.min(currentHeight, bounds.max)),
+  };
+
+  window.addEventListener('mousemove', handleDockedPlaylistResizeMove);
+  window.addEventListener('mouseup', stopDockedPlaylistResize);
+}
 
 function scrollActiveTrackIntoView() {
   if (!playlistContainerEl.value) {
@@ -814,6 +905,14 @@ function getTrackTitle(track: PlaylistTrack): string {
 
 function getTrackMetadataTooltip(track: PlaylistTrack): string {
   const fields: string[] = [];
+  const inferred = inferArtistTitle(track);
+
+  if (inferred.artist) {
+    fields.push(inferred.artist);
+  }
+  if (inferred.title) {
+    fields.push(inferred.title);
+  }
 
   if (track.album) {
     fields.push(track.album);
@@ -821,15 +920,23 @@ function getTrackMetadataTooltip(track: PlaylistTrack): string {
   if (track.year) {
     fields.push(track.year);
   }
-  if (track.genre) {
-    fields.push(track.genre);
-  }
 
   if (!fields.length) {
     return 'No metadata available';
   }
 
   return fields.join(' - ');
+}
+
+function getTrackMetadataRenderKey(track: PlaylistTrack): string {
+  return [
+    track.id,
+    track.artist ?? '',
+    track.title ?? '',
+    track.album ?? '',
+    track.year ?? '',
+    track.name,
+  ].join('::');
 }
 
 function handleTrackContextMenu(index: number, event: MouseEvent) {
@@ -967,16 +1074,23 @@ async function saveTrackMetadata() {
 }
 
 function normalizeTrackFsPath(path: string): string {
+  let normalized = path.trim();
+
   if (path.startsWith('file://localhost/')) {
-    return path.slice('file://localhost/'.length);
+    normalized = path.slice('file://localhost/'.length);
+  } else if (path.startsWith('file:///')) {
+    normalized = path.slice('file:///'.length);
+  } else if (path.startsWith('file://')) {
+    normalized = path.slice('file://'.length);
   }
-  if (path.startsWith('file:///')) {
-    return path.slice('file:///'.length);
+
+  try {
+    normalized = decodeURIComponent(normalized);
+  } catch {
+    // Keep original value when the path is not URI-encoded.
   }
-  if (path.startsWith('file://')) {
-    return path.slice('file://'.length);
-  }
-  return path;
+
+  return normalized.replace(/\\/g, '/');
 }
 
 async function writeTrackMetadataToFile(track: PlaylistTrack, metadata: MetadataEditFields): Promise<void> {
@@ -1143,6 +1257,7 @@ watch(
 
 watch(showPlaylist, async (visible) => {
   if (!visible) {
+    dockedPlaylistHeightOverride.value = null;
     return;
   }
 
@@ -1153,6 +1268,19 @@ watch(showPlaylist, async (visible) => {
 watch([isCompact, isNowHovered, playlist, currentIndex], () => {
   restartNowCycle();
 }, { deep: true });
+
+watch(
+  [playlist, showPlaylist, isCompact, () => props.detached],
+  () => {
+    if (props.detached || isCompact.value || !showPlaylist.value || dockedPlaylistHeightOverride.value === null) {
+      return;
+    }
+
+    const bounds = getDockedPlaylistResizeBounds();
+    dockedPlaylistHeightOverride.value = Math.max(bounds.min, Math.min(dockedPlaylistHeightOverride.value, bounds.max));
+  },
+  { deep: true }
+);
 
 watch(
   () => props.enabled,
@@ -1315,7 +1443,8 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
   const sourceUrl = await (async () => {
     if (track.source === 'path') {
       const convertFileSrc = await getTauriConvertFileSrc();
-      return convertFileSrc ? convertFileSrc(track.location) : null;
+      const normalizedPath = normalizeTrackFsPath(track.location);
+      return convertFileSrc ? convertFileSrc(normalizedPath) : null;
     }
 
     return track.location;
@@ -1340,27 +1469,29 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     const metadata = parseMp3Metadata(bytes);
 
     if (metadata) {
+      const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
+
       console.log(
         `[AgentAmp] metadata found for ${track.name}: artist=${metadata.artist ?? 'missing'}, title=${metadata.title ?? 'missing'}, album=${metadata.album ?? 'missing'}, year=${metadata.year ?? 'missing'}, genre=${metadata.genre ?? 'missing'}, trackNumber=${metadata.trackNumber ?? 'missing'}`
       );
 
       if (metadata.artist) {
-        track.artist = metadata.artist;
+        reactiveTrack.artist = metadata.artist;
       }
       if (metadata.title) {
-        track.title = metadata.title;
+        reactiveTrack.title = metadata.title;
       }
       if (metadata.album) {
-        track.album = metadata.album;
+        reactiveTrack.album = metadata.album;
       }
       if (metadata.year) {
-        track.year = metadata.year;
+        reactiveTrack.year = metadata.year;
       }
       if (metadata.genre) {
-        track.genre = metadata.genre;
+        reactiveTrack.genre = metadata.genre;
       }
       if (metadata.trackNumber) {
-        track.trackNumber = metadata.trackNumber;
+        reactiveTrack.trackNumber = metadata.trackNumber;
       }
     } else {
       console.log(`[AgentAmp] no metadata found for ${track.name}`);
@@ -1379,7 +1510,7 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
 
   const metadataAudio = document.createElement('audio');
   metadataAudio.preload = 'metadata';
-  metadataAudio.src = metadataSourceUrl ?? track.location;
+  metadataAudio.src = metadataSourceUrl ?? sourceUrl ?? track.location;
 
   await new Promise<void>((resolve) => {
     const cleanup = () => {
@@ -1826,7 +1957,7 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
         return;
       }
 
-      player.src = convertFileSrc(track.location);
+      player.src = convertFileSrc(normalizeTrackFsPath(track.location));
       player.currentTime = 0;
       currentTime.value = pendingRestoreTime;
       duration.value = 0;
@@ -2590,6 +2721,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  stopDockedPlaylistResize();
+
   window.removeEventListener('pagehide', flushPlayerStateOnShutdown);
   window.removeEventListener('beforeunload', flushPlayerStateOnShutdown);
 
@@ -3082,6 +3215,37 @@ onBeforeUnmount(() => {
   background: var(--color-agentamp-panel-bg);
   transition: max-height 0.25s cubic-bezier(.4,1.6,.6,1), box-shadow 0.18s;
   box-shadow: var(--color-agentamp-playlist-shadow);
+}
+
+.agentamp-docked-resize-handle {
+  height: 14px;
+  border: 1px solid var(--color-agentamp-panel-border);
+  border-bottom: none;
+  background: var(--color-agentamp-panel-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+}
+
+.agentamp-docked-resize-grip {
+  width: 64px;
+  height: 6px;
+  border: 1px solid var(--color-agentamp-button-muted-border);
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-agentamp-button-muted-text) 0,
+    var(--color-agentamp-button-muted-text) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  opacity: 0.6;
+}
+
+.agentamp-docked-resize-handle:hover .agentamp-docked-resize-grip {
+  border-color: var(--color-accent);
+  opacity: 0.9;
 }
 
 .agentamp-dock.detached-window .agentamp-playlist {

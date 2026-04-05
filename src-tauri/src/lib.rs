@@ -333,6 +333,9 @@ fn to_syncsafe_integer(value: u32) -> [u8; 4] {
 }
 
 fn strip_existing_id3(data: &[u8]) -> &[u8] {
+    let mut start = 0usize;
+    let mut end = data.len();
+
     if data.len() >= 10 && &data[0..3] == b"ID3" {
         let tag_size = ((data[6] as u32 & 0x7f) << 21)
             | ((data[7] as u32 & 0x7f) << 14)
@@ -340,15 +343,15 @@ fn strip_existing_id3(data: &[u8]) -> &[u8] {
             | (data[9] as u32 & 0x7f);
         let frame_end = 10 + tag_size as usize;
         if frame_end <= data.len() {
-            return &data[frame_end..];
+            start = frame_end;
         }
     }
 
-    if data.len() >= 128 && &data[data.len() - 128..data.len() - 125] == b"TAG" {
-        return &data[..data.len() - 128];
+    if end >= start + 128 && &data[end - 128..end - 125] == b"TAG" {
+        end -= 128;
     }
 
-    data
+    &data[start..end]
 }
 
 fn build_id3v2_tag(metadata: &MetadataEditFields) -> Vec<u8> {
@@ -367,7 +370,6 @@ fn build_id3v2_tag(metadata: &MetadataEditFields) -> Vec<u8> {
 
         let mut header = Vec::with_capacity(10);
         header.extend_from_slice(frame_id.as_bytes());
-        header.extend_from_slice(&[0, 0]);
         let frame_size = frame_data.len() as u32;
         header.extend_from_slice(&[
             (frame_size >> 24) as u8,
@@ -384,9 +386,13 @@ fn build_id3v2_tag(metadata: &MetadataEditFields) -> Vec<u8> {
     add_text_frame(&mut frames, "TPE1", &metadata.artist);
     add_text_frame(&mut frames, "TIT2", &metadata.title);
     add_text_frame(&mut frames, "TALB", &metadata.album);
-    add_text_frame(&mut frames, "TDRC", &metadata.year);
+    add_text_frame(&mut frames, "TYER", &metadata.year);
     add_text_frame(&mut frames, "TCON", &metadata.genre);
     add_text_frame(&mut frames, "TRCK", &metadata.track_number);
+
+    if frames.is_empty() {
+        return Vec::new();
+    }
 
     let mut header = Vec::with_capacity(10);
     header.extend_from_slice(b"ID3");
@@ -424,7 +430,8 @@ fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<
 
     let cleaned_audio = strip_existing_id3(&raw_bytes);
     let new_tag = build_id3v2_tag(&metadata);
-    let mut output = new_tag;
+    let mut output = Vec::with_capacity(new_tag.len() + cleaned_audio.len());
+    output.extend_from_slice(&new_tag);
     output.extend_from_slice(cleaned_audio);
 
     fs::write(&path_buf, &output)

@@ -46,6 +46,27 @@ let isApplyingProgrammaticResize = false;
 let cleanupCloseRequestedListener: (() => void) | null = null;
 let cleanupForceCloseListener: (() => void) | null = null;
 let allowWindowClose = false;
+let lastMinimumInnerHeight = 96;
+
+const DETACHED_MIN_TRACK_ROWS = 5;
+const DETACHED_AUTO_GROW_MAX_TRACK_ROWS = 10;
+const DETACHED_TRACK_ROW_HEIGHT = 34;
+const DETACHED_TRACK_HEADER_HEIGHT = 34;
+const DETACHED_PLAYLIST_BREATHING_ROOM = 12;
+
+function getDetachedPlaylistHeightForRows(rows: number): number {
+  return (rows * DETACHED_TRACK_ROW_HEIGHT)
+    + DETACHED_TRACK_HEADER_HEIGHT
+    + DETACHED_PLAYLIST_BREATHING_ROOM;
+}
+
+function getDetachedMinimumPlaylistHeight(): number {
+  return getDetachedPlaylistHeightForRows(DETACHED_MIN_TRACK_ROWS);
+}
+
+function getDetachedAutoGrowMaxPlaylistHeight(): number {
+  return getDetachedPlaylistHeightForRows(DETACHED_AUTO_GROW_MAX_TRACK_ROWS);
+}
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
@@ -154,9 +175,16 @@ function updateDetachedPlaylistViewport(fixedContentHeight?: number, naturalPlay
   const resolvedNaturalPlaylistHeight = naturalPlaylistHeight ?? getPlaylistNaturalOuterHeight(playlist);
   const titlebarHeight = 28;
   const availableHeight = Math.max(96, Math.floor(window.innerHeight - titlebarHeight - resolvedFixedContentHeight - 2));
-  const playlistHeight = Math.max(0, Math.min(availableHeight, resolvedNaturalPlaylistHeight));
+  const minimumPlaylistHeight = getDetachedMinimumPlaylistHeight();
+  const autoGrowMaxPlaylistHeight = getDetachedAutoGrowMaxPlaylistHeight();
+  const desiredPlaylistHeight = Math.max(
+    minimumPlaylistHeight,
+    Math.min(resolvedNaturalPlaylistHeight, autoGrowMaxPlaylistHeight)
+  );
+  const playlistHeight = Math.max(0, Math.min(availableHeight, desiredPlaylistHeight));
 
   body.style.setProperty('--agentamp-detached-playlist-height', `${playlistHeight}px`);
+  body.style.setProperty('--agentamp-detached-playlist-min-height', `${Math.min(minimumPlaylistHeight, availableHeight)}px`);
   body.style.setProperty('--agentamp-detached-playlist-max-height', `${availableHeight}px`);
 }
 
@@ -175,16 +203,6 @@ function getPlaylistNaturalOuterHeight(playlist: HTMLElement): number {
   return Math.ceil(playlist.scrollHeight + borderHeight);
 }
 
-function getDetachedContentHeight(body: HTMLElement, dock: HTMLElement, playlist: HTMLElement | null, isCompact: boolean): number {
-  if (isCompact) {
-    return Math.ceil(dock.getBoundingClientRect().height);
-  }
-
-  const naturalPlaylistHeight = playlist ? getPlaylistNaturalOuterHeight(playlist) : 0;
-  const fixedContentHeight = dockFixedContentHeight(body, playlist);
-  return fixedContentHeight + naturalPlaylistHeight;
-}
-
 async function resizeWindowToContent() {
   if (isMaximized.value) {
     return;
@@ -201,16 +219,28 @@ async function resizeWindowToContent() {
   }
 
   const playlist = body.querySelector('.agentamp-playlist') as HTMLElement | null;
+  const hasVisiblePlaylist = Boolean(playlist && window.getComputedStyle(playlist).display !== 'none');
 
   const titlebarHeight = 28;
   const isCompact = dock.classList.contains('compact');
   const naturalPlaylistHeight = playlist ? getPlaylistNaturalOuterHeight(playlist) : 0;
   const fixedContentHeight = dockFixedContentHeight(body, playlist);
-  const contentHeight = getDetachedContentHeight(body, dock, playlist, isCompact);
+  const cappedNaturalPlaylistHeight = Math.min(
+    naturalPlaylistHeight,
+    getDetachedAutoGrowMaxPlaylistHeight()
+  );
+  const contentHeight = isCompact
+    ? Math.ceil(dock.getBoundingClientRect().height)
+    : fixedContentHeight + (hasVisiblePlaylist ? cappedNaturalPlaylistHeight : 0);
   const minimumInnerHeight = isCompact ? 84 : 96;
   const heightOffset = isCompact ? 0 : 4;
-  const targetInnerHeight = Math.max(minimumInnerHeight, titlebarHeight + contentHeight + heightOffset);
+  const minimumPlaylistHeight = getDetachedMinimumPlaylistHeight();
+  const minimumDetachedInnerHeight = (isCompact || !hasVisiblePlaylist)
+    ? minimumInnerHeight
+    : Math.max(minimumInnerHeight, titlebarHeight + fixedContentHeight + minimumPlaylistHeight + heightOffset);
+  const targetInnerHeight = Math.max(minimumDetachedInnerHeight, titlebarHeight + contentHeight + heightOffset);
   const contentChanged = Math.abs(targetInnerHeight - lastDesiredContentInnerHeight) > 2;
+  lastMinimumInnerHeight = minimumDetachedInnerHeight;
 
   updateDetachedPlaylistViewport(fixedContentHeight, naturalPlaylistHeight);
 
@@ -253,6 +283,46 @@ async function resizeWindowToContent() {
   }
 
   lastDesiredContentInnerHeight = targetInnerHeight;
+}
+
+async function enforceWindowHeightBounds() {
+  if (isApplyingProgrammaticResize || isMaximized.value || lastDesiredContentInnerHeight <= 0) {
+    return;
+  }
+
+  const currentInnerHeight = window.innerHeight;
+  const clampedInnerHeight = Math.max(
+    lastMinimumInnerHeight,
+    Math.min(currentInnerHeight, lastDesiredContentInnerHeight)
+  );
+
+  if (Math.abs(clampedInnerHeight - currentInnerHeight) <= 2) {
+    return;
+  }
+
+  if (hasTauriWindow) {
+    const [{ getCurrentWindow }, { LogicalSize }] = await Promise.all([
+      import('@tauri-apps/api/window'),
+      import('@tauri-apps/api/dpi'),
+    ]);
+
+    const appWindow = getCurrentWindow();
+    const currentSize = await appWindow.innerSize();
+    isApplyingProgrammaticResize = true;
+    await appWindow.setSize(new LogicalSize(currentSize.width, clampedInnerHeight));
+    window.setTimeout(() => {
+      isApplyingProgrammaticResize = false;
+    }, 80);
+    return;
+  }
+
+  const chromeHeight = window.outerHeight - window.innerHeight;
+  const targetOuterHeight = clampedInnerHeight + Math.max(chromeHeight, 0);
+  isApplyingProgrammaticResize = true;
+  window.resizeTo(window.outerWidth, targetOuterHeight);
+  window.setTimeout(() => {
+    isApplyingProgrammaticResize = false;
+  }, 80);
 }
 
 async function minimize() {
@@ -378,6 +448,8 @@ onMounted(async () => {
   }
 
   windowResizeHandler = () => {
+    void enforceWindowHeightBounds();
+
     if (!isApplyingProgrammaticResize && lastDesiredContentInnerHeight > 0) {
       const currentInnerHeight = window.innerHeight;
       if (Math.abs(currentInnerHeight - lastDesiredContentInnerHeight) > 12) {

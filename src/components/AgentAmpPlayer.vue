@@ -442,6 +442,10 @@ const nowDisplayTrackName = computed(() => {
     return 'SHUFFLE';
   }
 
+  if (loopMode.value === 'one' && (nowDisplayMode.value === 'next' || nowDisplayMode.value === 'then')) {
+    return currentTrack.value?.name || 'NO TRACK LOADED';
+  }
+
   if (nowDisplayMode.value === 'next' && nextTrack.value && nextTrack.value !== currentTrack.value) {
     return nextTrack.value.name;
   }

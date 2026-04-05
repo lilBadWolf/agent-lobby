@@ -1994,15 +1994,20 @@ onBeforeUnmount(() => {
 .agentamp-seek-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   flex: 1;
 }
 
 .agentamp-timecode {
-  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  min-width: 42px;
+  padding: 0 4px;
   text-align: center;
-  flex: 0 0 36px;
+  flex: 0 0 auto;
 }
 
 .agentamp-seek-range {

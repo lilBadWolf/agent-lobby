@@ -1,6 +1,6 @@
 use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Manager, UserAttentionType};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -312,6 +312,125 @@ fn open_soundpacks_folder(app: tauri::AppHandle) -> Result<(), String> {
     open_folder_in_os(&app_data_dir.join("soundpacks"))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataEditFields {
+    artist: Option<String>,
+    title: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    track_number: Option<String>,
+}
+
+fn to_syncsafe_integer(value: u32) -> [u8; 4] {
+    [
+        ((value >> 21) & 0x7f) as u8,
+        ((value >> 14) & 0x7f) as u8,
+        ((value >> 7) & 0x7f) as u8,
+        (value & 0x7f) as u8,
+    ]
+}
+
+fn strip_existing_id3(data: &[u8]) -> &[u8] {
+    if data.len() >= 10 && &data[0..3] == b"ID3" {
+        let tag_size = ((data[6] as u32 & 0x7f) << 21)
+            | ((data[7] as u32 & 0x7f) << 14)
+            | ((data[8] as u32 & 0x7f) << 7)
+            | (data[9] as u32 & 0x7f);
+        let frame_end = 10 + tag_size as usize;
+        if frame_end <= data.len() {
+            return &data[frame_end..];
+        }
+    }
+
+    if data.len() >= 128 && &data[data.len() - 128..data.len() - 125] == b"TAG" {
+        return &data[..data.len() - 128];
+    }
+
+    data
+}
+
+fn build_id3v2_tag(metadata: &MetadataEditFields) -> Vec<u8> {
+    let mut frames = Vec::new();
+
+    fn add_text_frame(frames: &mut Vec<u8>, frame_id: &str, text: &Option<String>) {
+        let value = text.as_deref().unwrap_or("").trim();
+        if value.is_empty() {
+            return;
+        }
+
+        let payload = value.as_bytes();
+        let mut frame_data = Vec::with_capacity(1 + payload.len());
+        frame_data.push(3);
+        frame_data.extend_from_slice(payload);
+
+        let mut header = Vec::with_capacity(10);
+        header.extend_from_slice(frame_id.as_bytes());
+        header.extend_from_slice(&[0, 0]);
+        let frame_size = frame_data.len() as u32;
+        header.extend_from_slice(&[
+            (frame_size >> 24) as u8,
+            (frame_size >> 16) as u8,
+            (frame_size >> 8) as u8,
+            frame_size as u8,
+        ]);
+        header.extend_from_slice(&[0, 0]);
+
+        frames.extend_from_slice(&header);
+        frames.extend_from_slice(&frame_data);
+    }
+
+    add_text_frame(&mut frames, "TPE1", &metadata.artist);
+    add_text_frame(&mut frames, "TIT2", &metadata.title);
+    add_text_frame(&mut frames, "TALB", &metadata.album);
+    add_text_frame(&mut frames, "TDRC", &metadata.year);
+    add_text_frame(&mut frames, "TCON", &metadata.genre);
+    add_text_frame(&mut frames, "TRCK", &metadata.track_number);
+
+    let mut header = Vec::with_capacity(10);
+    header.extend_from_slice(b"ID3");
+    header.push(3);
+    header.push(0);
+    header.push(0);
+    header.extend_from_slice(&to_syncsafe_integer(frames.len() as u32));
+
+    [header, frames].concat()
+}
+
+fn normalize_metadata_path(path: &str) -> String {
+    if let Some(stripped) = path.strip_prefix("file:///") {
+        stripped.to_string()
+    } else if let Some(stripped) = path.strip_prefix("file://localhost/") {
+        stripped.to_string()
+    } else if let Some(stripped) = path.strip_prefix("file://") {
+        stripped.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+#[tauri::command]
+fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<(), String> {
+    let normalized = normalize_metadata_path(&path);
+    let path_buf = PathBuf::from(&normalized);
+
+    if !path_buf.exists() {
+        return Err(format!("Failed to read MP3 for metadata save: file does not exist: {}", normalized));
+    }
+
+    let raw_bytes = fs::read(&path_buf)
+        .map_err(|error| format!("Failed to read MP3 for metadata save: {}", error))?;
+
+    let cleaned_audio = strip_existing_id3(&raw_bytes);
+    let new_tag = build_id3v2_tag(&metadata);
+    let mut output = new_tag;
+    output.extend_from_slice(cleaned_audio);
+
+    fs::write(&path_buf, &output)
+        .map_err(|error| format!("Failed to write MP3 metadata: {}", error))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = portpicker::pick_unused_port().expect("failed to find unused port");
@@ -391,7 +510,8 @@ pub fn run() {
             setup_custom_folders,
             discover_custom_assets,
             open_themes_folder,
-            open_soundpacks_folder
+            open_soundpacks_folder,
+            save_agentamp_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

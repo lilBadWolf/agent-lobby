@@ -244,7 +244,7 @@
     <div v-if="editingMetadataIndex !== null" class="agentamp-modal-backdrop" @click.self="closeMetadataEditor">
       <div class="agentamp-modal-card">
         <div class="agentamp-modal-header">
-          <span>EDIT TRACK METADATA</span>
+          <span>EDIT {{ editingMetadataFileName || 'TRACK METADATA' }}</span>
           <button class="agentamp-modal-close" type="button" @click="closeMetadataEditor">✕</button>
         </div>
         <form class="agentamp-modal-form" @submit.prevent="saveTrackMetadata">
@@ -294,6 +294,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
 import SpectrumAnalyzer from './SpectrumAnalyzer.vue';
 
@@ -427,6 +428,19 @@ const currentTrack = computed(() => {
 
 const playlistDisplay = computed<PlaylistDisplayItem[]>(() => {
   return playlist.value.map((track, originalIndex) => ({ track, originalIndex }));
+});
+
+const editingMetadataFileName = computed(() => {
+  if (editingMetadataIndex.value === null) {
+    return '';
+  }
+
+  const track = playlist.value[editingMetadataIndex.value];
+  if (!track) {
+    return '';
+  }
+
+  return extractNameFromPath(track.location);
 });
 
 const hasTracks = computed(() => playlist.value.length > 0);
@@ -755,98 +769,36 @@ async function saveTrackMetadata() {
   }
 }
 
+function normalizeTrackFsPath(path: string): string {
+  if (path.startsWith('file://localhost/')) {
+    return path.slice('file://localhost/'.length);
+  }
+  if (path.startsWith('file:///')) {
+    return path.slice('file:///'.length);
+  }
+  if (path.startsWith('file://')) {
+    return path.slice('file://'.length);
+  }
+  return path;
+}
+
 async function writeTrackMetadataToFile(track: PlaylistTrack, metadata: MetadataEditFields): Promise<void> {
-  const fsApi = await getTauriFs();
-  if (!fsApi) {
-    throw new Error('Tauri FS not available');
+  if (track.source !== 'path') {
+    throw new Error('Unable to save metadata for non-path track source');
   }
 
-  const rawBytes = await fsApi.readFile(track.location);
-  const bytes = new Uint8Array(rawBytes);
-  const cleanedAudio = stripExistingId3(bytes);
-  const newTag = buildId3v2Tag(metadata);
-  const output = concatUint8Arrays(newTag, cleanedAudio);
-
-  await fsApi.writeFile(track.location, output);
-}
-
-function stripExistingId3(data: Uint8Array): Uint8Array {
-  if (data.length >= 10 && String.fromCharCode(...data.slice(0, 3)) === 'ID3') {
-    const tagSize = readSyncSafeInteger(data.slice(6, 10));
-    const frameEnd = 10 + tagSize;
-    if (frameEnd <= data.length) {
-      return data.slice(frameEnd);
-    }
-  }
-
-  if (data.length >= 128 && String.fromCharCode(...data.slice(data.length - 128, data.length - 125)) === 'TAG') {
-    return data.slice(0, data.length - 128);
-  }
-
-  return data;
-}
-
-function buildId3v2Tag(metadata: MetadataEditFields): Uint8Array {
-  const frames: Uint8Array[] = [];
-  const encoder = new TextEncoder();
-
-  function addTextFrame(frameId: string, text?: string | undefined) {
-    if (!text) {
-      return;
-    }
-
-    const payload = encoder.encode(text);
-    const frameData = new Uint8Array(1 + payload.length);
-    frameData[0] = 3;
-    frameData.set(payload, 1);
-
-    const header = new Uint8Array(10);
-    header.set(new TextEncoder().encode(frameId), 0);
-    header[4] = (frameData.length >>> 24) & 0xff;
-    header[5] = (frameData.length >>> 16) & 0xff;
-    header[6] = (frameData.length >>> 8) & 0xff;
-    header[7] = frameData.length & 0xff;
-
-    frames.push(concatUint8Arrays(header, frameData));
-  }
-
-  addTextFrame('TPE1', metadata.artist);
-  addTextFrame('TIT2', metadata.title);
-  addTextFrame('TALB', metadata.album);
-  addTextFrame('TDRC', metadata.year);
-  addTextFrame('TCON', metadata.genre);
-  addTextFrame('TRCK', metadata.trackNumber);
-
-  const body = concatUint8Arrays(...frames);
-  const header = new Uint8Array(10);
-  header.set([0x49, 0x44, 0x33], 0);
-  header[3] = 3;
-  header[4] = 0;
-  header[5] = 0;
-  const sizeBytes = toSyncSafeInteger(body.length);
-  header.set(sizeBytes, 6);
-
-  return concatUint8Arrays(header, body);
-}
-
-function toSyncSafeInteger(value: number): Uint8Array {
-  return new Uint8Array([
-    (value >>> 21) & 0x7f,
-    (value >>> 14) & 0x7f,
-    (value >>> 7) & 0x7f,
-    value & 0x7f,
-  ]);
-}
-
-function concatUint8Arrays(...arrays: Uint8Array[]): Uint8Array {
-  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
-  const result = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const arr of arrays) {
-    result.set(arr, offset);
-    offset += arr.length;
-  }
-  return result;
+  const path = normalizeTrackFsPath(track.location);
+  await invoke('save_agentamp_metadata', {
+    path,
+    metadata: {
+      artist: metadata.artist || null,
+      title: metadata.title || null,
+      album: metadata.album || null,
+      year: metadata.year || null,
+      genre: metadata.genre || null,
+      trackNumber: metadata.trackNumber || null,
+    },
+  });
 }
 
 function refreshPlaylistOrder() {
@@ -2543,8 +2495,33 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-controls [data-tooltip]::after,
-.agentamp-now-playing [data-tooltip]::after,
-.agentamp-track-btn[data-tooltip]::after {
+.agentamp-now-playing [data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%) translateY(2px);
+  border: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
+  color: var(--color-chat-text);
+  font-size: 12px;
+  line-height: 1.3;
+  letter-spacing: 0.55px;
+  white-space: nowrap;
+  padding: 4px 8px;
+  text-align: center;
+  min-width: 0;
+  max-width: 280px;
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 22;
+  box-shadow: 0 0 10px var(--color-accent-muted);
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.agentamp-playlist .agentamp-track-btn[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
   left: 50%;
@@ -2580,8 +2557,23 @@ onBeforeUnmount(() => {
 }
 
 .agentamp-controls [data-tooltip]::before,
-.agentamp-now-playing [data-tooltip]::before,
-.agentamp-track-btn[data-tooltip]::before {
+.agentamp-now-playing [data-tooltip]::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--color-accent);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 21;
+  transition: opacity 0.16s ease, visibility 0.16s ease;
+}
+
+.agentamp-playlist .agentamp-track-btn[data-tooltip]::before {
   content: '';
   position: absolute;
   left: 50%;

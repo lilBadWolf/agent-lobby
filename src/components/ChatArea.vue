@@ -504,8 +504,8 @@ const { extractImageUris, initializeImage, markImageLoaded, markImageError, getI
 
 // --- YouTube URL detection ---
 function extractYouTubeUrls(text: string): string[] {
-  // Match YouTube URLs with optional query params
-  const regex = /(https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})(?:[\?&][^\s]*)?)/g;
+  // Match common YouTube URL forms with optional query params.
+  const regex = /https?:\/\/(?:www\.|m\.)?(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/|v\/|live\/))[\w-]{11}(?:[?&][^\s]*)?/gi;
   const matches = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
@@ -515,13 +515,37 @@ function extractYouTubeUrls(text: string): string[] {
 }
 
 function getYouTubeVideoId(url: string): string | null {
-  // Remove query params for ID extraction
-  const cleanUrl = url.split(/[?&]/)[0];
-  const ytMatch = cleanUrl.match(/youtube\.com\/watch\?v=([\w-]{11})/);
-  if (ytMatch) return ytMatch[1];
-  const ybMatch = cleanUrl.match(/youtu\.be\/([\w-]{11})/);
-  if (ybMatch) return ybMatch[1];
-  return null;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname;
+
+    if (hostname === 'youtu.be') {
+      const id = pathname.slice(1);
+      return id.length === 11 ? id : null;
+    }
+
+    if (!hostname.endsWith('youtube.com')) {
+      return null;
+    }
+
+    if (pathname === '/watch') {
+      const v = parsed.searchParams.get('v');
+      return v && v.length === 11 ? v : null;
+    }
+
+    const pathSegments = pathname.split('/').filter(Boolean);
+    if (pathSegments.length >= 2) {
+      const [firstSegment, secondSegment] = pathSegments;
+      if ((firstSegment === 'shorts' || firstSegment === 'embed' || firstSegment === 'v' || firstSegment === 'live') && secondSegment.length === 11) {
+        return secondSegment;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 const TWITCH_RESERVED_PATHS = new Set([

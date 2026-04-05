@@ -164,35 +164,59 @@
       role="listbox"
       :style="playlistStyle"
     >
+      <li v-if="playlist.length" class="agentamp-playlist-header" aria-hidden="true">
+        <button class="agentamp-playlist-header-cell agentamp-playlist-header-order" type="button" @click="togglePlaylistSort('order')">
+          #{{ getSortIndicator('order') }}
+        </button>
+        <button class="agentamp-playlist-header-cell agentamp-playlist-header-artist" type="button" @click="togglePlaylistSort('artist')">
+          Artist{{ getSortIndicator('artist') }}
+        </button>
+        <button class="agentamp-playlist-header-cell agentamp-playlist-header-title" type="button" @click="togglePlaylistSort('title')">
+          Title{{ getSortIndicator('title') }}
+        </button>
+        <button class="agentamp-playlist-header-cell agentamp-playlist-header-genre" type="button" @click="togglePlaylistSort('genre')">
+          Genre{{ getSortIndicator('genre') }}
+        </button>
+        <button class="agentamp-playlist-header-cell" type="button" @click="togglePlaylistSort('duration')">
+          Duration{{ getSortIndicator('duration') }}
+        </button>
+        <span class="agentamp-playlist-header-placeholder"></span>
+      </li>
       <li
-        v-for="(track, index) in playlist"
-        :key="track.id"
+        v-for="item in playlistDisplay"
+        :key="item.track.id"
         class="agentamp-track-row"
-        :class="{ active: index === currentIndex, 'drag-target': index === dragOverIndex }"
+        :class="{ active: item.originalIndex === currentIndex, 'drag-target': item.originalIndex === dragOverIndex }"
         draggable="true"
-        @dragstart="handleDragStart(index, $event)"
-        @dragover.prevent="handleDragOver(index, $event)"
-        @drop.prevent="handleDrop(index, $event)"
+        @dragstart="handleDragStart(item.originalIndex, $event)"
+        @dragover.prevent="handleDragOver(item.originalIndex, $event)"
+        @drop.prevent="handleDrop(item.originalIndex, $event)"
         @dragend="handleDragEnd"
-        @mouseleave="hideTrackTooltip(index)"
+        @mouseenter="transferTrackTooltip(item.originalIndex)"
+        @mouseleave="hideTrackTooltip(item.originalIndex)"
       >
+        <span class="agentamp-track-order">{{ item.track.order + 1 }}</span>
         <button
           class="agentamp-track-btn"
-          :class="{ 'metadata-visible': index === visibleMetadataIndex }"
+          :class="{ 'metadata-visible': item.originalIndex === visibleMetadataIndex }"
           type="button"
-          @dblclick="handleTrackDblClick(index)"
-          @contextmenu.prevent="handleTrackContextMenu(index, $event)"
-          :data-tooltip="getTrackMetadataTooltip(track)"
+          @dblclick="handleTrackDblClick(item.originalIndex)"
+          @contextmenu.prevent="handleTrackContextMenu(item.originalIndex, $event)"
+          :data-tooltip="getTrackMetadataTooltip(item.track)"
         >
-          {{ index + 1 }}. {{ getTrackDisplayTitle(track) }}
+          <span class="agentamp-track-artist">{{ getTrackArtist(item.track) }}</span>
+          <span class="agentamp-track-title">{{ getTrackTitle(item.track) }}</span>
         </button>
-        <span v-if="track.duration && track.duration > 0" class="agentamp-track-duration">
-          {{ formatTrackDuration(track.duration) }}
+        <span class="agentamp-track-cell agentamp-track-genre">
+          {{ item.track.genre || '—' }}
+        </span>
+        <span class="agentamp-track-duration">
+          {{ item.track.duration && item.track.duration > 0 ? formatTrackDuration(item.track.duration) : '—' }}
         </span>
         <button
           class="agentamp-remove-btn"
           type="button"
-          @click="removeTrack(index)"
+          @click="removeTrack(item.originalIndex)"
         >
           X
         </button>
@@ -235,6 +259,7 @@ type PlaylistTrack = {
   name: string;
   source: PlaylistSource;
   location: string;
+  order: number;
   duration?: number;
   artist?: string;
   title?: string;
@@ -242,6 +267,11 @@ type PlaylistTrack = {
   year?: string;
   genre?: string;
   trackNumber?: string;
+};
+
+type PlaylistDisplayItem = {
+  track: PlaylistTrack;
+  originalIndex: number;
 };
 
 type PersistedPlayerState = {
@@ -292,6 +322,9 @@ const showPlaylist = ref(true);
 const isNowHovered = ref(false);
 const nowDisplayMode = ref<'now' | 'next' | 'then'>('now');
 const visibleMetadataIndex = ref<number | null>(null);
+let metadataTooltipHideTimer: number | null = null;
+const playlistSortField = ref<'order' | 'artist' | 'title' | 'genre' | 'duration' | null>(null);
+const playlistSortDirection = ref<'asc' | 'desc'>('asc');
 const dragFromIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const fileInputEl = ref<HTMLInputElement | null>(null);
@@ -314,6 +347,10 @@ const currentTrack = computed(() => {
   }
 
   return playlist.value[currentIndex.value];
+});
+
+const playlistDisplay = computed<PlaylistDisplayItem[]>(() => {
+  return playlist.value.map((track, originalIndex) => ({ track, originalIndex }));
 });
 
 const hasTracks = computed(() => playlist.value.length > 0);
@@ -369,7 +406,7 @@ const playlistStyle = computed<CSSProperties>(() => {
 
   if (props.detached && !isCompact.value) {
     return {
-      height: 'var(--agentamp-detached-playlist-height, auto)',
+      height: 'auto)',
       maxHeight: 'var(--agentamp-detached-playlist-max-height, 999px)',
       overflowY: 'auto',
       minHeight: 0,
@@ -448,16 +485,44 @@ const nowDisplayLabel = computed(() => {
   return 'NOW:';
 });
 
+function inferArtistTitle(track: PlaylistTrack): { artist?: string; title?: string } {
+  if (track.artist && track.artist.trim() && track.title && track.title.trim()) {
+    return { artist: track.artist.trim(), title: track.title.trim() };
+  }
+
+  const raw = track.name || '';
+  const parts = raw.split(' - ');
+  if (parts.length >= 2) {
+    return {
+      artist: parts[0].trim() || undefined,
+      title: parts.slice(1).join(' - ').trim() || undefined,
+    };
+  }
+
+  return { artist: track.artist?.trim(), title: track.title?.trim() };
+}
+
 function getTrackDisplayTitle(track: PlaylistTrack | null): string {
   if (!track) {
     return 'NO TRACK LOADED';
   }
 
-  if (track.artist && track.artist.trim() && track.title && track.title.trim()) {
-    return `${track.artist.trim()} - ${track.title.trim()}`;
+  const inferred = inferArtistTitle(track);
+  if (inferred.artist && inferred.title) {
+    return `${inferred.artist} - ${inferred.title}`;
   }
 
   return track.name;
+}
+
+function getTrackArtist(track: PlaylistTrack): string {
+  const inferred = inferArtistTitle(track);
+  return inferred.artist || 'UNKNOWN ARTIST';
+}
+
+function getTrackTitle(track: PlaylistTrack): string {
+  const inferred = inferArtistTitle(track);
+  return inferred.title || track.name;
 }
 
 function getTrackMetadataTooltip(track: PlaylistTrack): string {
@@ -486,14 +551,125 @@ function handleTrackContextMenu(index: number, event: MouseEvent) {
 }
 
 function hideTrackTooltip(index: number) {
-  if (visibleMetadataIndex.value === index) {
-    visibleMetadataIndex.value = null;
+  if (visibleMetadataIndex.value !== index) {
+    return;
   }
+
+  if (metadataTooltipHideTimer !== null) {
+    window.clearTimeout(metadataTooltipHideTimer);
+  }
+
+  metadataTooltipHideTimer = window.setTimeout(() => {
+    if (visibleMetadataIndex.value === index) {
+      visibleMetadataIndex.value = null;
+    }
+    metadataTooltipHideTimer = null;
+  }, 120);
+}
+
+function transferTrackTooltip(index: number) {
+  if (visibleMetadataIndex.value === null || visibleMetadataIndex.value === index) {
+    return;
+  }
+
+  if (metadataTooltipHideTimer !== null) {
+    window.clearTimeout(metadataTooltipHideTimer);
+    metadataTooltipHideTimer = null;
+  }
+
+  visibleMetadataIndex.value = index;
 }
 
 function handleTrackDblClick(index: number) {
   visibleMetadataIndex.value = null;
   selectTrack(index);
+}
+
+function refreshPlaylistOrder() {
+  playlist.value.forEach((track, index) => {
+    track.order = index;
+  });
+}
+
+function getSortIndicator(field: 'order' | 'artist' | 'title' | 'genre' | 'duration'): string {
+  if (playlistSortField.value !== field) {
+    return '';
+  }
+
+  return playlistSortDirection.value === 'asc' ? ' ▲' : ' ▼';
+}
+
+function getPlaylistSortValue(track: PlaylistTrack, field: 'order' | 'artist' | 'title' | 'genre' | 'duration'): string | number {
+  if (field === 'artist' || field === 'title') {
+    const inferred = inferArtistTitle(track);
+    return (field === 'artist' ? inferred.artist : inferred.title) ?? '';
+  }
+
+  if (field === 'genre') {
+    return track.genre ?? '';
+  }
+
+  if (field === 'duration') {
+    return typeof track.duration === 'number' ? track.duration : 0;
+  }
+
+  return track.order;
+}
+
+function applyPlaylistSort(field: 'order' | 'artist' | 'title' | 'genre' | 'duration') {
+  const currentTrackId = currentTrack.value?.id;
+  playlist.value.sort((a, b) => {
+    const aValue = getPlaylistSortValue(a, field);
+    const bValue = getPlaylistSortValue(b, field);
+
+    if (aValue === bValue) {
+      return a.order - b.order;
+    }
+
+    if (typeof aValue === 'number' || typeof bValue === 'number') {
+      return playlistSortDirection.value === 'asc'
+        ? Number(aValue) - Number(bValue)
+        : Number(bValue) - Number(aValue);
+    }
+
+    return playlistSortDirection.value === 'asc'
+      ? String(aValue).localeCompare(String(bValue))
+      : String(bValue).localeCompare(String(aValue));
+  });
+
+  if (currentTrackId) {
+    const newIndex = playlist.value.findIndex((track) => track.id === currentTrackId);
+    if (newIndex >= 0) {
+      currentIndex.value = newIndex;
+    }
+  }
+}
+
+function togglePlaylistSort(field: 'order' | 'artist' | 'title' | 'genre' | 'duration') {
+  if (playlistSortField.value !== field) {
+    playlistSortField.value = field;
+    playlistSortDirection.value = 'asc';
+    applyPlaylistSort(field);
+    return;
+  }
+
+  if (playlistSortDirection.value === 'asc') {
+    playlistSortDirection.value = 'desc';
+    applyPlaylistSort(field);
+    return;
+  }
+
+  playlistSortField.value = null;
+  playlistSortDirection.value = 'asc';
+  playlist.value.sort((a, b) => a.order - b.order);
+
+  if (currentTrack.value) {
+    const currentTrackId = currentTrack.value.id;
+    const newIndex = playlist.value.findIndex((track) => track.id === currentTrackId);
+    if (newIndex >= 0) {
+      currentIndex.value = newIndex;
+    }
+  }
 }
 
 const nowDisplayTrackName = computed(() => {
@@ -693,6 +869,7 @@ async function addTracksFromPaths(paths: string[]) {
     name: extractNameFromPath(path),
     source: 'path',
     location: path,
+    order: playlist.value.length + index,
     duration: undefined,
     artist: undefined,
     title: undefined,
@@ -1194,6 +1371,7 @@ async function handleFileSelection(event: Event) {
       name: file.name.replace(/\.mp3$/i, ''),
       source: 'dataUrl' as const,
       location: await readFileAsDataUrl(file),
+      order: playlist.value.length + index,
       duration: undefined,
       artist: undefined,
       title: undefined,
@@ -1421,6 +1599,7 @@ function removeTrack(index: number) {
   }
 
   playlist.value.splice(index, 1);
+  refreshPlaylistOrder();
 
   if (!playlist.value.length) {
     currentIndex.value = -1;
@@ -1486,6 +1665,13 @@ function moveTrack(fromIndex: number, toIndex: number) {
 
   const [movedTrack] = playlist.value.splice(fromIndex, 1);
   playlist.value.splice(toIndex, 0, movedTrack);
+
+  if (playlistSortField.value !== null) {
+    playlistSortField.value = null;
+    playlistSortDirection.value = 'asc';
+  }
+
+  refreshPlaylistOrder();
 
   if (currentIndex.value === fromIndex) {
     currentIndex.value = toIndex;
@@ -1861,7 +2047,7 @@ async function restorePlayerState() {
   try {
     const restoredTracks = Array.isArray(parsed.playlist)
       ? parsed.playlist
-          .map((track): PlaylistTrack | null => {
+          .map((track, index): PlaylistTrack | null => {
             if (!track || typeof track.id !== 'string' || typeof track.name !== 'string') {
               return null;
             }
@@ -1871,6 +2057,7 @@ async function restorePlayerState() {
               name: track.name,
               source: track.source === 'path' ? 'path' : 'dataUrl',
               location: typeof track.location === 'string' ? track.location : '',
+              order: typeof track.order === 'number' ? track.order : index,
               duration: typeof track.duration === 'number' ? track.duration : undefined,
               artist: typeof track.artist === 'string' ? track.artist : undefined,
               title: typeof track.title === 'string' ? track.title : undefined,
@@ -2160,13 +2347,15 @@ onBeforeUnmount(() => {
   visibility: visible;
 }
 
-.agentamp-track-row:first-child .agentamp-track-btn[data-tooltip]::after {
+.agentamp-playlist-header + .agentamp-track-row .agentamp-track-btn[data-tooltip]::after,
+.agentamp-track-row:first-child:not(.agentamp-playlist-header) .agentamp-track-btn[data-tooltip]::after {
   bottom: auto;
   top: calc(100% + 7px);
   transform: translateX(-50%) translateY(-2px);
 }
 
-.agentamp-track-row:first-child .agentamp-track-btn[data-tooltip]::before {
+.agentamp-playlist-header + .agentamp-track-row .agentamp-track-btn[data-tooltip]::before,
+.agentamp-track-row:first-child:not(.agentamp-playlist-header) .agentamp-track-btn[data-tooltip]::before {
   bottom: auto;
   top: calc(100% + 2px);
   border-top: none;
@@ -2427,11 +2616,62 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.agentamp-track-row {
-  display: flex;
+.agentamp-track-row,
+.agentamp-playlist-header {
+  display: grid;
+  grid-template-columns: 32px minmax(0,1.2fr) minmax(0,2.4fr) minmax(0,0.6fr) auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
+}
+
+.agentamp-playlist-header {
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--color-agentamp-track-row-border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.agentamp-playlist-header-cell {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agentamp-playlist-header-order {
+  justify-self: start;
+}
+
+.agentamp-playlist-header-genre {
+  justify-self: center;
+}
+
+.agentamp-track-order {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  padding: 7px 8px;
+  white-space: nowrap;
+  min-width: 0;
+  grid-column: 1 / 2;
+}
+
+.agentamp-playlist-header-cell:hover {
+  color: var(--color-text-primary);
+}
+
+.agentamp-playlist-header-placeholder {
+  width: 22px;
+}
+
+.agentamp-track-row {
   border-bottom: 1px solid var(--color-agentamp-track-row-border);
   cursor: grab;
 }
@@ -2469,16 +2709,51 @@ onBeforeUnmount(() => {
   cursor: pointer;
   overflow: visible;
   position: relative;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  grid-column: 2 / span 2;
+}
+
+.agentamp-track-artist,
+.agentamp-track-title {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentamp-track-artist {
+  flex: 1 0 35%;
+  color: var(--color-text-secondary);
+}
+
+.agentamp-track-title {
+  flex: 1 0 65%;
+}
+
+.agentamp-track-cell.agentamp-track-genre {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  max-width: 80px;
+  grid-column: 4;
+  justify-self: center;
+  text-align: center;
 }
 
 .agentamp-track-duration {
+  grid-column: 5;
   color: var(--color-text-secondary);
   font-size: 11px;
   margin: 0 6px;
   white-space: nowrap;
   flex: 0 0 auto;
+  min-width: 0;
 }
 
 .agentamp-track-btn:hover {

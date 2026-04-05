@@ -18,6 +18,7 @@
       <div
         class="video-player-shell pinned-video-shell"
         :style="{
+          height: `${pinnedVideoHeight}px`,
           '--pinned-video-height': `${pinnedVideoHeight}px`,
           '--pinned-control-scale': pinnedControlScale.toString(),
         }"
@@ -105,6 +106,7 @@
       <div
         class="video-player-shell pinned-video-shell"
         :style="{
+          height: `${pinnedVideoHeight}px`,
           '--pinned-video-height': `${pinnedVideoHeight}px`,
           '--pinned-control-scale': pinnedControlScale.toString(),
         }"
@@ -420,6 +422,7 @@ import type { ComponentPublicInstance } from 'vue';
 import type { ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
+import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
 import * as nodeEmoji from 'node-emoji';
 
 type YouTubePlayerState = {
@@ -648,6 +651,14 @@ const NEAR_BOTTOM_THRESHOLD_PX = 48;
 const PINNED_SPLIT_RATIO = 0.5;
 const PINNED_PANEL_OVERHEAD_ESTIMATE = 24;
 const WINDOW_LAYOUT_CHANGED_EVENT = 'agent-lobby-window-layout-changed';
+const PINNED_VIDEO_STATE_STORAGE_KEY = 'agent_chat_pinned_video_state';
+const RESTORED_PINNED_SOURCE_KEY_PREFIX = 'restored:';
+
+type PersistedPinnedVideoState =
+  | { type: 'youtube'; url: string; height: number }
+  | { type: 'twitch'; url: string; height: number };
+
+let pinnedStateHydrated = false;
 const pinnedYouTubeEmbed = ref<{ sourceKey: string; url: string; videoId: string } | null>(null);
 const pinnedTwitchEmbed = ref<{ sourceKey: string; url: string; channel: string } | null>(null);
 const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
@@ -851,6 +862,120 @@ function pinEmbedBySource(sourceKey: string, url: string, videoId: string) {
   };
 
   collapseEmbedInChatFeed(sourceKey);
+}
+
+function findSourceKeyForYouTubeUrl(url: string): string | null {
+  const normalizedTarget = normalizeUrlToken(url);
+
+  for (let messageIndex = 0; messageIndex < props.messages.length; messageIndex++) {
+    const message = props.messages[messageIndex];
+    const urls = extractYouTubeUrls(message.message);
+
+    for (let embedIndex = 0; embedIndex < urls.length; embedIndex++) {
+      if (normalizeUrlToken(urls[embedIndex]) === normalizedTarget) {
+        return getEmbedKey(messageIndex, urls[embedIndex], embedIndex);
+      }
+    }
+  }
+
+  return null;
+}
+
+function findSourceKeyForTwitchUrl(url: string): string | null {
+  const normalizedTarget = normalizeUrlToken(url);
+
+  for (let messageIndex = 0; messageIndex < props.messages.length; messageIndex++) {
+    const message = props.messages[messageIndex];
+    const urls = extractTwitchUrls(message.message);
+
+    for (let embedIndex = 0; embedIndex < urls.length; embedIndex++) {
+      if (normalizeUrlToken(urls[embedIndex]) === normalizedTarget) {
+        return getEmbedKey(messageIndex, urls[embedIndex], embedIndex);
+      }
+    }
+  }
+
+  return null;
+}
+
+function updateRestoredPinnedSourceKey() {
+  if (pinnedYouTubeEmbed.value?.sourceKey.startsWith(RESTORED_PINNED_SOURCE_KEY_PREFIX)) {
+    const resolvedKey = findSourceKeyForYouTubeUrl(pinnedYouTubeEmbed.value.url);
+    if (resolvedKey) {
+      pinnedYouTubeEmbed.value.sourceKey = resolvedKey;
+    }
+  }
+
+  if (pinnedTwitchEmbed.value?.sourceKey.startsWith(RESTORED_PINNED_SOURCE_KEY_PREFIX)) {
+    const resolvedKey = findSourceKeyForTwitchUrl(pinnedTwitchEmbed.value.url);
+    if (resolvedKey) {
+      pinnedTwitchEmbed.value.sourceKey = resolvedKey;
+    }
+  }
+}
+
+async function restorePersistedPinnedVideoState(): Promise<void> {
+  if (typeof window === 'undefined') {
+    pinnedStateHydrated = true;
+    return;
+  }
+
+  await nextTick();
+
+  try {
+    const persisted = await getPersistedValue<PersistedPinnedVideoState>(PINNED_VIDEO_STATE_STORAGE_KEY);
+    if (!persisted || !persisted.url) {
+      return;
+    }
+
+    pinnedVideoHeight.value = clampPinnedVideoHeight(persisted.height ?? pinnedVideoHeight.value);
+
+    if (persisted.type === 'youtube') {
+      const videoId = getYouTubeVideoId(persisted.url);
+      if (!videoId) {
+        return;
+      }
+
+      const sourceKey = findSourceKeyForYouTubeUrl(persisted.url) ?? `${RESTORED_PINNED_SOURCE_KEY_PREFIX}${persisted.url}`;
+      pinEmbedBySource(sourceKey, persisted.url, videoId);
+      await initializeYouTubePlayers();
+    } else if (persisted.type === 'twitch') {
+      const channel = getTwitchChannelName(persisted.url);
+      if (!channel) {
+        return;
+      }
+
+      pinnedTwitchEmbed.value = {
+        sourceKey: findSourceKeyForTwitchUrl(persisted.url) ?? `${RESTORED_PINNED_SOURCE_KEY_PREFIX}${persisted.url}`,
+        url: persisted.url,
+        channel,
+      };
+    }
+  } catch {
+    // Ignore storage errors.
+  } finally {
+    pinnedStateHydrated = true;
+  }
+}
+
+function persistPinnedVideoState() {
+  if (!pinnedStateHydrated) {
+    return;
+  }
+
+  if (!hasPinnedVideo.value) {
+    void removePersistedValue(PINNED_VIDEO_STATE_STORAGE_KEY);
+    return;
+  }
+
+  const height = clampPinnedVideoHeight(pinnedVideoHeight.value);
+  pinnedVideoHeight.value = height;
+
+  const persisted: PersistedPinnedVideoState = pinnedYouTubeEmbed.value
+    ? { type: 'youtube', url: pinnedYouTubeEmbed.value.url, height }
+    : { type: 'twitch', url: pinnedTwitchEmbed.value!.url, height };
+
+  void setPersistedValue(PINNED_VIDEO_STATE_STORAGE_KEY, persisted);
 }
 
 function cyclePinnedVideo(direction: 1 | -1, { autoplay = false }: { autoplay?: boolean } = {}) {
@@ -1675,7 +1800,18 @@ watch(
       });
     });
 
+    updateRestoredPinnedSourceKey();
     void initializeYouTubePlayers();
+  },
+  { immediate: true }
+);
+
+watch([pinnedYouTubeEmbed, pinnedTwitchEmbed, pinnedVideoHeight], persistPinnedVideoState);
+
+watch(
+  () => props.messages.length,
+  () => {
+    updateRestoredPinnedSourceKey();
   },
   { immediate: true }
 );
@@ -2158,6 +2294,7 @@ onMounted(() => {
   window.addEventListener('resize', syncPinnedVideoToAvailableSpace);
   window.addEventListener(WINDOW_LAYOUT_CHANGED_EVENT, handleWindowLayoutChanged);
   pinnedVideoHeight.value = clampPinnedVideoHeight(PINNED_VIDEO_DEFAULT_HEIGHT);
+  void restorePersistedPinnedVideoState();
 
   if (typeof ResizeObserver !== 'undefined' && chatAreaEl.value) {
     chatAreaResizeObserver = new ResizeObserver(() => {

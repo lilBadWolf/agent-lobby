@@ -26,7 +26,8 @@ export function useDirectMessage(
   _roomId: string,
   mqttClient: mqtt.MqttClient | null,
   onConnect: (callback: () => void) => void,
-  audioConfig: AudioConfig | null = null
+  audioConfig: AudioConfig | null = null,
+  options?: { runtimeMode?: 'full' | 'presence' }
 ) {
   // State
   const pendingRequests = ref<DMRequest[]>([]);
@@ -43,6 +44,34 @@ export function useDirectMessage(
   let messageHandlerRegistered = false;
   let noticeIdCounter = 0;
   const deniedRequestTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+  const isPresenceRuntime = options?.runtimeMode === 'presence';
+
+  function createEmptyChat(user: string): DMChat {
+    return {
+      user,
+      messages: [],
+      dataChannel: null,
+      isConnected: false,
+      pendingDisplayMessages: [],
+      isTyping: false,
+      audioEnabled: false,
+      videoEnabled: false,
+      localMediaStream: null,
+      remoteMediaStream: null,
+      fileTransfers: new Map(),
+      callStartTime: null,
+      callDuration: 0,
+      videoCallActive: false,
+    };
+  }
+
+  function ensurePresenceChat(user: string) {
+    if (activeChats.value.has(user)) {
+      return;
+    }
+
+    setOrUpdateChat(user, createEmptyChat(user));
+  }
 
   function flashDeniedRequest(user: string, timeout = 1800) {
     if (!deniedRequests.value.includes(user)) {
@@ -72,9 +101,21 @@ export function useDirectMessage(
     const id = ++noticeIdCounter;
     notices.value = [...notices.value, { id, message, type, from, fileId }];
 
-    setTimeout(() => {
-      notices.value = notices.value.filter((n) => n.id !== id);
-    }, timeout);
+    if (timeout > 0) {
+      setTimeout(() => {
+        notices.value = notices.value.filter((n) => n.id !== id);
+      }, timeout);
+    }
+  }
+
+  function clearCallRequestNotice(fromUser: string, type: 'audio-call' | 'video-call') {
+    notices.value = notices.value.filter((notice) => {
+      if (notice.type !== type) {
+        return true;
+      }
+
+      return notice.from !== fromUser;
+    });
   }
 
   // Start call duration timer
@@ -188,6 +229,10 @@ export function useDirectMessage(
       handleDMRequest(fromUser);
     } else if (data.type === 'accept') {
       outgoingRequests.value = outgoingRequests.value.filter((user) => user !== fromUser);
+      if (isPresenceRuntime) {
+        ensurePresenceChat(fromUser);
+        return;
+      }
       void startDMAsInitiator(fromUser);
     } else if (data.type === 'reject') {
       outgoingRequests.value = outgoingRequests.value.filter((user) => user !== fromUser);
@@ -204,6 +249,9 @@ export function useDirectMessage(
       // Remote peer explicitly closed this DM thread.
       closeDM(fromUser, false);
     } else if (data.type === 'audio-request') {
+      if (isPresenceRuntime) {
+        return;
+      }
       // Create peer connection and handle offer from audio request
       let rtcConn = rtcConnections.get(fromUser);
       if (!rtcConn) {
@@ -225,9 +273,15 @@ export function useDirectMessage(
         // Remove if already pending
         pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
         pendingAudioCalls.value.push({ from: fromUser, timestamp: Date.now() });
-        pushNotice(`${fromUser} is requesting an audio call`, 'audio-call', fromUser);
+        clearCallRequestNotice(fromUser, 'audio-call');
+        pushNotice(`${fromUser} is requesting an audio call`, 'audio-call', fromUser, undefined, 0);
       }
     } else if (data.type === 'accept-audio') {
+      if (isPresenceRuntime) {
+        return;
+      }
+      pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+      clearCallRequestNotice(fromUser, 'audio-call');
       // Acceptor accepted our audio call, handle their answer if present
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && data.answer) {
@@ -239,24 +293,49 @@ export function useDirectMessage(
       }
       pushNotice(`${fromUser} accepted your audio call`, 'call-status', fromUser);
     } else if (data.type === 'audio-reject') {
+      if (isPresenceRuntime) {
+        return;
+      }
+      pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+      clearCallRequestNotice(fromUser, 'audio-call');
       pushNotice(`${fromUser} declined your audio call request.`, 'call-status', fromUser);
     } else if (data.type === 'video-request') {
+      if (isPresenceRuntime) {
+        return;
+      }
       // Add to pending video calls
       const chat = activeChats.value.get(fromUser);
       if (chat) {
         // Remove if already pending
         pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
         pendingVideoCalls.value.push({ from: fromUser, timestamp: Date.now() });
-        pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser);
+        clearCallRequestNotice(fromUser, 'video-call');
+        pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser, undefined, 0);
       }
     } else if (data.type === 'accept-video') {
+      if (isPresenceRuntime) {
+        return;
+      }
+      pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+      clearCallRequestNotice(fromUser, 'video-call');
       pushNotice(`${fromUser} accepted your video call`, 'call-status', fromUser);
     } else if (data.type === 'video-reject') {
+      if (isPresenceRuntime) {
+        return;
+      }
+      pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+      clearCallRequestNotice(fromUser, 'video-call');
       pushNotice(`${fromUser} declined your video call request.`, 'call-status', fromUser);
     } else if (data.type === 'end-call') {
+      if (isPresenceRuntime) {
+        return;
+      }
       endCall(fromUser, false);
       pushNotice(`${fromUser} ended the active call.`, 'call-status', fromUser);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
+      if (isPresenceRuntime) {
+        return;
+      }
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn) {
@@ -470,6 +549,8 @@ export function useDirectMessage(
   }
 
   function markFileSaved(user: string, fileId: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(user);
     if (!chat) return;
 
@@ -481,6 +562,8 @@ export function useDirectMessage(
   }
 
   function removeFileTransfer(user: string, fileId: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(user);
     if (!chat) return;
 
@@ -731,6 +814,8 @@ export function useDirectMessage(
   }
 
   function acceptFileTransfer(fromUser: string, fileId: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(fromUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
@@ -753,6 +838,8 @@ export function useDirectMessage(
   }
 
   function rejectFileTransfer(fromUser: string, fileId: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(fromUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
@@ -774,6 +861,8 @@ export function useDirectMessage(
 
   // Send a file offer to another user
   async function sendFile(toUser: string, file: File) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(toUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
       pushNotice('File transfer requires active connection');
@@ -861,6 +950,11 @@ export function useDirectMessage(
   }
 
   async function startDMAsInitiator(targetUser: string) {
+    if (isPresenceRuntime) {
+      ensurePresenceChat(targetUser);
+      return;
+    }
+
     // Reset stale state before creating a fresh peer.
     closeDM(targetUser, false);
 
@@ -880,24 +974,7 @@ export function useDirectMessage(
       flushSignalQueue(targetUser, rtcConn.peerConnection);
 
       // Store in active chats
-      if (!activeChats.value.has(targetUser)) {
-        setOrUpdateChat(targetUser, {
-          user: targetUser,
-          messages: [],
-          dataChannel: null,
-          isConnected: false,
-          pendingDisplayMessages: [],
-          isTyping: false,
-          audioEnabled: false,
-          videoEnabled: false,
-          localMediaStream: null,
-          remoteMediaStream: null,
-          fileTransfers: new Map(),
-          callStartTime: null,
-          callDuration: 0,
-          videoCallActive: false
-        });
-      }
+      ensurePresenceChat(targetUser);
     } catch (e) {
       console.error('Error creating offer:', e);
     }
@@ -915,6 +992,12 @@ export function useDirectMessage(
     // Reset stale state but keep the pending request until chat is re-created.
     closeDM(fromUser, false, false);
 
+    if (isPresenceRuntime) {
+      ensurePresenceChat(fromUser);
+      pendingRequests.value = pendingRequests.value.filter(r => r.from !== fromUser);
+      return;
+    }
+
     const rtcConn = createRTCConnection(fromUser, false);
     rtcConnections.set(fromUser, rtcConn);
 
@@ -922,22 +1005,7 @@ export function useDirectMessage(
     flushSignalQueue(fromUser, rtcConn.peerConnection);
 
     // Store in active chats
-    setOrUpdateChat(fromUser, {
-      user: fromUser,
-      messages: [],
-      dataChannel: null,
-      isConnected: false,
-      pendingDisplayMessages: [],
-      isTyping: false,
-      audioEnabled: false,
-      videoEnabled: false,
-      localMediaStream: null,
-      remoteMediaStream: null,
-      fileTransfers: new Map(),
-      callStartTime: null,
-      callDuration: 0,
-      videoCallActive: false
-    });
+    ensurePresenceChat(fromUser);
 
     // Remove pending only after the chat tab exists.
     pendingRequests.value = pendingRequests.value.filter(r => r.from !== fromUser);
@@ -971,7 +1039,10 @@ export function useDirectMessage(
 
   // Reject incoming audio call
   function rejectAudioCall(fromUser: string) {
+    if (isPresenceRuntime) return;
+
     pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+    clearCallRequestNotice(fromUser, 'audio-call');
 
     if (!mqttClient) return;
 
@@ -983,7 +1054,10 @@ export function useDirectMessage(
 
   // Reject incoming video call
   function rejectVideoCall(fromUser: string) {
+    if (isPresenceRuntime) return;
+
     pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+    clearCallRequestNotice(fromUser, 'video-call');
 
     if (!mqttClient) return;
 
@@ -995,6 +1069,8 @@ export function useDirectMessage(
 
   // Send a DM message
   function sendDMMessage(toUser: string, message: string, effect: string = 'none') {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(toUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
@@ -1047,6 +1123,8 @@ export function useDirectMessage(
 
   // Send typing indicator
   function sendTyping(toUser: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(toUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
@@ -1059,6 +1137,8 @@ export function useDirectMessage(
 
   // Send stop typing indicator
   function sendStopTyping(toUser: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(toUser);
     if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
 
@@ -1159,6 +1239,8 @@ export function useDirectMessage(
 
   // Cancel pending display messages (messages waiting to be animated on peer's side)
   function cancelPendingMessages(toUser: string) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(toUser);
     if (chat) {
       chat.pendingDisplayMessages = [];
@@ -1200,6 +1282,8 @@ export function useDirectMessage(
 
   // Request audio call from another user
   async function requestAudioCall(targetUser: string) {
+    if (isPresenceRuntime) return;
+
     if (!mqttClient) return;
 
     const chat = activeChats.value.get(targetUser);
@@ -1264,10 +1348,13 @@ export function useDirectMessage(
 
   // Accept incoming audio call
   async function acceptAudioCall(fromUser: string) {
+    if (isPresenceRuntime) return;
+
     if (!mqttClient) return;
 
     // Clear from pending requests
     pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+    clearCallRequestNotice(fromUser, 'audio-call');
 
     try {
       const noMicSelected = audioConfig?.audioInputDeviceId === NO_MIC_DEVICE_ID;
@@ -1328,6 +1415,8 @@ export function useDirectMessage(
 
   // Toggle audio stream on/off during call
   async function toggleAudioStream(user: string, enabled: boolean) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(user);
     if (!chat || !chat.localMediaStream) return;
 
@@ -1352,6 +1441,8 @@ export function useDirectMessage(
 
   // Request video call
   async function requestVideoCall(targetUser: string) {
+    if (isPresenceRuntime) return;
+
     if (!mqttClient) return;
 
     const chat = activeChats.value.get(targetUser);
@@ -1421,10 +1512,13 @@ export function useDirectMessage(
 
   // Accept incoming video call
   async function acceptVideoCall(fromUser: string) {
+    if (isPresenceRuntime) return;
+
     if (!mqttClient) return;
 
     // Clear from pending requests
     pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+    clearCallRequestNotice(fromUser, 'video-call');
 
     try {
       const noMicSelected = audioConfig?.audioInputDeviceId === NO_MIC_DEVICE_ID;
@@ -1503,6 +1597,8 @@ export function useDirectMessage(
 
   // Toggle video stream
   async function toggleVideoStream(user: string, enabled: boolean) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(user);
     if (!chat || !chat.localMediaStream) return;
 
@@ -1527,6 +1623,8 @@ export function useDirectMessage(
   }
 
   function endCall(user: string, notifyPeer = true) {
+    if (isPresenceRuntime) return;
+
     const chat = activeChats.value.get(user);
     if (!chat) return;
 

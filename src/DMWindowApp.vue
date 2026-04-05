@@ -41,61 +41,57 @@
       presentation="window"
       :show-header-close="false"
       :show-header-title="false"
-      :active-chats="activeChats"
-      :pending-requests="pendingRequests"
-      :pending-audio-calls="pendingAudioCalls"
-      :pending-video-calls="pendingVideoCalls"
-      :outgoing-requests="outgoingRequests"
-      :notices="notices"
-      :username="username"
+      :active-chats="viewActiveChats"
+      :pending-requests="viewPendingRequests"
+      :pending-audio-calls="viewPendingAudioCalls"
+      :pending-video-calls="viewPendingVideoCalls"
+      :outgoing-requests="viewOutgoingRequests"
+      :notices="viewNotices"
+      :username="viewUsername"
       :dm-chat-effect="dmChatEffect"
       :focused-dm-user="focusedDMUser"
       @close="handleClose"
-      @accept-dm="(user) => sendAction({ type: 'acceptDm', user })"
-      @reject-dm="(user) => sendAction({ type: 'rejectDm', user })"
-      @accept-audio="(user) => sendAction({ type: 'acceptAudio', user })"
-      @reject-audio="(user) => sendAction({ type: 'rejectAudio', user })"
-      @accept-video="(user) => sendAction({ type: 'acceptVideo', user })"
-      @reject-video="(user) => sendAction({ type: 'rejectVideo', user })"
-      @cancel-request="(user) => sendAction({ type: 'cancelRequest', user })"
-      @send-message="(user, message, effect) => sendAction({ type: 'sendMessage', user, message, effect: effect as DMWindowStatePayload['dmChatEffect'] })"
-      @typing="(user) => sendAction({ type: 'typing', user })"
-      @stop-typing="(user) => sendAction({ type: 'stopTyping', user })"
-      @cancel-pending-messages="(user) => sendAction({ type: 'cancelPendingMessages', user })"
-      @close-dm="(user) => sendAction({ type: 'closeDm', user })"
-      @request-audio="(user) => sendAction({ type: 'requestAudio', user })"
-      @toggle-audio="(user, enabled) => sendAction({ type: 'toggleAudio', user, enabled })"
-      @request-video="(user) => sendAction({ type: 'requestVideo', user })"
-      @toggle-video="(user, enabled) => sendAction({ type: 'toggleVideo', user, enabled })"
-      @send-file="(user, file) => sendFileAction(user, file)"
-      @accept-file="(user, fileId) => sendAction({ type: 'acceptFile', user, fileId })"
-      @reject-file="(user, fileId) => sendAction({ type: 'rejectFile', user, fileId })"
-      @file-saved="(user, fileId) => sendAction({ type: 'fileSaved', user, fileId })"
-      @remove-file="(user, fileId) => sendAction({ type: 'removeFile', user, fileId })"
+      @accept-dm="handleAcceptDM"
+      @reject-dm="handleRejectDM"
+      @accept-audio="handleAcceptAudio"
+      @reject-audio="handleRejectAudio"
+      @accept-video="handleAcceptVideo"
+      @reject-video="handleRejectVideo"
+      @cancel-request="handleCancelRequest"
+      @send-message="handleSendMessage"
+      @typing="handleTyping"
+      @stop-typing="handleStopTyping"
+      @cancel-pending-messages="handleCancelPendingMessages"
+      @close-dm="handleCloseDM"
+      @request-audio="handleRequestAudio"
+      @toggle-audio="handleToggleAudio"
+      @request-video="handleRequestVideo"
+      @toggle-video="handleToggleVideo"
+      @send-file="handleSendFile"
+      @accept-file="handleAcceptFile"
+      @reject-file="handleRejectFile"
+      @file-saved="handleFileSaved"
+      @remove-file="handleRemoveFile"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, shallowRef, computed, onMounted, onBeforeUnmount } from 'vue';
+import mqtt from 'mqtt';
 import DMChatModal from './components/DMChatModal.vue';
 import type { DMChat, FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
+import type { AudioConfig } from './types/chat';
+import { useDirectMessage } from './composables/useDirectMessage';
 
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
 const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
-const DM_WINDOW_MEDIA_EVENT = 'media-state';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
 const DM_WINDOW_LOG_PREFIX = '[DMWindowApp]';
 let allowWindowClose = false;
 let cleanupForceCloseListener: (() => void) | null = null;
-
-interface DMWindowMediaState {
-  user: string;
-  localMediaStream: MediaStream | null;
-  remoteMediaStream: MediaStream | null;
-}
 
 const activeChats = ref<Map<string, DMChat>>(new Map());
 const pendingRequests = ref<DMWindowStatePayload['pendingRequests']>([]);
@@ -109,6 +105,12 @@ const focusedDMUser = ref<string | null>(null);
 const isMaximized = ref(false);
 const queryTargetUser = new URLSearchParams(window.location.search).get('dmUser');
 const targetUser = ref<string | null>(queryTargetUser);
+const runtimeUsernameRef = ref('');
+const runtimeMqttServer = ref('');
+const runtimeRoomId = ref('');
+const runtimeAudioConfig = ref<AudioConfig | null>(null);
+const dmRuntime = shallowRef<ReturnType<typeof useDirectMessage> | null>(null);
+const runtimeMqttClient = ref<mqtt.MqttClient | null>(null);
 
 let webChannel: BroadcastChannel | null = null;
 let cleanupTauriListener: (() => void) | null = null;
@@ -167,24 +169,6 @@ function debugLog(message: string, details?: unknown) {
   console.log(`${DM_WINDOW_LOG_PREFIX} ${message}`, details);
 }
 
-function describeStream(stream: MediaStream | null | undefined) {
-  if (!stream) {
-    return null;
-  }
-
-  return {
-    id: stream.id,
-    active: stream.active,
-    tracks: stream.getTracks().map((track) => ({
-      id: track.id,
-      kind: track.kind,
-      enabled: track.enabled,
-      muted: track.muted,
-      readyState: track.readyState,
-    })),
-  };
-}
-
 function hasVideoCallActivity(chat: DMChat): boolean {
   if (chat.videoCallActive || chat.videoEnabled) {
     return true;
@@ -195,22 +179,30 @@ function hasVideoCallActivity(chat: DMChat): boolean {
   return hasLocalVideoTrack || hasRemoteVideoTrack;
 }
 
-const inVideo = computed(() => Array.from(activeChats.value.values()).some((chat) => hasVideoCallActivity(chat)));
+const viewActiveChats = computed(() => dmRuntime.value?.activeChats.value ?? activeChats.value);
+const viewPendingRequests = computed(() => dmRuntime.value?.pendingRequests.value ?? pendingRequests.value);
+const viewPendingAudioCalls = computed(() => dmRuntime.value?.pendingAudioCalls.value ?? pendingAudioCalls.value);
+const viewPendingVideoCalls = computed(() => dmRuntime.value?.pendingVideoCalls.value ?? pendingVideoCalls.value);
+const viewOutgoingRequests = computed(() => dmRuntime.value?.outgoingRequests.value ?? outgoingRequests.value);
+const viewNotices = computed(() => dmRuntime.value?.notices.value ?? notices.value);
+const viewUsername = computed(() => runtimeUsernameRef.value || username.value);
+
+const inVideo = computed(() => Array.from(viewActiveChats.value.values()).some((chat) => hasVideoCallActivity(chat)));
 
 const activeDMUser = computed<string | null>(() => {
   const preferredTarget = normalizeDMUser(targetUser.value);
   if (preferredTarget) {
-    const matched = Array.from(activeChats.value.keys()).find((user) => sameDMUser(user, preferredTarget));
+    const matched = Array.from(viewActiveChats.value.keys()).find((user) => sameDMUser(user, preferredTarget));
     return matched ?? preferredTarget;
   }
 
   const preferredFocused = normalizeDMUser(focusedDMUser.value);
   if (preferredFocused) {
-    const matched = Array.from(activeChats.value.keys()).find((user) => sameDMUser(user, preferredFocused));
+    const matched = Array.from(viewActiveChats.value.keys()).find((user) => sameDMUser(user, preferredFocused));
     return matched ?? preferredFocused;
   }
 
-  return Array.from(activeChats.value.keys())[0] ?? null;
+  return Array.from(viewActiveChats.value.keys())[0] ?? null;
 });
 
 const activeDMChat = computed<DMChat | null>(() => {
@@ -219,17 +211,17 @@ const activeDMChat = computed<DMChat | null>(() => {
     return null;
   }
 
-  const direct = activeChats.value.get(user);
+  const direct = viewActiveChats.value.get(user);
   if (direct) {
     return direct;
   }
 
-  const matchedUser = Array.from(activeChats.value.keys()).find((candidate) => sameDMUser(candidate, user));
+  const matchedUser = Array.from(viewActiveChats.value.keys()).find((candidate) => sameDMUser(candidate, user));
   if (!matchedUser) {
     return null;
   }
 
-  return activeChats.value.get(matchedUser) ?? null;
+  return viewActiveChats.value.get(matchedUser) ?? null;
 });
 
 const hasActiveCall = computed(() => {
@@ -246,8 +238,8 @@ const canRequestCalls = computed(() => Boolean(activeDMChat.value?.isConnected) 
 const activeCallDurationLabel = computed(() => formatDuration(activeDMChat.value?.callDuration ?? 0));
 
 const pageTitle = computed(() => {
-  const activeUsers = Array.from(activeChats.value.keys());
-  const currentUser = username.value || 'AGENT';
+  const activeUsers = Array.from(viewActiveChats.value.keys());
+  const currentUser = viewUsername.value || 'AGENT';
   const titleUser = inVideo.value ? `${currentUser} in video` : currentUser;
 
   if (targetUser.value) {
@@ -313,45 +305,73 @@ function toChat(chat: SerializedDMChat): DMChat {
   };
 }
 
-function applyMediaState(payload: DMWindowMediaState[]) {
-  if (!Array.isArray(payload) || payload.length === 0) {
-    debugLog('applyMediaState called with empty payload');
+function teardownDMRuntime() {
+  dmRuntime.value?.cleanup();
+  dmRuntime.value = null;
+
+  const client = runtimeMqttClient.value;
+  if (client) {
+    try {
+      client.end(true);
+    } catch {
+      // Ignore shutdown errors during teardown.
+    }
+  }
+
+  runtimeMqttClient.value = null;
+}
+
+function ensureDMRuntime(payload: DMWindowStatePayload) {
+  runtimeUsernameRef.value = payload.username;
+
+  if (!runtimeAudioConfig.value) {
+    runtimeAudioConfig.value = { ...payload.audioConfig };
+  } else {
+    Object.assign(runtimeAudioConfig.value, payload.audioConfig);
+  }
+
+  const needsRecreate =
+    !dmRuntime.value ||
+    runtimeMqttServer.value !== payload.mqttServer ||
+    runtimeRoomId.value !== payload.roomId;
+
+  if (!needsRecreate) {
     return;
   }
 
-  debugLog('applyMediaState payload received', payload.map((entry) => ({
-    user: entry.user,
-    local: describeStream(entry.localMediaStream),
-    remote: describeStream(entry.remoteMediaStream),
-  })));
+  teardownDMRuntime();
 
-  const nextChats = new Map(activeChats.value);
-  const activeTarget = targetUser.value;
+  runtimeMqttServer.value = payload.mqttServer;
+  runtimeRoomId.value = payload.roomId;
 
-  for (const mediaState of payload) {
-    if (activeTarget && !sameDMUser(mediaState.user, activeTarget)) {
-      continue;
-    }
+  const client = mqtt.connect(payload.mqttServer);
+  runtimeMqttClient.value = client;
 
-    const chat = nextChats.get(mediaState.user);
-    if (!chat) {
-      continue;
-    }
+  client.on('error', (error) => {
+    debugLog('dm runtime mqtt error', error);
+  });
 
-    chat.localMediaStream = mediaState.localMediaStream;
-    chat.remoteMediaStream = mediaState.remoteMediaStream;
-    nextChats.set(mediaState.user, chat);
+  client.on('close', () => {
+    debugLog('dm runtime mqtt closed');
+  });
 
-    debugLog(`media applied for ${mediaState.user}`, {
-      local: describeStream(chat.localMediaStream),
-      remote: describeStream(chat.remoteMediaStream),
-      videoCallActive: chat.videoCallActive,
-      videoEnabled: chat.videoEnabled,
-      audioEnabled: chat.audioEnabled,
-    });
-  }
+  const runtime = useDirectMessage(
+    runtimeUsernameRef,
+    payload.roomId,
+    client,
+    (callback) => {
+      if (client.connected) {
+        callback();
+        return;
+      }
 
-  activeChats.value = nextChats;
+      client.on('connect', callback);
+    },
+    runtimeAudioConfig.value,
+    { runtimeMode: 'full' }
+  );
+
+  dmRuntime.value = runtime;
 }
 
 function applyState(payload: DMWindowStatePayload) {
@@ -373,6 +393,7 @@ function applyState(payload: DMWindowStatePayload) {
 
   const nextTarget = lockedTarget ?? payload.targetUser ?? null;
   targetUser.value = nextTarget;
+  ensureDMRuntime(payload);
 
   const stateChats = nextTarget
     ? payload.activeChats.filter((chat) => sameDMUser(chat.user, nextTarget))
@@ -426,17 +447,89 @@ async function sendAction(action: DMWindowAction) {
   webChannel?.postMessage({ type: 'action', payload: action });
 }
 
-async function sendFileAction(user: string, file: File) {
-  const fileAction: DMWindowAction = { type: 'sendFile', user, file };
+function handleAcceptDM(user: string) {
+  dmRuntime.value?.acceptDM(user);
+}
 
-  // Tauri event payloads cannot reliably carry File objects, so forward file sends through
-  // BroadcastChannel where structured cloning supports File payloads.
-  if (isTauriRuntime() && webChannel) {
-    webChannel.postMessage({ type: 'action', payload: fileAction });
-    return;
-  }
+function handleRejectDM(user: string) {
+  dmRuntime.value?.rejectDM(user);
+}
 
-  await sendAction(fileAction);
+function handleAcceptAudio(user: string) {
+  void dmRuntime.value?.acceptAudioCall(user);
+}
+
+function handleRejectAudio(user: string) {
+  dmRuntime.value?.rejectAudioCall(user);
+}
+
+function handleAcceptVideo(user: string) {
+  void dmRuntime.value?.acceptVideoCall(user);
+}
+
+function handleRejectVideo(user: string) {
+  dmRuntime.value?.rejectVideoCall(user);
+}
+
+function handleCancelRequest(user: string) {
+  dmRuntime.value?.cancelDMRequest(user);
+}
+
+function handleSendMessage(user: string, message: string, effect: string) {
+  dmRuntime.value?.sendDMMessage(user, message, effect);
+}
+
+function handleTyping(user: string) {
+  dmRuntime.value?.sendTyping(user);
+}
+
+function handleStopTyping(user: string) {
+  dmRuntime.value?.sendStopTyping(user);
+}
+
+function handleCancelPendingMessages(user: string) {
+  dmRuntime.value?.cancelPendingMessages(user);
+}
+
+function handleCloseDM(user: string) {
+  dmRuntime.value?.closeDM(user);
+  void sendAction({ type: 'closeDm', user });
+}
+
+function handleRequestAudio(user: string) {
+  void dmRuntime.value?.requestAudioCall(user);
+}
+
+function handleToggleAudio(user: string, enabled: boolean) {
+  void dmRuntime.value?.toggleAudioStream(user, enabled);
+}
+
+function handleRequestVideo(user: string) {
+  void dmRuntime.value?.requestVideoCall(user);
+}
+
+function handleToggleVideo(user: string, enabled: boolean) {
+  void dmRuntime.value?.toggleVideoStream(user, enabled);
+}
+
+function handleSendFile(user: string, file: File) {
+  void dmRuntime.value?.sendFile(user, file);
+}
+
+function handleAcceptFile(user: string, fileId: string) {
+  dmRuntime.value?.acceptFileTransfer(user, fileId);
+}
+
+function handleRejectFile(user: string, fileId: string) {
+  dmRuntime.value?.rejectFileTransfer(user, fileId);
+}
+
+function handleFileSaved(user: string, fileId: string) {
+  dmRuntime.value?.markFileSaved(user, fileId);
+}
+
+function handleRemoveFile(user: string, fileId: string) {
+  dmRuntime.value?.removeFileTransfer(user, fileId);
 }
 
 function handleWebMessage(event: MessageEvent) {
@@ -450,18 +543,12 @@ function handleWebMessage(event: MessageEvent) {
     applyState(message.payload as DMWindowStatePayload);
     return;
   }
-
-  if (message?.type === DM_WINDOW_MEDIA_EVENT) {
-    debugLog('window message media-state received');
-    applyMediaState(message.payload as DMWindowMediaState[]);
-    return;
-  }
 }
 
 async function handleClose() {
   const user = activeDMUser.value;
   if (user) {
-    await sendAction({ type: 'closeDm', user });
+    handleCloseDM(user);
   }
 
   await sendAction({ type: 'windowClosed', user: targetUser.value ?? user ?? undefined });
@@ -482,7 +569,7 @@ async function handleTitlebarRequestAudio() {
     return;
   }
 
-  await sendAction({ type: 'requestAudio', user });
+  handleRequestAudio(user);
 }
 
 async function handleTitlebarRequestVideo() {
@@ -491,7 +578,7 @@ async function handleTitlebarRequestVideo() {
     return;
   }
 
-  await sendAction({ type: 'requestVideo', user });
+  handleRequestVideo(user);
 }
 
 async function handleTitlebarEndCall() {
@@ -500,7 +587,7 @@ async function handleTitlebarEndCall() {
     return;
   }
 
-  await sendAction({ type: 'endCall', user });
+  dmRuntime.value?.endCall(user);
 }
 
 async function minimize() {
@@ -536,12 +623,6 @@ onMounted(async () => {
       const message = event.data as { type?: string; payload?: unknown };
       if (message?.type === 'state') {
         applyState(message.payload as DMWindowStatePayload);
-        return;
-      }
-
-      if (message?.type === DM_WINDOW_MEDIA_EVENT) {
-        applyMediaState(message.payload as DMWindowMediaState[]);
-        return;
       }
     };
   }
@@ -607,6 +688,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   void sendAction({ type: 'windowClosed', user: targetUser.value ?? undefined });
+  teardownDMRuntime();
   if (webMessageListenerBound) {
     window.removeEventListener('message', handleWebMessage);
     webMessageListenerBound = false;

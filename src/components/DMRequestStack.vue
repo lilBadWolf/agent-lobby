@@ -9,47 +9,23 @@
         </div>
       </div>
     </div>
-
-    <div
-      v-for="notice in visibleNotices"
-      :key="`notice-${notice.id}`"
-      class="request-card transient-card"
-      :class="notice.type === 'call-status' ? 'call-card' : 'info-card'"
-    >
-      <div class="request-body">{{ notice.message }}</div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { AudioCallRequest, DMNotice, DMRequest, VideoCallRequest } from '../types/directMessage';
+import type { DMRequest } from '../types/directMessage';
 
 const props = defineProps<{
   pendingRequests: DMRequest[];
-  pendingAudioCalls: AudioCallRequest[];
-  pendingVideoCalls: VideoCallRequest[];
-  notices: DMNotice[];
 }>();
 
 const emit = defineEmits<{
   acceptDm: [user: string];
   rejectDm: [user: string];
-  acceptAudio: [user: string];
-  rejectAudio: [user: string];
-  acceptVideo: [user: string];
-  rejectVideo: [user: string];
 }>();
 
-const visibleNotices = computed(() =>
-  props.notices.filter(
-    (notice) => notice.type !== 'file-offer' && notice.type !== 'audio-call' && notice.type !== 'video-call'
-  )
-);
-const hasEntries = computed(() =>
-  props.pendingRequests.length > 0 ||
-  visibleNotices.value.length > 0
-);
+const hasEntries = computed(() => props.pendingRequests.length > 0);
 </script>
 
 <style scoped>
@@ -143,18 +119,6 @@ const hasEntries = computed(() =>
 
 .reject-btn:hover {
   background: var(--color-dm-request-reject-hover);
-}
-
-.info-card {
-  box-shadow: var(--color-dm-request-info-shadow);
-}
-
-.call-card {
-  box-shadow: var(--color-dm-request-call-shadow);
-}
-
-.transient-card .request-actions {
-  display: none;
 }
 
 @media (max-width: 900px) {

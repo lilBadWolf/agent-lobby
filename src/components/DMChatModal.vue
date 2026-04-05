@@ -981,6 +981,11 @@ watch(
 }
 
 .notice-stack-inline {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  z-index: 20;
+  width: min(440px, calc(100% - 40px));
   align-items: flex-end;
 }
 
@@ -1244,24 +1249,25 @@ watch(
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .chat-section.has-video-call {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  height: 100%;
 }
 
 .video-call-pane {
   flex: 1;
   min-height: 0;
+  height: 100%;
   display: flex;
   overflow: hidden;
 }
 
 .chat-section.has-video-call .notice-stack-inline {
-  max-height: 96px;
+  max-height: min(45%, 240px);
   overflow-y: auto;
-  padding-bottom: 8px;
 }
 
 .chat-section.has-video-call .video-call-pane {

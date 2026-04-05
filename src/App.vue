@@ -54,16 +54,8 @@
     <DMRequestStack
       v-if="!showAuth"
       :pending-requests="dmPendingRequests"
-      :pending-audio-calls="dmPendingAudioCalls"
-      :pending-video-calls="dmPendingVideoCalls"
-      :notices="dmNotices"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
-      @accept-audio="handleAcceptAudio"
-      @reject-audio="handleRejectAudio"
-      @accept-video="handleAcceptVideo"
-      @reject-video="handleRejectVideo"
-      @cancel-request="handleCancelDMRequest"
     />
 
     <AuthScreen
@@ -374,7 +366,6 @@ const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
-const DM_WINDOW_MEDIA_EVENT = 'media-state';
 
 // DM system
 const openDMWindowUsers = ref<Set<string>>(new Set());
@@ -446,10 +437,7 @@ const dmOutgoingRequests = computed(() => dm.value?.outgoingRequests.value || []
 const dmDeniedRequests = computed(() => dm.value?.deniedRequests.value || []);
 const dmNotices = computed(() => dm.value?.notices.value || []);
 const connectedDMUsers = computed(() =>
-  Array.from(dmActiveChats.value.values())
-    .filter((chat) => chat.isConnected)
-    .map((chat) => chat.user)
-    .sort()
+  Array.from(dmActiveChats.value.keys()).sort()
 );
 const hasDMActivity = computed(() => connectedDMUsers.value.length > 0);
 const dmBubbleStates = computed<Record<string, 'active' | 'pending' | 'denied'>>(() => {
@@ -515,7 +503,8 @@ watch(isConnected, (connected) => {
       roomId,
       mqttClient,
       connectedCallback,
-      config.value
+      config.value,
+      { runtimeMode: 'presence' }
     );
   } else if (!connected && dm.value) {
     dm.value.cleanup();
@@ -1285,66 +1274,6 @@ function handleCancelPendingMessages(user: string) {
   }
 }
 
-function handleRequestAudio(user: string) {
-  if (dm.value) {
-    dm.value.requestAudioCall(user);
-  }
-}
-
-function handleEndCall(user: string) {
-  if (dm.value) {
-    dm.value.endCall(user);
-  }
-}
-
-function handleToggleAudio(user: string, enabled: boolean) {
-  if (dm.value) {
-    dm.value.toggleAudioStream(user, enabled);
-  }
-}
-
-function handleRequestVideo(user: string) {
-  if (dm.value) {
-    dm.value.requestVideoCall(user);
-  }
-}
-
-function handleToggleVideo(user: string, enabled: boolean) {
-  if (dm.value) {
-    dm.value.toggleVideoStream(user, enabled);
-  }
-}
-
-function handleSendFile(user: string, file: File) {
-  if (dm.value) {
-    dm.value.sendFile(user, file);
-  }
-}
-
-function handleAcceptFile(user: string, fileId: string) {
-  if (dm.value) {
-    dm.value.acceptFileTransfer(user, fileId);
-  }
-}
-
-function handleRejectFile(user: string, fileId: string) {
-  if (dm.value) {
-    dm.value.rejectFileTransfer(user, fileId);
-  }
-}
-
-function handleFileSaved(user: string, fileId: string) {
-  if (dm.value) {
-    dm.value.markFileSaved(user, fileId);
-  }
-}
-
-function handleRemoveFile(user: string, fileId: string) {
-  if (dm.value) {
-    dm.value.removeFileTransfer(user, fileId);
-  }
-}
-
 function initializeWebDMBridge() {
   if (!webMessageListenerBound) {
     window.addEventListener('message', handleWebPopupMessage);
@@ -1362,31 +1291,6 @@ function initializeWebDMBridge() {
       handleDMWindowAction(message.payload as DMWindowAction);
     }
   };
-}
-
-function emitDMWindowMediaState(targetUser: string | null = null) {
-  if (!dmWebChannel || openDMWindowUsers.value.size === 0) {
-    return;
-  }
-
-  const filteredChats = targetUser
-    ? Array.from(dmActiveChats.value.values()).filter((chat) => sameDMUser(chat.user, targetUser))
-    : Array.from(dmActiveChats.value.values());
-
-  const mediaPayload = filteredChats.map((chat) => ({
-    user: chat.user,
-    localMediaStream: chat.localMediaStream,
-    remoteMediaStream: chat.remoteMediaStream,
-  }));
-
-  try {
-    dmWebChannel.postMessage({
-      type: DM_WINDOW_MEDIA_EVENT,
-      payload: mediaPayload,
-    });
-  } catch (error) {
-    console.debug('emitDMWindowMediaState failed to post:', error);
-  }
 }
 
 function handleWebPopupMessage(event: MessageEvent) {
@@ -1445,7 +1349,6 @@ async function emitDMWindowState() {
     for (const user of openUsers) {
       const payload = buildDMWindowStatePayload(user);
       await emitTo(dmWindowLabelForUser(user), DM_WINDOW_STATE_EVENT, payload);
-      emitDMWindowMediaState(user);
     }
     return;
   }
@@ -1463,8 +1366,6 @@ async function emitDMWindowState() {
       type: 'state',
       payload: webPayload,
     });
-
-    emitDMWindowMediaState(user);
   }
 }
 
@@ -1581,6 +1482,9 @@ function buildDMWindowStatePayload(targetUser: string | null = null): DMWindowSt
     outgoingRequests,
     notices,
     username: username.value,
+    mqttServer: networkConfig.value.mqttServer,
+    roomId: getRoomId(),
+    audioConfig: { ...config.value },
     dmChatEffect: config.value.dmChatEffect,
     focusedDMUser: normalizedTarget ?? focusedDMUser.value,
     targetUser: normalizedTarget,
@@ -1938,34 +1842,34 @@ function handleDMWindowAction(action: DMWindowAction | undefined) {
       handleCancelPendingMessages(action.user);
       break;
     case 'requestAudio':
-      handleRequestAudio(action.user);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'endCall':
-      handleEndCall(action.user);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'toggleAudio':
-      handleToggleAudio(action.user, action.enabled);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'requestVideo':
-      handleRequestVideo(action.user);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'toggleVideo':
-      handleToggleVideo(action.user, action.enabled);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'sendFile':
-      handleSendFile(action.user, action.file);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'acceptFile':
-      handleAcceptFile(action.user, action.fileId);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'rejectFile':
-      handleRejectFile(action.user, action.fileId);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'fileSaved':
-      handleFileSaved(action.user, action.fileId);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'removeFile':
-      handleRemoveFile(action.user, action.fileId);
+      // Phase 2: media runtime is owned by DM window process.
       break;
     case 'windowClosed':
       if (action.user && focusedDMUser.value === action.user) {

@@ -1,4 +1,4 @@
-import type { ChatMessage } from './chat';
+import type { AudioConfig, ChatMessage } from './chat';
 import type {
   DMRequest,
   AudioCallRequest,
@@ -56,6 +56,9 @@ export interface DMWindowStatePayload {
   outgoingRequests: string[];
   notices: DMNotice[];
   username: string;
+  mqttServer: string;
+  roomId: string;
+  audioConfig: AudioConfig;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
   focusedDMUser: string | null;
   targetUser: string | null;

@@ -266,7 +266,31 @@
           </label>
           <label>
             GENRE
-            <input v-model="metadataEditorForm.genre" type="text" />
+            <div class="agentamp-genre-input-wrap">
+              <input
+                class="agentamp-genre-input"
+                v-model="metadataEditorForm.genre"
+                type="text"
+                autocomplete="off"
+                @focus="genreDropdownOpen = true"
+                @input="genreDropdownOpen = true"
+                @blur="closeGenreDropdown"
+              />
+              <div
+                v-if="genreDropdownOpen && filteredGenreOptions.length"
+                class="agentamp-genre-options"
+              >
+                <button
+                  v-for="genre in filteredGenreOptions"
+                  :key="genre"
+                  type="button"
+                  class="agentamp-genre-option"
+                  @mousedown.prevent="selectGenreOption(genre)"
+                >
+                  {{ genre }}
+                </button>
+              </div>
+            </div>
           </label>
           <label>
             TRACK #
@@ -359,6 +383,94 @@ type TransitionState = {
   playerState?: PersistedPlayerState;
 };
 
+const genreOptions = [
+  'Blues',
+  'Classic Rock',
+  'Country',
+  'Dance',
+  'Disco',
+  'Funk',
+  'Grunge',
+  'Hip-Hop',
+  'Jazz',
+  'Metal',
+  'New Age',
+  'Oldies',
+  'Other',
+  'Pop',
+  'R&B',
+  'Rap',
+  'Reggae',
+  'Rock',
+  'Techno',
+  'Industrial',
+  'Alternative',
+  'Ska',
+  'Death Metal',
+  'Soundtrack',
+  'Ambient',
+  'Trip-Hop',
+  'Vocal',
+  'Jazz-Funk',
+  'Fusion',
+  'Trance',
+  'Classical',
+  'Instrumental',
+  'House',
+  'Game',
+  'Sound Clip',
+  'Gospel',
+  'Noise',
+  'Soul',
+  'Punk',
+  'Space',
+  'Meditative',
+  'Alternative Rock',
+  'Bass',
+  'Folk',
+  'Folk-Rock',
+  'National Folk',
+  'Swing',
+  'Fast Fusion',
+  'Bebop',
+  'Latin',
+  'Revival',
+  'Celtic',
+  'Bluegrass',
+  'Avant-Garde',
+  'Gothic Rock',
+  'Progressive Rock',
+  'Psychedelic Rock',
+  'Symphonic Rock',
+  'Slow Rock',
+  'Big Band',
+  'Chorus',
+  'Easy Listening',
+  'Acoustic',
+  'Humour',
+  'Speech',
+  'Opera',
+  'Chamber Music',
+  'Sonata',
+  'Symphony',
+  'Dance Hall',
+  'Club',
+  'Tango',
+  'Samba',
+  'Folklore',
+  'Ballad',
+  'Power Ballad',
+  'Freestyle',
+  'Duet',
+  'Punk Rock',
+  'Drum Solo',
+  'Acapella',
+  'Euro-House',
+  'Dancehall',
+  'K-Pop',
+  'J-Pop'
+];
+
 const emit = defineEmits<{
   'toggle-detached': [];
 }>();
@@ -442,6 +554,34 @@ const editingMetadataFileName = computed(() => {
 
   return extractNameFromPath(track.location);
 });
+
+const genreFilter = computed(() => metadataEditorForm.value.genre.trim().toLowerCase());
+const genreDropdownOpen = ref(false);
+const filteredGenreOptions = computed(() => {
+  if (!genreDropdownOpen.value) {
+    return [];
+  }
+
+  const filter = genreFilter.value;
+  if (!filter) {
+    return genreOptions.slice(0, 14);
+  }
+
+  return genreOptions
+    .filter((genre) => genre.toLowerCase().includes(filter))
+    .slice(0, 14);
+});
+
+function closeGenreDropdown() {
+  window.setTimeout(() => {
+    genreDropdownOpen.value = false;
+  }, 120);
+}
+
+function selectGenreOption(genre: string) {
+  metadataEditorForm.value.genre = genre;
+  genreDropdownOpen.value = false;
+}
 
 const hasTracks = computed(() => playlist.value.length > 0);
 const canGoNext = computed(() => {
@@ -3228,7 +3368,16 @@ onBeforeUnmount(() => {
   max-width: 100%;
   min-height: min(420px, calc(100vh - 32px));
   max-height: min(90vh, calc(100vh - 32px));
-  overflow: auto;
+  overflow: visible;
+  position: relative;
+}
+
+.agentamp-modal-form {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  max-height: calc(90vh - 120px);
+  overflow: visible;
 }
 
 .agentamp-modal-header {
@@ -3272,6 +3421,63 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
   border-radius: 4px;
   font-size: 12px;
+}
+
+.agentamp-genre-input-wrap {
+  position: relative;
+}
+
+.agentamp-genre-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--color-agentamp-bg);
+  border-color: var(--color-agentamp-track-row-border);
+  color: inherit;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.agentamp-genre-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.agentamp-genre-options {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  border: 1px solid var(--color-agentamp-track-row-border);
+  border-radius: 6px;
+  background: var(--color-agentamp-bg);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.16);
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 150;
+}
+
+.agentamp-genre-input-wrap {
+  position: relative;
+  z-index: 1;
+}
+
+.agentamp-genre-option {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.agentamp-genre-option:hover,
+.agentamp-genre-option:focus {
+  background: var(--color-agentamp-track-hover-bg);
 }
 
 .agentamp-modal-actions {

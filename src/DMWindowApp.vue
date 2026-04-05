@@ -84,6 +84,7 @@ import type { DMChat, FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import type { AudioConfig } from './types/chat';
 import { useDirectMessage } from './composables/useDirectMessage';
+import { useTheme } from './composables/useTheme';
 
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
@@ -111,6 +112,7 @@ const runtimeRoomId = ref('');
 const runtimeAudioConfig = ref<AudioConfig | null>(null);
 const dmRuntime = shallowRef<ReturnType<typeof useDirectMessage> | null>(null);
 const runtimeMqttClient = ref<mqtt.MqttClient | null>(null);
+const { applyTheme } = useTheme();
 
 let webChannel: BroadcastChannel | null = null;
 let cleanupTauriListener: (() => void) | null = null;
@@ -179,7 +181,27 @@ function hasVideoCallActivity(chat: DMChat): boolean {
   return hasLocalVideoTrack || hasRemoteVideoTrack;
 }
 
-const viewActiveChats = computed(() => dmRuntime.value?.activeChats.value ?? activeChats.value);
+function toConnectedChatMap(source: Map<string, DMChat>): Map<string, DMChat> {
+  const next = new Map<string, DMChat>();
+  for (const [user, chat] of source.entries()) {
+    next.set(user, {
+      ...chat,
+      // Keep controls enabled while runtime transport catches up.
+      isConnected: true,
+    });
+  }
+
+  return next;
+}
+
+const viewActiveChats = computed(() => {
+  const runtimeChats = dmRuntime.value?.activeChats.value;
+  if (runtimeChats && runtimeChats.size > 0) {
+    return runtimeChats;
+  }
+
+  return toConnectedChatMap(activeChats.value);
+});
 const viewPendingRequests = computed(() => dmRuntime.value?.pendingRequests.value ?? pendingRequests.value);
 const viewPendingAudioCalls = computed(() => dmRuntime.value?.pendingAudioCalls.value ?? pendingAudioCalls.value);
 const viewPendingVideoCalls = computed(() => dmRuntime.value?.pendingVideoCalls.value ?? pendingVideoCalls.value);
@@ -234,7 +256,7 @@ const hasActiveCall = computed(() => {
   const hasLiveRemote = chat.remoteMediaStream?.getTracks().some((track) => track.readyState === 'live') ?? false;
   return Boolean(chat.callStartTime) || chat.videoCallActive || hasLiveLocal || hasLiveRemote;
 });
-const canRequestCalls = computed(() => Boolean(activeDMChat.value?.isConnected) && !hasActiveCall.value);
+const canRequestCalls = computed(() => Boolean(activeDMUser.value) && !hasActiveCall.value);
 const activeCallDurationLabel = computed(() => formatDuration(activeDMChat.value?.callDuration ?? 0));
 
 const pageTitle = computed(() => {
@@ -393,6 +415,11 @@ function applyState(payload: DMWindowStatePayload) {
 
   const nextTarget = lockedTarget ?? payload.targetUser ?? null;
   targetUser.value = nextTarget;
+
+  if (payload.audioConfig?.theme) {
+    applyTheme(payload.audioConfig.theme, { persist: false });
+  }
+
   ensureDMRuntime(payload);
 
   const stateChats = nextTarget

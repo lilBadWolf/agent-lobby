@@ -366,6 +366,16 @@ const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
+const DM_LOG_PREFIX = '[AppDM]';
+
+function dmLog(message: string, details?: unknown) {
+  if (details === undefined) {
+    console.log(`${DM_LOG_PREFIX} ${message}`);
+    return;
+  }
+
+  console.log(`${DM_LOG_PREFIX} ${message}`, details);
+}
 
 // DM system
 const openDMWindowUsers = ref<Set<string>>(new Set());
@@ -1157,33 +1167,39 @@ function handleCloseLobby(rawLobbyId: string) {
 }
 
 async function handleDMRequest(user: string) {
+  dmLog('handleDMRequest invoked', { user, hasDmRuntime: Boolean(dm.value) });
   if (dm.value) {
     const targetPresence = Object.values(users).find(
       (presence) => presence.username.toLowerCase() === user.toLowerCase()
     );
 
     if (targetPresence?.isAway) {
+      dmLog('handleDMRequest aborted: target away', { user: targetPresence.username });
       addSystemMessage(`${targetPresence.username} IS CURRENTLY AWAY.`);
       return;
     }
 
     if (targetPresence && !targetPresence.dmAvailable) {
+      dmLog('handleDMRequest aborted: target unavailable', { user: targetPresence.username });
       addSystemMessage(`${targetPresence.username} IS NOT ACCEPTING DIRECT MESSAGES.`);
       return;
     }
 
     // Clicking a yellow (pending) DM bubble cancels that outgoing request.
     if (dmOutgoingRequests.value.includes(user)) {
+      dmLog('handleDMRequest cancelling outgoing request', { user });
       dm.value.cancelDMRequest(user);
       return;
     }
 
     // Check if chat already exists
     if (dm.value.activeChats.value.has(user)) {
+      dmLog('handleDMRequest focusing existing chat', { user });
       // Jump to existing chat
       focusedDMUser.value = user;
       await openDMWindow(user);
     } else {
+      dmLog('handleDMRequest creating new request', { user });
       // Start new DM request
       await dm.value.requestDM(user);
     }
@@ -1334,6 +1350,7 @@ async function initializeDMWindowActionListener() {
 
   const { listen } = await import('@tauri-apps/api/event');
   cleanupDMActionListener = await listen<DMWindowAction>(DM_WINDOW_ACTION_EVENT, (event) => {
+    dmLog('received tauri dm-window-action', event.payload);
     handleDMWindowAction(event.payload);
   });
 }
@@ -1343,6 +1360,14 @@ async function emitDMWindowState() {
   if (openUsers.length === 0) {
     return;
   }
+
+  dmLog('emitDMWindowState', {
+    openUsers,
+    activeChats: dmActiveChats.value.size,
+    pendingRequests: dmPendingRequests.value.length,
+    pendingAudioCalls: dmPendingAudioCalls.value.length,
+    pendingVideoCalls: dmPendingVideoCalls.value.length,
+  });
 
   if (hasTauriWindow) {
     const { emitTo } = await import('@tauri-apps/api/event');
@@ -1714,6 +1739,8 @@ async function openDMWindow(user: string) {
     return;
   }
 
+  dmLog('openDMWindow', { user: normalizedUser });
+
   focusedDMUser.value = normalizedUser;
 
   if (hasTauriWindow) {
@@ -1790,6 +1817,8 @@ function handleDMWindowAction(action: DMWindowAction | undefined) {
   if (!action || !dm.value) {
     return;
   }
+
+  dmLog('handleDMWindowAction', action);
 
   switch (action.type) {
     case 'windowReady':

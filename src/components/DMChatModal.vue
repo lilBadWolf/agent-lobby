@@ -546,8 +546,16 @@ function sendMessage() {
 
   const chat = getCurrentChat();
   if (!chat) {
+    console.log('[DMChatModal] sendMessage aborted: no current chat', { currentTab: currentTab.value });
     return;
   }
+
+  console.log('[DMChatModal] sendMessage emit', {
+    user: currentTab.value,
+    length: messageInput.value.trim().length,
+    effect: props.dmChatEffect,
+    connected: chat.isConnected,
+  });
 
   emit('sendMessage', currentTab.value, messageInput.value.trim(), props.dmChatEffect);
   messageInput.value = '';
@@ -585,6 +593,12 @@ function handleVideoWindowSendMessage(message: string) {
   const user = activeVideoCallUser.value;
   const trimmed = message.trim();
   if (!user || !trimmed) return;
+
+  console.log('[DMChatModal] handleVideoWindowSendMessage emit', {
+    user,
+    length: trimmed.length,
+    effect: props.dmChatEffect,
+  });
 
   emit('sendMessage', user, trimmed, props.dmChatEffect);
 }

@@ -41,10 +41,22 @@ export function useDirectMessage(
   const signalQueue = new Map<string, any[]>();
   const callTimers = new Map<string, NodeJS.Timeout>();
   const pendingOutgoingFiles = new Map<string, { user: string; file: File }>();
+  const pendingTextMessages = new Map<string, Array<{ messageId: string; message: string; effect: string; duration: number }>>();
   let messageHandlerRegistered = false;
   let noticeIdCounter = 0;
   const deniedRequestTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const isPresenceRuntime = options?.runtimeMode === 'presence';
+
+  function dmLog(message: string, details?: unknown) {
+    const mode = isPresenceRuntime ? 'presence' : 'full';
+    const prefix = `[DM:${mode}:${username.value || 'unknown'}]`;
+    if (details === undefined) {
+      console.log(`${prefix} ${message}`);
+      return;
+    }
+
+    console.log(`${prefix} ${message}`, details);
+  }
 
   function createEmptyChat(user: string): DMChat {
     return {
@@ -303,6 +315,24 @@ export function useDirectMessage(
       if (isPresenceRuntime) {
         return;
       }
+      dmLog(`received video-request from ${fromUser}`, {
+        hasOffer: Boolean(data.offer),
+      });
+      // Create peer connection and handle offer from video request.
+      let rtcConn = rtcConnections.get(fromUser);
+      if (!rtcConn) {
+        rtcConn = createRTCConnection(fromUser, false);
+        rtcConnections.set(fromUser, rtcConn);
+      }
+
+      if (data.offer) {
+        try {
+          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+        } catch (e) {
+          console.error('Failed to set remote description for video request:', e);
+        }
+      }
+
       // Add to pending video calls
       const chat = activeChats.value.get(fromUser);
       if (chat) {
@@ -316,8 +346,22 @@ export function useDirectMessage(
       if (isPresenceRuntime) {
         return;
       }
+      dmLog(`received accept-video from ${fromUser}`, {
+        hasAnswer: Boolean(data.answer),
+      });
       pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
       clearCallRequestNotice(fromUser, 'video-call');
+
+      // Acceptor accepted our video call and may include an SDP answer.
+      const rtcConn = rtcConnections.get(fromUser);
+      if (rtcConn && data.answer) {
+        try {
+          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+        } catch (e) {
+          console.error('Failed to set remote description for accept-video:', e);
+        }
+      }
+
       pushNotice(`${fromUser} accepted your video call`, 'call-status', fromUser);
     } else if (data.type === 'video-reject') {
       if (isPresenceRuntime) {
@@ -441,12 +485,15 @@ export function useDirectMessage(
     }
 
     dataChannel.onopen = () => {
-      console.log(`Data channel opened with ${otherUser}`);
+      dmLog(`data channel opened with ${otherUser}`);
       const chat = activeChats.value.get(otherUser);
       if (chat) {
         chat.isConnected = true;
         chat.dataChannel = dataChannel;
+        setOrUpdateChat(otherUser, chat);
       }
+
+      flushPendingTextMessages(otherUser, dataChannel);
     };
 
     dataChannel.onmessage = (event) => {
@@ -529,7 +576,7 @@ export function useDirectMessage(
     };
 
     dataChannel.onerror = (event) => {
-      console.error(`Data channel error with ${otherUser}:`, event);
+      console.error(`[DM] Data channel error with ${otherUser}:`, event);
     };
 
     dataChannel.onclose = () => {
@@ -813,6 +860,95 @@ export function useDirectMessage(
     return false;
   }
 
+  function queueTextMessage(user: string, payload: { messageId: string; message: string; effect: string; duration: number }) {
+    const existing = pendingTextMessages.get(user) ?? [];
+    existing.push(payload);
+    pendingTextMessages.set(user, existing);
+    dmLog(`queued message for ${user}`, { pending: existing.length, messageId: payload.messageId });
+  }
+
+  function flushPendingTextMessages(user: string, channel?: RTCDataChannel | null) {
+    const queued = pendingTextMessages.get(user);
+    if (!queued || queued.length === 0) {
+      return;
+    }
+
+    const chat = activeChats.value.get(user);
+    const sendChannel = resolveOpenDataChannel(user, channel ?? chat?.dataChannel);
+    if (!chat || !sendChannel || sendChannel.readyState !== 'open') {
+      return;
+    }
+
+    dmLog(`flushing queued messages for ${user}`, { count: queued.length });
+
+    for (const payload of queued) {
+      try {
+        sendChannel.send(JSON.stringify({
+          u: username.value,
+          m: payload.message,
+          e: payload.effect,
+          t: payload.duration,
+          id: payload.messageId
+        }));
+
+        chat.pendingDisplayMessages.push({
+          id: payload.messageId,
+          text: payload.message
+        });
+
+        chat.messages.push({
+          user: username.value,
+          message: payload.message,
+          isSystem: false,
+          effect: payload.effect,
+          duration: payload.duration,
+          messageId: payload.messageId
+        });
+      } catch (error) {
+        console.error(`Failed to flush queued message to ${user}:`, error);
+        return;
+      }
+    }
+
+    setOrUpdateChat(user, chat);
+    pendingTextMessages.delete(user);
+  }
+
+  async function ensureDirectLine(targetUser: string) {
+    if (isPresenceRuntime || !mqttClient) {
+      return;
+    }
+
+    ensurePresenceChat(targetUser);
+
+    const existingConnection = rtcConnections.get(targetUser);
+    const existingChannel = resolveOpenDataChannel(targetUser, existingConnection?.dataChannel ?? null);
+    if (existingChannel && existingChannel.readyState === 'open') {
+      return;
+    }
+
+    let rtcConn = existingConnection;
+    if (!rtcConn) {
+      rtcConn = createRTCConnection(targetUser, true);
+      rtcConnections.set(targetUser, rtcConn);
+      dmLog(`created initiator rtc connection for ${targetUser} during ensureDirectLine`);
+    }
+
+    const localDescriptionType = rtcConn.peerConnection.localDescription?.type;
+    if (localDescriptionType === 'offer') {
+      return;
+    }
+
+    try {
+      const offer = await rtcConn.peerConnection.createOffer();
+      await rtcConn.peerConnection.setLocalDescription(offer);
+      mqttClient.publish(getSignalTopic(targetUser), JSON.stringify(offer));
+      dmLog(`published bootstrap offer for ${targetUser}`);
+    } catch (error) {
+      console.error(`Failed to bootstrap direct line for ${targetUser}:`, error);
+    }
+  }
+
   function acceptFileTransfer(fromUser: string, fileId: string) {
     if (isPresenceRuntime) return;
 
@@ -968,6 +1104,7 @@ export function useDirectMessage(
 
       if (mqttClient) {
         mqttClient.publish(getSignalTopic(targetUser), JSON.stringify(offer));
+        dmLog(`published initiator offer to ${targetUser}`);
       }
 
       // Flush any queued signals (answers/candidates)
@@ -1072,7 +1209,10 @@ export function useDirectMessage(
     if (isPresenceRuntime) return;
 
     const chat = activeChats.value.get(toUser);
-    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+    if (!chat) {
+      dmLog(`sendDMMessage aborted: no chat for ${toUser}`);
+      return;
+    }
 
     // Generate unique message ID
     const messageId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1092,16 +1232,23 @@ export function useDirectMessage(
 
     const duration = getAnimationDuration(effect, message.length);
 
-    const payload = JSON.stringify({
-      u: username.value,
-      m: message,
-      e: effect,
-      t: duration,
-      id: messageId
-    });
+    const sendChannel = resolveOpenDataChannel(toUser, chat.dataChannel);
+
+    if (!sendChannel || sendChannel.readyState !== 'open') {
+      queueTextMessage(toUser, { messageId, message, effect, duration });
+      void ensureDirectLine(toUser);
+      pushNotice(`Re-establishing direct line with ${toUser}...`, 'info', toUser, undefined, 1800);
+      return;
+    }
 
     try {
-      chat.dataChannel.send(payload);
+      sendChannel.send(JSON.stringify({
+        u: username.value,
+        m: message,
+        e: effect,
+        t: duration,
+        id: messageId
+      }));
       // Add to pending display messages queue
       chat.pendingDisplayMessages.push({
         id: messageId,
@@ -1116,6 +1263,7 @@ export function useDirectMessage(
         duration: duration,
         messageId: messageId
       });
+      setOrUpdateChat(toUser, chat);
     } catch (e) {
       console.error('Failed to send message:', e);
     }
@@ -1288,9 +1436,17 @@ export function useDirectMessage(
 
     const chat = activeChats.value.get(targetUser);
     if (!chat) {
+      dmLog(`requestAudioCall creating presence chat for ${targetUser}`);
+      ensurePresenceChat(targetUser);
+    }
+
+    const activeChat = activeChats.value.get(targetUser);
+    if (!activeChat) {
       pushNotice(`No active DM with ${targetUser}`);
       return;
     }
+
+    dmLog(`requestAudioCall start for ${targetUser}`);
 
     try {
       // Get audio track from default or selected device
@@ -1310,7 +1466,7 @@ export function useDirectMessage(
         pushNotice('Microphone unavailable — joining as listener only.');
       }
 
-      chat.localMediaStream = stream;
+      activeChat.localMediaStream = stream;
 
       // Create or get peer connection and add audio tracks
       let rtcConn = rtcConnections.get(targetUser);
@@ -1339,6 +1495,7 @@ export function useDirectMessage(
       // Start call timer for initiator
       startCallTimer(targetUser);
 
+      setOrUpdateChat(targetUser, activeChat);
       pushNotice(`Audio call requested to ${targetUser}`);
     } catch (error) {
       console.error('Failed to get audio:', error);
@@ -1447,9 +1604,17 @@ export function useDirectMessage(
 
     const chat = activeChats.value.get(targetUser);
     if (!chat) {
+      dmLog(`requestVideoCall creating presence chat for ${targetUser}`);
+      ensurePresenceChat(targetUser);
+    }
+
+    const activeChat = activeChats.value.get(targetUser);
+    if (!activeChat) {
       pushNotice(`No active DM with ${targetUser}`);
       return;
     }
+
+    dmLog(`requestVideoCall start for ${targetUser}`);
 
     try {
       const noMicSelected = audioConfig?.audioInputDeviceId === NO_MIC_DEVICE_ID;
@@ -1481,24 +1646,33 @@ export function useDirectMessage(
       }
 
       console.log('Initiator setting local stream for video call, tracks:', stream.getTracks());
-      chat.localMediaStream = stream;
-      chat.videoCallActive = true;
-      setOrUpdateChat(targetUser, chat);
+      activeChat.localMediaStream = stream;
+      activeChat.videoCallActive = true;
+      setOrUpdateChat(targetUser, activeChat);
 
       // Add any available local tracks to peer connection
-      const rtcConn = rtcConnections.get(targetUser);
+      let rtcConn = rtcConnections.get(targetUser);
+      if (!rtcConn) {
+        rtcConn = createRTCConnection(targetUser, true);
+        rtcConnections.set(targetUser, rtcConn);
+      }
       if (rtcConn) {
         console.log('Initiator adding local tracks to peer connection');
         stream.getTracks().forEach(track => {
           rtcConn.peerConnection.addTrack(track, stream);
         });
-      }
 
-      // Send video request signal
-      mqttClient.publish(
-        getSignalTopic(targetUser),
-        JSON.stringify({ type: 'video-request' })
-      );
+        // Explicitly renegotiate from requester, mirroring audio-request flow.
+        const offer = await rtcConn.peerConnection.createOffer();
+        await rtcConn.peerConnection.setLocalDescription(offer);
+
+        mqttClient.publish(
+          getSignalTopic(targetUser),
+          JSON.stringify({ type: 'video-request', offer })
+        );
+
+        dmLog(`published video-request offer to ${targetUser}`);
+      }
 
       // Start call timer for initiator
       startCallTimer(targetUser);
@@ -1557,7 +1731,13 @@ export function useDirectMessage(
         setOrUpdateChat(fromUser, chat);
       }
 
-      const rtcConn = rtcConnections.get(fromUser);
+      let rtcConn = rtcConnections.get(fromUser);
+      if (!rtcConn) {
+        rtcConn = createRTCConnection(fromUser, false);
+        rtcConnections.set(fromUser, rtcConn);
+        flushSignalQueue(fromUser, rtcConn.peerConnection);
+      }
+
       if (rtcConn && chat) {
         // Add any available local tracks to peer connection
         console.log('Adding local tracks to peer connection');
@@ -1565,25 +1745,17 @@ export function useDirectMessage(
           rtcConn.peerConnection.addTrack(track, stream);
         });
 
-        // Renegotiate only from the acceptor side to avoid offer glare.
-        try {
-          const offer = await rtcConn.peerConnection.createOffer();
-          await rtcConn.peerConnection.setLocalDescription(offer);
-          mqttClient.publish(
-            getSignalTopic(fromUser),
-            JSON.stringify(offer)
-          );
-          console.log('Acceptor created and sent renegotiation offer');
-        } catch (e) {
-          console.error('Failed to renegotiate video on accept:', e);
-        }
-      }
+        // Answer requester's offer (same semantics as accept-audio).
+        const answer = await rtcConn.peerConnection.createAnswer();
+        await rtcConn.peerConnection.setLocalDescription(answer);
 
-      // Send accept signal
-      mqttClient.publish(
-        getSignalTopic(fromUser),
-        JSON.stringify({ type: 'accept-video' })
-      );
+        mqttClient.publish(
+          getSignalTopic(fromUser),
+          JSON.stringify({ type: 'accept-video', answer })
+        );
+
+        dmLog(`published accept-video answer to ${fromUser}`);
+      }
 
       // Start call duration timer
       startCallTimer(fromUser);
@@ -1684,6 +1856,7 @@ export function useDirectMessage(
     });
     rtcConnections.clear();
     signalQueue.clear();
+    pendingTextMessages.clear();
     pendingOutgoingFiles.clear();
     activeChats.value.clear();
     outgoingRequests.value = [];
@@ -1731,6 +1904,7 @@ export function useDirectMessage(
     rejectFileTransfer,
     markFileSaved,
     removeFileTransfer,
+    ensureDirectLine,
     cleanup
   };
 }

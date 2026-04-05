@@ -93,6 +93,7 @@ const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
 const DM_WINDOW_LOG_PREFIX = '[DMWindowApp]';
 let allowWindowClose = false;
 let cleanupForceCloseListener: (() => void) | null = null;
+let orphanWindowCloseTimeoutId: number | null = null;
 
 const activeChats = ref<Map<string, DMChat>>(new Map());
 const pendingRequests = ref<DMWindowStatePayload['pendingRequests']>([]);
@@ -112,6 +113,7 @@ const runtimeRoomId = ref('');
 const runtimeAudioConfig = ref<AudioConfig | null>(null);
 const dmRuntime = shallowRef<ReturnType<typeof useDirectMessage> | null>(null);
 const runtimeMqttClient = ref<mqtt.MqttClient | null>(null);
+const hasReceivedInitialState = ref(false);
 const { applyTheme } = useTheme();
 
 let webChannel: BroadcastChannel | null = null;
@@ -259,6 +261,26 @@ const hasActiveCall = computed(() => {
 const canRequestCalls = computed(() => Boolean(activeDMUser.value) && !hasActiveCall.value);
 const activeCallDurationLabel = computed(() => formatDuration(activeDMChat.value?.callDuration ?? 0));
 
+const hasRenderableDMContext = computed(() => {
+  if (viewActiveChats.value.size > 0) {
+    return true;
+  }
+
+  if (viewPendingRequests.value.length > 0) {
+    return true;
+  }
+
+  if (viewPendingAudioCalls.value.length > 0 || viewPendingVideoCalls.value.length > 0) {
+    return true;
+  }
+
+  if (viewOutgoingRequests.value.length > 0) {
+    return true;
+  }
+
+  return false;
+});
+
 const pageTitle = computed(() => {
   const activeUsers = Array.from(viewActiveChats.value.keys());
   const currentUser = viewUsername.value || 'AGENT';
@@ -345,6 +367,11 @@ function teardownDMRuntime() {
 
 function ensureDMRuntime(payload: DMWindowStatePayload) {
   runtimeUsernameRef.value = payload.username;
+  debugLog('ensureDMRuntime invoked', {
+    username: payload.username,
+    roomId: payload.roomId,
+    mqttServer: payload.mqttServer,
+  });
 
   if (!runtimeAudioConfig.value) {
     runtimeAudioConfig.value = { ...payload.audioConfig };
@@ -397,6 +424,7 @@ function ensureDMRuntime(payload: DMWindowStatePayload) {
 }
 
 function applyState(payload: DMWindowStatePayload) {
+  hasReceivedInitialState.value = true;
   if (debugVerboseEnabled()) {
     debugLog('applyState payload received', {
       activeChats: payload.activeChats.length,
@@ -439,6 +467,11 @@ function applyState(payload: DMWindowStatePayload) {
 
     return [chat.user, nextChat];
   }));
+
+  for (const chat of stateChats) {
+    void dmRuntime.value?.ensureDirectLine(chat.user);
+  }
+
   pendingRequests.value = nextTarget
     ? payload.pendingRequests.filter((request) => sameDMUser(request.from, nextTarget))
     : payload.pendingRequests;
@@ -457,6 +490,52 @@ function applyState(payload: DMWindowStatePayload) {
   username.value = payload.username;
   dmChatEffect.value = payload.dmChatEffect;
   focusedDMUser.value = nextTarget ?? payload.focusedDMUser;
+  scheduleOrphanWindowCheck();
+}
+
+function clearOrphanWindowTimer() {
+  if (orphanWindowCloseTimeoutId !== null) {
+    window.clearTimeout(orphanWindowCloseTimeoutId);
+    orphanWindowCloseTimeoutId = null;
+  }
+}
+
+async function closeOrphanWindow(reason: string) {
+  debugLog('closing orphan DM window', { reason, targetUser: targetUser.value });
+  await sendAction({ type: 'windowClosed', user: targetUser.value ?? undefined });
+
+  if (isTauriRuntime()) {
+    allowWindowClose = true;
+    const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    await getCurrentWebviewWindow().close();
+    return;
+  }
+
+  window.close();
+}
+
+function scheduleOrphanWindowCheck() {
+  clearOrphanWindowTimer();
+
+  if (!targetUser.value) {
+    return;
+  }
+
+  if (!hasReceivedInitialState.value) {
+    return;
+  }
+
+  if (hasRenderableDMContext.value) {
+    return;
+  }
+
+  orphanWindowCloseTimeoutId = window.setTimeout(() => {
+    if (hasRenderableDMContext.value) {
+      return;
+    }
+
+    void closeOrphanWindow('no-active-dm-context');
+  }, 1200);
 }
 
 async function sendAction(action: DMWindowAction) {
@@ -475,87 +554,108 @@ async function sendAction(action: DMWindowAction) {
 }
 
 function handleAcceptDM(user: string) {
+  debugLog('handleAcceptDM', { user });
   dmRuntime.value?.acceptDM(user);
 }
 
 function handleRejectDM(user: string) {
+  debugLog('handleRejectDM', { user });
   dmRuntime.value?.rejectDM(user);
 }
 
 function handleAcceptAudio(user: string) {
+  debugLog('handleAcceptAudio', { user });
   void dmRuntime.value?.acceptAudioCall(user);
 }
 
 function handleRejectAudio(user: string) {
+  debugLog('handleRejectAudio', { user });
   dmRuntime.value?.rejectAudioCall(user);
 }
 
 function handleAcceptVideo(user: string) {
+  debugLog('handleAcceptVideo', { user });
   void dmRuntime.value?.acceptVideoCall(user);
 }
 
 function handleRejectVideo(user: string) {
+  debugLog('handleRejectVideo', { user });
   dmRuntime.value?.rejectVideoCall(user);
 }
 
 function handleCancelRequest(user: string) {
+  debugLog('handleCancelRequest', { user });
   dmRuntime.value?.cancelDMRequest(user);
 }
 
 function handleSendMessage(user: string, message: string, effect: string) {
+  debugLog('handleSendMessage', { user, length: message.length, effect });
   dmRuntime.value?.sendDMMessage(user, message, effect);
 }
 
 function handleTyping(user: string) {
+  debugLog('handleTyping', { user });
   dmRuntime.value?.sendTyping(user);
 }
 
 function handleStopTyping(user: string) {
+  debugLog('handleStopTyping', { user });
   dmRuntime.value?.sendStopTyping(user);
 }
 
 function handleCancelPendingMessages(user: string) {
+  debugLog('handleCancelPendingMessages', { user });
   dmRuntime.value?.cancelPendingMessages(user);
 }
 
 function handleCloseDM(user: string) {
+  debugLog('handleCloseDM', { user });
   dmRuntime.value?.closeDM(user);
   void sendAction({ type: 'closeDm', user });
 }
 
 function handleRequestAudio(user: string) {
+  debugLog('handleRequestAudio', { user });
   void dmRuntime.value?.requestAudioCall(user);
 }
 
 function handleToggleAudio(user: string, enabled: boolean) {
+  debugLog('handleToggleAudio', { user, enabled });
   void dmRuntime.value?.toggleAudioStream(user, enabled);
 }
 
 function handleRequestVideo(user: string) {
+  debugLog('handleRequestVideo', { user });
   void dmRuntime.value?.requestVideoCall(user);
 }
 
 function handleToggleVideo(user: string, enabled: boolean) {
+  debugLog('handleToggleVideo', { user, enabled });
   void dmRuntime.value?.toggleVideoStream(user, enabled);
 }
 
 function handleSendFile(user: string, file: File) {
+  debugLog('handleSendFile', { user, name: file.name, size: file.size });
   void dmRuntime.value?.sendFile(user, file);
 }
 
 function handleAcceptFile(user: string, fileId: string) {
+  debugLog('handleAcceptFile', { user, fileId });
   dmRuntime.value?.acceptFileTransfer(user, fileId);
 }
 
 function handleRejectFile(user: string, fileId: string) {
+  debugLog('handleRejectFile', { user, fileId });
   dmRuntime.value?.rejectFileTransfer(user, fileId);
 }
 
 function handleFileSaved(user: string, fileId: string) {
+  debugLog('handleFileSaved', { user, fileId });
   dmRuntime.value?.markFileSaved(user, fileId);
 }
 
 function handleRemoveFile(user: string, fileId: string) {
+  debugLog('handleRemoveFile', { user, fileId });
   dmRuntime.value?.removeFileTransfer(user, fileId);
 }
 
@@ -596,6 +696,7 @@ async function handleTitlebarRequestAudio() {
     return;
   }
 
+  debugLog('handleTitlebarRequestAudio', { user });
   handleRequestAudio(user);
 }
 
@@ -605,6 +706,7 @@ async function handleTitlebarRequestVideo() {
     return;
   }
 
+  debugLog('handleTitlebarRequestVideo', { user });
   handleRequestVideo(user);
 }
 
@@ -614,6 +716,7 @@ async function handleTitlebarEndCall() {
     return;
   }
 
+  debugLog('handleTitlebarEndCall', { user });
   dmRuntime.value?.endCall(user);
 }
 
@@ -700,6 +803,7 @@ onMounted(async () => {
       applyState(event.payload);
     });
     await sendAction({ type: 'windowReady', user: targetUser.value ?? undefined });
+    scheduleOrphanWindowCheck();
     return;
   }
 
@@ -711,9 +815,11 @@ onMounted(async () => {
   }
 
   await sendAction({ type: 'windowReady', user: targetUser.value ?? undefined });
+  scheduleOrphanWindowCheck();
 });
 
 onBeforeUnmount(() => {
+  clearOrphanWindowTimer();
   void sendAction({ type: 'windowClosed', user: targetUser.value ?? undefined });
   teardownDMRuntime();
   if (webMessageListenerBound) {

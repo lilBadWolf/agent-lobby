@@ -2543,7 +2543,7 @@ onBeforeUnmount(() => {
   align-items: stretch;
   flex-shrink: 0;
   border-top: 1px solid var(--color-accent);
-  height: 60px;
+  height: 36px;
   background: var(--color-chat-bg);
 }
 

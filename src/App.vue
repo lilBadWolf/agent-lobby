@@ -381,6 +381,8 @@ function dmLog(message: string, details?: unknown) {
 const openDMWindowUsers = ref<Set<string>>(new Set());
 const dmPopupWindows = new Map<string, Window>();
 const dmPopupWatchIntervals = new Map<string, number>();
+// Tracks Tauri window labels currently being created to prevent concurrent duplicate creation.
+const inFlightDMWindowLabels = new Set<string>();
 let dmWebChannel: BroadcastChannel | null = null;
 let agentAmpPopupWindow: Window | null = null;
 let agentAmpPopupWatchIntervalId: number | null = null;
@@ -898,13 +900,15 @@ function quit() {
     }
 
     try {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const { WebviewWindow, getAllWebviewWindows } = await import('@tauri-apps/api/webviewWindow');
 
+      // Enumerate all windows directly from Tauri so ghost windows (those that
+      // were knocked out of openDMWindowUsers by an error-handler race) are also
+      // captured and properly closed.
+      const allWindows = await getAllWebviewWindows();
+      const dmWindowHandles = allWindows.filter((w) => w.label.startsWith(DM_WINDOW_LABEL + '-'));
       const agentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
-      const dmWindows = await Promise.all(
-        Array.from(openDMWindowUsers.value).map((user) => WebviewWindow.getByLabel(dmWindowLabelForUser(user)))
-      );
-      const hasDmWindows = dmWindows.some((windowHandle) => Boolean(windowHandle));
+      const hasDmWindows = dmWindowHandles.length > 0;
 
       if (agentAmpWindow) {
         const agentAmpChannel = new BroadcastChannel(AGENTAMP_FORCE_CLOSE_CHANNEL);
@@ -912,6 +916,7 @@ function quit() {
         agentAmpChannel.close();
       }
 
+      // Always broadcast force-close to every DM window (tracked or ghost).
       if (hasDmWindows) {
         const dmChannel = new BroadcastChannel(DM_WINDOW_FORCE_CLOSE_CHANNEL);
         dmChannel.postMessage('force-close');
@@ -919,29 +924,23 @@ function quit() {
       }
 
       await new Promise<void>((resolve) => {
-        let closedCount = 0;
-        const expectedCount = (agentAmpWindow ? 1 : 0) + (hasDmWindows ? 1 : 0);
+        const expectedAgentAmp = agentAmpWindow ? 1 : 0;
+        const expectedDm = hasDmWindows ? dmWindowHandles.length : 0;
 
-        if (expectedCount === 0) {
+        if (expectedAgentAmp + expectedDm === 0) {
           resolve();
           return;
         }
 
         const checkInterval = setInterval(async () => {
+          const currentAll = await getAllWebviewWindows().catch(() => [] as typeof allWindows);
+          const currentDmStillOpen = currentAll.some((w) => w.label.startsWith(DM_WINDOW_LABEL + '-'));
           const currentAgentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL).catch(() => null);
-          const currentDmWindows = await Promise.all(
-            Array.from(openDMWindowUsers.value).map((user) => WebviewWindow.getByLabel(dmWindowLabelForUser(user)).catch(() => null))
-          );
-          const currentHasDmWindows = currentDmWindows.some((windowHandle) => Boolean(windowHandle));
 
-          if (!currentAgentAmpWindow && agentAmpWindow) {
-            closedCount++;
-          }
-          if (!currentHasDmWindows && hasDmWindows) {
-            closedCount++;
-          }
+          const agentAmpDone = !agentAmpWindow || !currentAgentAmpWindow;
+          const dmDone = !hasDmWindows || !currentDmStillOpen;
 
-          if (closedCount === expectedCount) {
+          if (agentAmpDone && dmDone) {
             clearInterval(checkInterval);
             resolve();
           }
@@ -950,7 +949,7 @@ function quit() {
         setTimeout(() => {
           clearInterval(checkInterval);
           resolve();
-        }, 2000);
+        }, 2500);
       });
 
       const appWindow = getCurrentWindow();
@@ -1210,7 +1209,9 @@ function handleAcceptDM(user: string) {
   if (dm.value) {
     focusedDMUser.value = user;
     dm.value.acceptDM(user);
-    void openDMWindow(user);
+    // openDMWindow is triggered automatically by the connectedDMUsers watcher when
+    // acceptDM adds the user to activeChats. Calling it here too would race with
+    // the watcher and cause "webview already exists" errors.
   }
 }
 
@@ -1746,6 +1747,13 @@ async function openDMWindow(user: string) {
   if (hasTauriWindow) {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const windowLabel = dmWindowLabelForUser(normalizedUser);
+
+    // If creation is already in-flight for this label, do not attempt a second creation.
+    if (inFlightDMWindowLabels.has(windowLabel)) {
+      dmLog('openDMWindow: creation already in-flight, skipping', { user: normalizedUser, windowLabel });
+      return;
+    }
+
     const existingWindow = await WebviewWindow.getByLabel(windowLabel);
     if (existingWindow) {
       await bringDMWindowToFront(existingWindow);
@@ -1753,6 +1761,15 @@ async function openDMWindow(user: string) {
       await emitDMWindowState();
       return;
     }
+
+    // Re-check after the async getByLabel round-trip in case a concurrent call
+    // already started creation while we were awaiting.
+    if (inFlightDMWindowLabels.has(windowLabel)) {
+      dmLog('openDMWindow: creation now in-flight after getByLabel, skipping', { user: normalizedUser });
+      return;
+    }
+
+    inFlightDMWindowLabels.add(windowLabel);
 
     const dmWindowUrl = new URL(window.location.href);
     dmWindowUrl.searchParams.set('view', 'dm');
@@ -1773,17 +1790,34 @@ async function openDMWindow(user: string) {
     });
 
     dmWindow.once('tauri://created', () => {
+      inFlightDMWindowLabels.delete(windowLabel);
       markDMWindowOpen(normalizedUser);
       void emitDMWindowState();
     });
 
     dmWindow.once('tauri://destroyed', () => {
+      inFlightDMWindowLabels.delete(windowLabel);
       markDMWindowClosed(normalizedUser);
     });
 
     dmWindow.once('tauri://error', (error) => {
-      console.error(`Failed to create DM window for ${normalizedUser}:`, error);
-      markDMWindowClosed(normalizedUser);
+      inFlightDMWindowLabels.delete(windowLabel);
+      // If the error is because the window already exists (race between two concurrent
+      // openDMWindow calls), the window IS open — mark it open and bring it to front
+      // rather than marking it closed (which would orphan it from quit cleanup).
+      const errorStr = String((error as { payload?: unknown })?.payload ?? error ?? '');
+      const isAlreadyExists = errorStr.toLowerCase().includes('already exists');
+      if (isAlreadyExists) {
+        dmLog('openDMWindow: window creation race — window already exists, recovering', { user: normalizedUser });
+        markDMWindowOpen(normalizedUser);
+        void WebviewWindow.getByLabel(windowLabel).then((w) => {
+          if (w) void bringDMWindowToFront(w).catch(() => undefined);
+          void emitDMWindowState();
+        });
+      } else {
+        console.error(`Failed to create DM window for ${normalizedUser}:`, error);
+        markDMWindowClosed(normalizedUser);
+      }
     });
 
     return;

@@ -151,13 +151,6 @@
                 @keydown.enter.prevent="handleMessageInputEnter"
               />
               <button
-                v-if="getCurrentChat()?.pendingDisplayMessages.length"
-                class="cancel-btn"
-                @click="emit('cancelPendingMessages', currentTab)"
-              >
-                CANCEL
-              </button>
-              <button
                 class="send-btn"
                 :disabled="!getCurrentChat()?.isConnected"
                 @click="sendMessage"
@@ -1424,7 +1417,7 @@ watch(
 .input-bar {
   display: flex;
   border-top: 1px solid var(--color-accent-muted);
-  height: 50px;
+  height: 36px;
   background: var(--color-chat-surface);
   flex-shrink: 0;
   align-items: center;
@@ -1434,7 +1427,7 @@ watch(
 #dm-modal.presentation-window .input-bar {
   border-top: 1px solid var(--color-dmchatmodal-input-bar-window-border);
   background: var(--color-dmchatmodal-input-bar-window-bg);
-  height: 40px;
+  height: 26px;
 }
 
 #dm-modal.presentation-window .input-bar input {

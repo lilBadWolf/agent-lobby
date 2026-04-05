@@ -76,7 +76,10 @@ function normalizeThemeName(theme: unknown): string {
   return trimmedTheme || DEFAULT_AUDIO_CONFIG.theme;
 }
 
+const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
+
 let activeAutoAwayListenerCleanup: (() => void) | null = null;
+let presenceHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioConfig {
   const normalized = {
@@ -441,6 +444,26 @@ export function useLobbyChat() {
     joinedLobbies.value.forEach((lobbyId) => {
       publishPresenceForLobby(lobbyId);
     });
+  }
+
+  function startPresenceHeartbeat() {
+    stopPresenceHeartbeat();
+    if (!isConnected.value || !client) {
+      return;
+    }
+
+    presenceHeartbeatTimer = setInterval(() => {
+      publishPresence();
+    }, PRESENCE_HEARTBEAT_INTERVAL_MS);
+  }
+
+  function stopPresenceHeartbeat() {
+    if (!presenceHeartbeatTimer) {
+      return;
+    }
+
+    clearInterval(presenceHeartbeatTimer);
+    presenceHeartbeatTimer = null;
   }
 
   async function probeLobbyHandleAvailability(targetRoomId: string, handle: string): Promise<boolean> {
@@ -893,6 +916,12 @@ export function useLobbyChat() {
         subscribeToLobby(lobbyId);
         publishPresenceForLobby(lobbyId);
       });
+
+      startPresenceHeartbeat();
+    });
+
+    client.on('close', () => {
+      stopPresenceHeartbeat();
     });
 
     client.on('message', (topic, payload) => {
@@ -1049,6 +1078,7 @@ export function useLobbyChat() {
 
   function disconnect() {
     clearAutoAwayTimer();
+    stopPresenceHeartbeat();
     if (client && isConnected.value) {
       joinedLobbies.value.forEach((lobbyId) => {
         client!.publish(`${getPresenceTopicPrefix(lobbyId)}${username.value}`, '', { retain: true });
@@ -1061,6 +1091,7 @@ export function useLobbyChat() {
   }
 
   function resetUI() {
+    stopPresenceHeartbeat();
     username.value = '';
     messages.value = [];
     joinedLobbies.value = [];

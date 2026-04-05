@@ -292,10 +292,6 @@
               </div>
             </div>
           </label>
-          <label>
-            TRACK #
-            <input v-model="metadataEditorForm.trackNumber" type="text" />
-          </label>
           <div class="agentamp-modal-actions">
             <button type="button" class="agentamp-btn" @click="closeMetadataEditor">CANCEL</button>
             <button type="submit" class="agentamp-btn" :disabled="metadataEditorSaving">{{ metadataEditorSaving ? 'SAVING...' : 'SAVE' }}</button>
@@ -407,26 +403,63 @@ const genreOptions = [
   'Alternative',
   'Ska',
   'Death Metal',
+  'Pranks',
   'Soundtrack',
+  'Euro-Techno',
   'Ambient',
   'Trip-Hop',
   'Vocal',
-  'Jazz-Funk',
+  'Jazz+Funk',
   'Fusion',
   'Trance',
   'Classical',
   'Instrumental',
+  'Acid',
   'House',
   'Game',
   'Sound Clip',
   'Gospel',
   'Noise',
+  'AlternRock',
+  'Bass',
   'Soul',
   'Punk',
   'Space',
   'Meditative',
-  'Alternative Rock',
-  'Bass',
+  'Instrumental Pop',
+  'Instrumental Rock',
+  'Ethnic',
+  'Gothic',
+  'Darkwave',
+  'Techno-Industrial',
+  'Electronic',
+  'Pop-Folk',
+  'Eurodance',
+  'Dream',
+  'Southern Rock',
+  'Comedy',
+  'Cult',
+  'Gangsta',
+  'Top 40',
+  'Christian Rap',
+  'Pop/Funk',
+  'Jungle',
+  'Native American',
+  'Cabaret',
+  'New Wave',
+  'Psychedelic',
+  'Rave',
+  'Showtunes',
+  'Trailer',
+  'Lo-Fi',
+  'Tribal',
+  'Acid Punk',
+  'Acid Jazz',
+  'Polka',
+  'Retro',
+  'Musical',
+  'Rock & Roll',
+  'Hard Rock',
   'Folk',
   'Folk-Rock',
   'National Folk',
@@ -449,17 +482,23 @@ const genreOptions = [
   'Acoustic',
   'Humour',
   'Speech',
+  'Chanson',
   'Opera',
   'Chamber Music',
   'Sonata',
   'Symphony',
-  'Dance Hall',
+  'Booty Bass',
+  'Primus',
+  'Porn Groove',
+  'Satire',
+  'Slow Jam',
   'Club',
   'Tango',
   'Samba',
   'Folklore',
   'Ballad',
   'Power Ballad',
+  'Rhythmic Soul',
   'Freestyle',
   'Duet',
   'Punk Rock',
@@ -467,8 +506,28 @@ const genreOptions = [
   'Acapella',
   'Euro-House',
   'Dancehall',
-  'K-Pop',
-  'J-Pop'
+  'Goa',
+  'Drum & Bass',
+  'Club-House',
+  'Hardcore',
+  'Terror',
+  'Indie',
+  'BritPop',
+  'Negerpunk',
+  'Polsk Punk',
+  'Beat',
+  'Christian Gangsta Rap',
+  'Heavy Metal',
+  'Black Metal',
+  'Crossover',
+  'Contemporary Christian',
+  'Christian Rock',
+  'Merengue',
+  'Salsa',
+  'Thrash Metal',
+  'Anime',
+  'Jpop',
+  'Synthpop'
 ];
 
 const emit = defineEmits<{
@@ -564,12 +623,10 @@ const filteredGenreOptions = computed(() => {
 
   const filter = genreFilter.value;
   if (!filter) {
-    return genreOptions.slice(0, 14);
+    return genreOptions;
   }
 
-  return genreOptions
-    .filter((genre) => genre.toLowerCase().includes(filter))
-    .slice(0, 14);
+  return genreOptions.filter((genre) => genre.toLowerCase().includes(filter));
 });
 
 function closeGenreDropdown() {

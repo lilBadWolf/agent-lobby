@@ -10,7 +10,12 @@
       </div>
     </div>
 
-    <div v-for="notice in visibleNotices" :key="`notice-${notice.id}`" class="request-card info-card transient-card">
+    <div
+      v-for="notice in visibleNotices"
+      :key="`notice-${notice.id}`"
+      class="request-card transient-card"
+      :class="notice.type === 'call-status' ? 'call-card' : 'info-card'"
+    >
       <div class="request-body">{{ notice.message }}</div>
     </div>
   </div>

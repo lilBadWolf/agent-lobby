@@ -1,5 +1,5 @@
 <template>
-  <div class="video-window">
+  <div class="video-window" :class="{ 'windows-video-workaround': useWindowsVideoWorkaround }">
     <!-- Video Container -->
     <div class="video-container">
       <!-- Remote Audio (hidden, just for audio output) -->
@@ -19,6 +19,11 @@
         muted
         playsinline
       />
+      <canvas
+        v-show="hasRemoteVideoTrack && useWindowsVideoWorkaround"
+        ref="remoteVideoCanvasRef"
+        class="remote-video-canvas"
+      ></canvas>
       <div v-show="!hasRemoteVideoTrack" class="remote-chat-fallback">
         <div ref="remoteFallbackAnimationRef" class="remote-fallback-animation"></div>
       </div>
@@ -44,8 +49,6 @@
             v-show="hasLocalAudioTrack"
             class="pip-control-btn"
             :class="{ 'btn-off': !audioEnabled }"
-            :aria-label="audioEnabled ? 'Mute speaker' : 'Unmute speaker'"
-            :title="audioEnabled ? 'Mute speaker' : 'Unmute speaker'"
             @click="toggleAudio"
           >
             <span aria-hidden="true">{{ audioEnabled ? '🔊' : '🔇' }}</span>
@@ -54,8 +57,6 @@
             v-show="hasLocalVideoTrack"
             class="pip-control-btn"
             :class="{ 'btn-off': !videoEnabled }"
-            :aria-label="videoEnabled ? 'Turn camera off' : 'Turn camera on'"
-            :title="videoEnabled ? 'Turn camera off' : 'Turn camera on'"
             @click="toggleVideo"
           >
             <span aria-hidden="true">{{ videoEnabled ? '📷' : '🚫' }}</span>
@@ -64,7 +65,7 @@
       </div>
 
       <!-- Glitch effect overlay -->
-      <div class="glitch-overlay"></div>
+      <div v-if="!useWindowsVideoWorkaround" class="glitch-overlay"></div>
 
     </div>
   </div>
@@ -104,17 +105,20 @@ const emit = defineEmits<Emits>();
 
 const localVideoRef = ref<HTMLVideoElement>();
 const remoteVideoRef = ref<HTMLVideoElement>();
+const remoteVideoCanvasRef = ref<HTMLCanvasElement>();
 const remoteAudioRef = ref<HTMLAudioElement>();
 const remoteFallbackAnimationRef = ref<HTMLElement>();
 const audioEnabled = ref(true);
 const videoEnabled = ref(true);
 const lastAnimatedRemoteMessageKey = ref('');
-const fallbackLocalPreviewStream = ref<MediaStream | null>(null);
-const localPreviewUnavailable = ref(false);
 const remoteVideoElementStream = ref<MediaStream | null>(null);
 const remoteAudioElementStream = ref<MediaStream | null>(null);
 const remoteTrackRevision = ref(0);
+const localTrackRevision = ref(0);
 let remoteDiagnosticsIntervalId: number | null = null;
+const remoteTransitionSnapshots = new Map<string, string>();
+let lastRemoteVideoFrameProbeKey = '';
+let remoteCanvasFrameId: number | null = null;
 const { playAnimation } = useMessageAnimations();
 
 function debugEnabled(): boolean {
@@ -193,7 +197,96 @@ function describeMediaElement(element: HTMLMediaElement | undefined) {
     muted: element.muted,
     volume: element.volume,
     srcObjectKind: element.srcObject ? element.srcObject.constructor.name : null,
+    videoWidth: element instanceof HTMLVideoElement ? element.videoWidth : undefined,
+    videoHeight: element instanceof HTMLVideoElement ? element.videoHeight : undefined,
   };
+}
+
+function describeVideoVisibility(element: HTMLVideoElement | undefined) {
+  if (!element || typeof window === 'undefined') {
+    return null;
+  }
+
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  const parentRect = element.parentElement?.getBoundingClientRect();
+
+  return {
+    connected: element.isConnected,
+    display: style.display,
+    visibility: style.visibility,
+    opacity: style.opacity,
+    width: rect.width,
+    height: rect.height,
+    offsetWidth: element.offsetWidth,
+    offsetHeight: element.offsetHeight,
+    parentWidth: parentRect?.width ?? null,
+    parentHeight: parentRect?.height ?? null,
+  };
+}
+
+function streamTrackSignature(stream: MediaStream | null | undefined): string {
+  if (!stream) {
+    return 'none';
+  }
+
+  return stream.getTracks()
+    .map((track) => `${track.kind}:${track.id}:${track.readyState}:${track.enabled ? '1' : '0'}:${track.muted ? '1' : '0'}`)
+    .sort()
+    .join('|');
+}
+
+function logTransitionOnce(key: string, details: Record<string, unknown>) {
+  const snapshot = JSON.stringify(details);
+  if (remoteTransitionSnapshots.get(key) === snapshot) {
+    return;
+  }
+
+  remoteTransitionSnapshots.set(key, snapshot);
+  debugLog(`transition:${key}`, details);
+}
+
+function probeFirstRemoteVideoFrame(videoElement: HTMLVideoElement, boundStream: MediaStream | null) {
+  const probeKey = boundStream
+    ? `${boundStream.id}|${streamTrackSignature(boundStream)}`
+    : 'none';
+
+  if (probeKey === lastRemoteVideoFrameProbeKey) {
+    return;
+  }
+
+  lastRemoteVideoFrameProbeKey = probeKey;
+
+  if (!boundStream) {
+    return;
+  }
+
+  const logFrame = (source: string) => {
+    logTransitionOnce('remote-video-first-frame', {
+      source,
+      probeKey,
+      currentTime: videoElement.currentTime,
+      readyState: videoElement.readyState,
+      paused: videoElement.paused,
+      videoWidth: videoElement.videoWidth,
+      videoHeight: videoElement.videoHeight,
+      visibility: describeVideoVisibility(videoElement),
+    });
+  };
+
+  const hasVideoFrameCallback = typeof videoElement.requestVideoFrameCallback === 'function';
+  if (hasVideoFrameCallback) {
+    videoElement.requestVideoFrameCallback(() => {
+      logFrame('requestVideoFrameCallback');
+    });
+    return;
+  }
+
+  const onPlaying = () => {
+    videoElement.removeEventListener('playing', onPlaying);
+    logFrame('playing-event');
+  };
+  videoElement.addEventListener('playing', onPlaying, { once: true });
 }
 
 function startRemoteDiagnostics() {
@@ -221,6 +314,87 @@ function stopRemoteDiagnostics() {
     window.clearInterval(remoteDiagnosticsIntervalId);
     remoteDiagnosticsIntervalId = null;
   }
+}
+
+function stopRemoteCanvasPump() {
+  if (remoteCanvasFrameId !== null) {
+    window.cancelAnimationFrame(remoteCanvasFrameId);
+    remoteCanvasFrameId = null;
+  }
+}
+
+function clearRemoteCanvas() {
+  const canvas = remoteVideoCanvasRef.value;
+  if (!canvas) {
+    return;
+  }
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return;
+  }
+
+  context.save();
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.restore();
+}
+
+function startRemoteCanvasPump() {
+  if (!useWindowsVideoWorkaround.value) {
+    stopRemoteCanvasPump();
+    return;
+  }
+
+  const video = remoteVideoRef.value;
+  const canvas = remoteVideoCanvasRef.value;
+  if (!video || !canvas) {
+    return;
+  }
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return;
+  }
+
+  stopRemoteCanvasPump();
+
+  const drawFrame = () => {
+    const activeVideo = remoteVideoRef.value;
+    const activeCanvas = remoteVideoCanvasRef.value;
+
+    if (!useWindowsVideoWorkaround.value || !activeVideo || !activeCanvas) {
+      stopRemoteCanvasPump();
+      return;
+    }
+
+    const activeContext = activeCanvas.getContext('2d');
+    if (!activeContext) {
+      stopRemoteCanvasPump();
+      return;
+    }
+
+    const cssWidth = activeCanvas.clientWidth;
+    const cssHeight = activeCanvas.clientHeight;
+    if (cssWidth > 0 && cssHeight > 0) {
+      const deviceScale = window.devicePixelRatio || 1;
+      const targetWidth = Math.max(1, Math.round(cssWidth * deviceScale));
+      const targetHeight = Math.max(1, Math.round(cssHeight * deviceScale));
+
+      if (activeCanvas.width !== targetWidth || activeCanvas.height !== targetHeight) {
+        activeCanvas.width = targetWidth;
+        activeCanvas.height = targetHeight;
+      }
+    }
+
+    if (activeVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && activeVideo.videoWidth > 0 && activeVideo.videoHeight > 0) {
+      activeContext.drawImage(activeVideo, 0, 0, activeCanvas.width, activeCanvas.height);
+    }
+
+    remoteCanvasFrameId = window.requestAnimationFrame(drawFrame);
+  };
+
+  remoteCanvasFrameId = window.requestAnimationFrame(drawFrame);
 }
 
 function isAbortError(error: unknown): boolean {
@@ -262,6 +436,8 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
     remoteAudioElementStream.value = null;
     if (remoteVideoRef.value) setMediaElementStream(remoteVideoRef.value, null);
     if (remoteAudioRef.value) setMediaElementStream(remoteAudioRef.value, null);
+    stopRemoteCanvasPump();
+    clearRemoteCanvas();
     return;
   }
 
@@ -281,10 +457,12 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
         bound: describeStream(remoteVideoElementStream.value),
         splitByKind,
         element: describeMediaElement(remoteVideoRef.value),
+        visibility: describeVideoVisibility(remoteVideoRef.value),
       });
 
       await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
-      debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
+      probeFirstRemoteVideoFrame(remoteVideoRef.value, remoteVideoElementStream.value);
+      startRemoteCanvasPump();
     }
 
     if (remoteAudioRef.value) {
@@ -300,7 +478,6 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
       });
 
       await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
-      debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
     }
 
     return;
@@ -319,11 +496,13 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
       bound: describeStream(remoteVideoElementStream.value),
       splitByKind,
       element: describeMediaElement(remoteVideoRef.value),
+      visibility: describeVideoVisibility(remoteVideoRef.value),
     });
 
     if (remoteVideoElementStream.value) {
       await safePlayMediaElement(remoteVideoRef.value, 'Remote video');
-      debugLog('remote video play attempted', describeMediaElement(remoteVideoRef.value));
+      probeFirstRemoteVideoFrame(remoteVideoRef.value, remoteVideoElementStream.value);
+      startRemoteCanvasPump();
     }
   }
 
@@ -341,12 +520,13 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
 
     if (remoteAudioElementStream.value) {
       await safePlayMediaElement(remoteAudioRef.value, 'Remote audio');
-      debugLog('remote audio play attempted', describeMediaElement(remoteAudioRef.value));
     }
   }
 }
 
 // Remote pane visibility prefers explicit stream tracks and falls back to peer flag.
+const useWindowsVideoWorkaround = computed(() => shouldSplitRemoteStreamsForPlatform());
+
 const hasRemoteVideoTrack = computed(() => {
   // Depend on revision so addtrack/removetrack updates are reflected.
   remoteTrackRevision.value;
@@ -361,10 +541,26 @@ const hasRemoteVideoTrack = computed(() => {
 
   return streamHasVideo || (props.peerHasVideo ?? false);
 });
-const activeLocalStream = computed<MediaStream | null>(() => props.localStream ?? fallbackLocalPreviewStream.value);
-const hasLocalVideoTrack = computed(() => (activeLocalStream.value?.getVideoTracks().length ?? 0) > 0);
-const hasLocalAudioTrack = computed(() => (props.localStream?.getAudioTracks().length ?? 0) > 0);
-const localPreviewStatusText = computed(() => localPreviewUnavailable.value ? 'PREVIEW UNAVAILABLE' : 'CAMERA OFF');
+const activeLocalStream = computed<MediaStream | null>(() => props.localStream ?? null);
+const hasLocalVideoTrack = computed(() => {
+  localTrackRevision.value;
+  return activeLocalStream.value?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+});
+const hasLocalAudioTrack = computed(() => {
+  localTrackRevision.value;
+  return activeLocalStream.value?.getAudioTracks().some((track) => track.readyState === 'live') ?? false;
+});
+const localPreviewStatusText = computed(() => {
+  if (!activeLocalStream.value) {
+    return 'CAMERA OFF';
+  }
+
+  if (hasLocalVideoTrack.value) {
+    return 'CAMERA ON';
+  }
+
+  return 'CAMERA OFF';
+});
 
 const latestPeerMessage = computed(() => {
   const messages = props.dmMessages ?? [];
@@ -397,68 +593,71 @@ async function attachLocalPreviewStream(stream: MediaStream | null) {
   await safePlayMediaElement(localVideoRef.value, 'Local video');
 }
 
-function clearFallbackPreviewStream() {
-  if (fallbackLocalPreviewStream.value) {
-    fallbackLocalPreviewStream.value.getTracks().forEach((track) => track.stop());
-    fallbackLocalPreviewStream.value = null;
-  }
-}
+watch(() => props.localStream, async (stream, _previous, onCleanup) => {
+  localTrackRevision.value += 1;
 
-async function ensureFallbackPreviewStream() {
-  if (props.localStream || fallbackLocalPreviewStream.value) {
-    return;
-  }
-
-  try {
-    localPreviewUnavailable.value = false;
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    fallbackLocalPreviewStream.value = stream;
-  } catch (error) {
-    console.debug('VideoWindow: Fallback local preview unavailable:', error);
-    localPreviewUnavailable.value = true;
-  }
-}
-
-watch(() => props.localStream, async (stream) => {
+  let cleanupLocalTrackListeners: (() => void) | null = null;
   if (stream) {
-    localPreviewUnavailable.value = false;
-    clearFallbackPreviewStream();
+    const refreshTrackState = () => {
+      localTrackRevision.value += 1;
+      void attachLocalPreviewStream(stream);
+    };
+
+    const trackTeardowns: Array<() => void> = [];
+    for (const track of stream.getTracks()) {
+      const onMute = () => refreshTrackState();
+      const onUnmute = () => refreshTrackState();
+      const onEnded = () => refreshTrackState();
+      track.addEventListener('mute', onMute);
+      track.addEventListener('unmute', onUnmute);
+      track.addEventListener('ended', onEnded);
+      trackTeardowns.push(() => {
+        track.removeEventListener('mute', onMute);
+        track.removeEventListener('unmute', onUnmute);
+        track.removeEventListener('ended', onEnded);
+      });
+    }
+
+    stream.addEventListener('addtrack', refreshTrackState);
+    stream.addEventListener('removetrack', refreshTrackState);
+    cleanupLocalTrackListeners = () => {
+      stream.removeEventListener('addtrack', refreshTrackState);
+      stream.removeEventListener('removetrack', refreshTrackState);
+      for (const teardown of trackTeardowns) {
+        teardown();
+      }
+    };
+
+    refreshTrackState();
+  }
+
+  onCleanup(() => {
+    cleanupLocalTrackListeners?.();
+  });
+
+  if (stream) {
     await attachLocalPreviewStream(stream);
     return;
   }
 
-  await ensureFallbackPreviewStream();
-  await attachLocalPreviewStream(fallbackLocalPreviewStream.value);
+  await attachLocalPreviewStream(null);
 }, { immediate: true });
 
-watch(fallbackLocalPreviewStream, async (stream) => {
-  if (props.localStream) {
-    return;
-  }
-  await attachLocalPreviewStream(stream);
-});
-
 watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
-  debugLog('remoteStream watcher fired', {
-    stream: describeStream(stream),
-    peerHasVideo: props.peerHasVideo ?? false,
-  });
-
   remoteTrackRevision.value += 1;
 
   let cleanupRemoteTrackListeners: (() => void) | null = null;
   if (stream) {
     const refreshTrackState = () => {
       remoteTrackRevision.value += 1;
-      debugLog('remote stream track topology changed', describeStream(stream));
       void applyRemoteElementStreams(stream);
     };
 
     const trackTeardowns: Array<() => void> = [];
     for (const track of stream.getTracks()) {
-      const onMute = () => debugLog(`remote ${track.kind} track muted`, { id: track.id, readyState: track.readyState });
-      const onUnmute = () => debugLog(`remote ${track.kind} track unmuted`, { id: track.id, readyState: track.readyState });
-      const onEnded = () => debugLog(`remote ${track.kind} track ended`, { id: track.id, readyState: track.readyState });
+      const onMute = () => undefined;
+      const onUnmute = () => undefined;
+      const onEnded = () => undefined;
       track.addEventListener('mute', onMute);
       track.addEventListener('unmute', onUnmute);
       track.addEventListener('ended', onEnded);
@@ -488,7 +687,6 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
   });
 
   if (!stream) {
-    debugLog('remote stream missing, clearing media elements');
     await applyRemoteElementStreams(null);
     return;
   }
@@ -496,6 +694,10 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
   await nextTick();
 
   const wireElementEvents = (element: HTMLMediaElement | undefined, label: string) => {
+    if (!debugVerboseEnabled()) {
+      return () => undefined;
+    }
+
     if (!element) {
       return () => undefined;
     }
@@ -524,17 +726,6 @@ watch(() => props.remoteStream, async (stream, _previous, onCleanup) => {
   });
 
   await applyRemoteElementStreams(stream);
-}, { immediate: true });
-
-watch(() => props.peerHasVideo, (value) => {
-  debugLog('peerHasVideo changed', { peerHasVideo: value, remoteStream: describeStream(props.remoteStream) });
-}, { immediate: true });
-
-watch(hasRemoteVideoTrack, (value) => {
-  debugLog('hasRemoteVideoTrack changed', {
-    hasRemoteVideoTrack: value,
-    remoteStream: describeStream(props.remoteStream),
-  });
 }, { immediate: true });
 
 startRemoteDiagnostics();
@@ -577,8 +768,9 @@ function toggleVideo() {
 
 onBeforeUnmount(() => {
   stopRemoteDiagnostics();
+  stopRemoteCanvasPump();
+  clearRemoteCanvas();
   debugLog('before unmount, clearing media refs');
-  clearFallbackPreviewStream();
 
   // Clear video element sources to release streams
   if (localVideoRef.value) {
@@ -623,6 +815,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.video-window.windows-video-workaround .video-container {
+  isolation: isolate;
+}
+
 /* Remote Video (main) */
 .remote-video {
   width: 100%;
@@ -631,6 +827,32 @@ onBeforeUnmount(() => {
   display: block;
   border: 2px solid var(--color-video-border);
   box-shadow: var(--color-video-main-shadow);
+}
+
+.remote-video-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 2px solid var(--color-video-border);
+  box-shadow: var(--color-video-main-shadow);
+  background: #000;
+}
+
+.video-window.windows-video-workaround .remote-video {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.video-window.windows-video-workaround .remote-video-canvas {
+  position: relative;
+  z-index: 1;
 }
 
 .remote-chat-fallback {

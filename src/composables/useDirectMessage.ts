@@ -64,7 +64,7 @@ export function useDirectMessage(
 
   function pushNotice(
     message: string,
-    type?: 'audio-call' | 'video-call' | 'info' | 'file-offer',
+    type?: 'audio-call' | 'video-call' | 'call-status' | 'info' | 'file-offer',
     from?: string,
     fileId?: string,
     timeout = 4000
@@ -237,9 +237,9 @@ export function useDirectMessage(
           console.error('Failed to set remote description for accept-audio:', e);
         }
       }
-      pushNotice(`${fromUser} accepted your audio call`, 'info');
+      pushNotice(`${fromUser} accepted your audio call`, 'call-status', fromUser);
     } else if (data.type === 'audio-reject') {
-      pushNotice(`${fromUser} declined your audio call request.`);
+      pushNotice(`${fromUser} declined your audio call request.`, 'call-status', fromUser);
     } else if (data.type === 'video-request') {
       // Add to pending video calls
       const chat = activeChats.value.get(fromUser);
@@ -249,8 +249,13 @@ export function useDirectMessage(
         pendingVideoCalls.value.push({ from: fromUser, timestamp: Date.now() });
         pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser);
       }
+    } else if (data.type === 'accept-video') {
+      pushNotice(`${fromUser} accepted your video call`, 'call-status', fromUser);
     } else if (data.type === 'video-reject') {
-      pushNotice(`${fromUser} declined your video call request.`);
+      pushNotice(`${fromUser} declined your video call request.`, 'call-status', fromUser);
+    } else if (data.type === 'end-call') {
+      endCall(fromUser, false);
+      pushNotice(`${fromUser} ended the active call.`, 'call-status', fromUser);
     } else if (data.type === 'offer' || data.type === 'answer' || data.candidate) {
       // Handle offer/answer/ICE candidate
       const rtcConn = rtcConnections.get(fromUser);
@@ -387,6 +392,25 @@ export function useDirectMessage(
 
         // Check if this is a file transfer message
         if (handleFileTransferMessage(data, otherUser, dataChannel)) {
+          return;
+        }
+
+        if (data.type === 'audio-toggle') {
+          chat.audioEnabled = Boolean(data.enabled);
+          setOrUpdateChat(otherUser, chat);
+          return;
+        }
+
+        if (data.type === 'video-toggle') {
+          chat.videoEnabled = Boolean(data.enabled);
+          chat.videoCallActive = Boolean(data.enabled);
+          setOrUpdateChat(otherUser, chat);
+          return;
+        }
+
+        if (data.type === 'end-call') {
+          endCall(otherUser, false);
+          pushNotice(`${otherUser} ended the active call.`, 'call-status', otherUser);
           return;
         }
 
@@ -1295,7 +1319,7 @@ export function useDirectMessage(
       // Start call duration timer
       startCallTimer(fromUser);
 
-      pushNotice(`Audio call accepted with ${fromUser}`, 'info');
+      pushNotice(`Audio call accepted with ${fromUser}`, 'call-status', fromUser);
     } catch (error) {
       console.error('Failed to accept audio call:', error);
       pushNotice('Failed to access microphone for audio call.');
@@ -1310,6 +1334,8 @@ export function useDirectMessage(
     chat.localMediaStream.getAudioTracks().forEach(track => {
       track.enabled = enabled;
     });
+    chat.audioEnabled = enabled;
+    setOrUpdateChat(user, chat);
 
     // Notify peer
     try {
@@ -1468,7 +1494,7 @@ export function useDirectMessage(
       // Start call duration timer
       startCallTimer(fromUser);
 
-      pushNotice(`Video call accepted with ${fromUser}`, 'info');
+      pushNotice(`Video call accepted with ${fromUser}`, 'call-status', fromUser);
     } catch (error) {
       console.error('Failed to accept video call:', error);
       pushNotice('Failed to accept video call.');
@@ -1483,6 +1509,9 @@ export function useDirectMessage(
     chat.localMediaStream.getVideoTracks().forEach(track => {
       track.enabled = enabled;
     });
+    chat.videoEnabled = enabled;
+    chat.videoCallActive = enabled;
+    setOrUpdateChat(user, chat);
 
     // Notify peer
     try {
@@ -1497,8 +1526,58 @@ export function useDirectMessage(
     }
   }
 
+  function endCall(user: string, notifyPeer = true) {
+    const chat = activeChats.value.get(user);
+    if (!chat) return;
+
+    if (notifyPeer && mqttClient) {
+      mqttClient.publish(
+        getSignalTopic(user),
+        JSON.stringify({ type: 'end-call' })
+      );
+    }
+
+    if (chat.localMediaStream) {
+      chat.localMediaStream.getTracks().forEach((track) => track.stop());
+      chat.localMediaStream = null;
+    }
+
+    if (chat.remoteMediaStream) {
+      chat.remoteMediaStream.getTracks().forEach((track) => track.stop());
+      chat.remoteMediaStream = null;
+    }
+
+    const rtcConn = rtcConnections.get(user);
+    if (rtcConn) {
+      for (const sender of rtcConn.peerConnection.getSenders()) {
+        const kind = sender.track?.kind;
+        if (kind === 'audio' || kind === 'video') {
+          void sender.replaceTrack(null).catch(() => undefined);
+        }
+      }
+    }
+
+    chat.audioEnabled = false;
+    chat.videoEnabled = false;
+    chat.videoCallActive = false;
+    setOrUpdateChat(user, chat);
+    stopCallTimer(user);
+  }
+
   // Cleanup on disconnect
   function cleanup() {
+    activeChats.value.forEach((chat) => {
+      if (chat.localMediaStream) {
+        chat.localMediaStream.getTracks().forEach((track) => track.stop());
+        chat.localMediaStream = null;
+      }
+
+      if (chat.remoteMediaStream) {
+        chat.remoteMediaStream.getTracks().forEach((track) => track.stop());
+        chat.remoteMediaStream = null;
+      }
+    });
+
     rtcConnections.forEach(rtcConn => {
       if (rtcConn.dataChannel) {
         rtcConn.dataChannel.close();
@@ -1543,6 +1622,7 @@ export function useDirectMessage(
     closeDM,
     requestAudioCall,
     acceptAudioCall,
+    endCall,
     toggleAudioStream,
     requestVideoCall,
     acceptVideoCall,

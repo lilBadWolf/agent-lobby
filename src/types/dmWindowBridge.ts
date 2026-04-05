@@ -58,10 +58,11 @@ export interface DMWindowStatePayload {
   username: string;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
   focusedDMUser: string | null;
+  targetUser: string | null;
 }
 
 export type DMWindowAction =
-  | { type: 'windowReady' }
+  | { type: 'windowReady'; user?: string }
   | { type: 'focusUser'; user: string }
   | { type: 'requestDm'; user: string }
   | { type: 'acceptDm'; user: string }
@@ -77,6 +78,7 @@ export type DMWindowAction =
   | { type: 'closeDm'; user: string }
   | { type: 'cancelPendingMessages'; user: string }
   | { type: 'requestAudio'; user: string }
+  | { type: 'endCall'; user: string }
   | { type: 'toggleAudio'; user: string; enabled: boolean }
   | { type: 'requestVideo'; user: string }
   | { type: 'toggleVideo'; user: string; enabled: boolean }
@@ -85,4 +87,4 @@ export type DMWindowAction =
   | { type: 'rejectFile'; user: string; fileId: string }
   | { type: 'fileSaved'; user: string; fileId: string }
   | { type: 'removeFile'; user: string; fileId: string }
-  | { type: 'windowClosed' };
+  | { type: 'windowClosed'; user?: string };

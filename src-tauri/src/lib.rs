@@ -466,8 +466,9 @@ pub fn run() {
                 app.add_capability(
                     CapabilityBuilder::new("localhost")
                         .remote(url.to_string())
-                        .windows(["main", "dm-window", "agentamp-window"])
+                        .windows(["main", "dm-window-*", "agentamp-window"])
                         .permission("core:default")
+                        .permission("core:event:allow-emit-to")
                         .permission("core:window:allow-set-size")
                         .permission("fs:default")
                         .permission("fs:allow-download-write")
@@ -482,6 +483,7 @@ pub fn run() {
                         .permission("core:window:allow-unmaximize")
                         .permission("core:window:allow-minimize")
                         .permission("core:window:allow-unminimize")
+                        .permission("core:window:allow-is-maximized")
                         .permission("core:window:allow-show")
                         .permission("core:window:allow-set-focus")
                         .permission("core:window:allow-destroy")

@@ -375,60 +375,17 @@ const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
 const DM_WINDOW_MEDIA_EVENT = 'media-state';
-const DM_WINDOW_MEDIA_RELAY_OFFER_EVENT = 'media-relay-offer';
-const DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT = 'media-relay-answer';
-const DM_WINDOW_MEDIA_RELAY_ICE_EVENT = 'media-relay-ice';
-const DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT = 'media-relay-close';
-//const DM_APP_LOG_PREFIX = '[AppDMBridge]';
-
-type RelayStreamKind = 'local' | 'remote';
-
-interface MediaRelayOfferMessage {
-  type: typeof DM_WINDOW_MEDIA_RELAY_OFFER_EVENT;
-  user: string;
-  kind: RelayStreamKind;
-  sdp: RTCSessionDescriptionInit;
-}
-
-interface MediaRelayAnswerMessage {
-  type: typeof DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT;
-  user: string;
-  kind: RelayStreamKind;
-  sdp: RTCSessionDescriptionInit;
-}
-
-interface MediaRelayIceMessage {
-  type: typeof DM_WINDOW_MEDIA_RELAY_ICE_EVENT;
-  user: string;
-  kind: RelayStreamKind;
-  candidate: RTCIceCandidateInit;
-}
-
-interface MediaRelayCloseMessage {
-  type: typeof DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT;
-  user: string;
-  kind: RelayStreamKind;
-}
-
-interface RelaySenderEntry {
-  user: string;
-  kind: RelayStreamKind;
-  streamId: string;
-  trackSignature: string;
-  pc: RTCPeerConnection;
-}
 
 // DM system
-const dmWindowOpen = ref(false);
-let dmPopupWindow: Window | null = null;
-let dmPopupWatchIntervalId: number | null = null;
+const openDMWindowUsers = ref<Set<string>>(new Set());
+const dmPopupWindows = new Map<string, Window>();
+const dmPopupWatchIntervals = new Map<string, number>();
 let dmWebChannel: BroadcastChannel | null = null;
 let agentAmpPopupWindow: Window | null = null;
 let agentAmpPopupWatchIntervalId: number | null = null;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
-const relaySenders = new Map<string, RelaySenderEntry>();
 let cleanupDMActionListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
@@ -436,48 +393,49 @@ const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
 const isAgentAmpPlaying = ref(false);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
+const dmWindowOpen = computed(() => openDMWindowUsers.value.size > 0);
 
-function debugEnabled(): boolean {
-  if (typeof window === 'undefined') {
-    return true;
-  }
+function normalizeDMUser(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
 
-  try {
-    return window.localStorage.getItem('dm-window-debug') !== '0';
-  } catch {
+function sameDMUser(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = normalizeDMUser(left)?.toLowerCase();
+  const normalizedRight = normalizeDMUser(right)?.toLowerCase();
+  if (!normalizedLeft || !normalizedRight) {
     return false;
   }
+
+  return normalizedLeft === normalizedRight;
 }
 
-function debugLog(_message: string, details?: unknown) {
-  if (!debugEnabled()) {
-    return;
+function getDMWindowLaunchUser(): string | null {
+  const focusedUser = normalizeDMUser(focusedDMUser.value);
+  if (focusedUser) {
+    return focusedUser;
   }
 
-  if (details === undefined) {
-    //console.log(`${DM_APP_LOG_PREFIX} ${message}`);
-    return;
-  }
-
-  //console.log(`${DM_APP_LOG_PREFIX} ${message}`, details);
+  const firstActiveUser = Array.from(dmActiveChats.value.keys())[0] ?? null;
+  return normalizeDMUser(firstActiveUser);
 }
 
-function describeStream(stream: MediaStream | null | undefined) {
-  if (!stream) {
-    return null;
-  }
+function dmWindowLabelForUser(user: string): string {
+  const normalized = user.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const safeSuffix = normalized || 'dm';
+  return `${DM_WINDOW_LABEL}-${safeSuffix}`;
+}
 
-  return {
-    id: stream.id,
-    active: stream.active,
-    tracks: stream.getTracks().map((track) => ({
-      id: track.id,
-      kind: track.kind,
-      enabled: track.enabled,
-      muted: track.muted,
-      readyState: track.readyState,
-    })),
-  };
+function markDMWindowOpen(user: string) {
+  const next = new Set(openDMWindowUsers.value);
+  next.add(user);
+  openDMWindowUsers.value = next;
+}
+
+function markDMWindowClosed(user: string) {
+  const next = new Set(openDMWindowUsers.value);
+  next.delete(user);
+  openDMWindowUsers.value = next;
 }
 
 const dmActiveChats = computed(() => dm.value?.activeChats.value || new Map());
@@ -525,8 +483,8 @@ watch(
 
     focusedDMUser.value = newlyConnectedUser;
 
-    if (!dmWindowOpen.value) {
-      void openDetachedDMWindow();
+    if (!openDMWindowUsers.value.has(newlyConnectedUser)) {
+      void openDMWindow(newlyConnectedUser);
     }
   }
 );
@@ -538,7 +496,7 @@ watch(
   (newCount, oldCount) => {
     if (dmWindowOpen.value && oldCount > 0 && newCount === 0) {
       focusedDMUser.value = null;
-      void closeDetachedDMWindow();
+      void closeAllDMWindows();
     }
   }
 );
@@ -748,7 +706,7 @@ onMounted(async () => {
   initializeAgentAmpStatusBridge();
   initializeAgentAmpActionBridge();
   initializeWebDMBridge();
-  await initializeDetachedDMActionListener();
+  await initializeDMWindowActionListener();
 
   if (!hasTauriWindow) {
     return;
@@ -762,11 +720,12 @@ onBeforeUnmount(() => {
   markAgentAmpStopped();
   teardownAgentAmpStatusBridge();
   void closeDetachedAgentAmpWindow();
-  teardownAllRelaySenders(false);
-  if (dmPopupWatchIntervalId !== null) {
-    window.clearInterval(dmPopupWatchIntervalId);
-    dmPopupWatchIntervalId = null;
+  for (const intervalId of dmPopupWatchIntervals.values()) {
+    window.clearInterval(intervalId);
   }
+  dmPopupWatchIntervals.clear();
+  dmPopupWindows.clear();
+  openDMWindowUsers.value = new Set();
   dmWebChannel?.close();
   dmWebChannel = null;
   if (webMessageListenerBound) {
@@ -943,7 +902,10 @@ function quit() {
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
 
       const agentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
-      const dmWindow = await WebviewWindow.getByLabel('dm-window');
+      const dmWindows = await Promise.all(
+        Array.from(openDMWindowUsers.value).map((user) => WebviewWindow.getByLabel(dmWindowLabelForUser(user)))
+      );
+      const hasDmWindows = dmWindows.some((windowHandle) => Boolean(windowHandle));
 
       if (agentAmpWindow) {
         const agentAmpChannel = new BroadcastChannel(AGENTAMP_FORCE_CLOSE_CHANNEL);
@@ -951,7 +913,7 @@ function quit() {
         agentAmpChannel.close();
       }
 
-      if (dmWindow) {
+      if (hasDmWindows) {
         const dmChannel = new BroadcastChannel(DM_WINDOW_FORCE_CLOSE_CHANNEL);
         dmChannel.postMessage('force-close');
         dmChannel.close();
@@ -959,7 +921,7 @@ function quit() {
 
       await new Promise<void>((resolve) => {
         let closedCount = 0;
-        const expectedCount = (agentAmpWindow ? 1 : 0) + (dmWindow ? 1 : 0);
+        const expectedCount = (agentAmpWindow ? 1 : 0) + (hasDmWindows ? 1 : 0);
 
         if (expectedCount === 0) {
           resolve();
@@ -968,12 +930,15 @@ function quit() {
 
         const checkInterval = setInterval(async () => {
           const currentAgentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL).catch(() => null);
-          const currentDmWindow = await WebviewWindow.getByLabel('dm-window').catch(() => null);
+          const currentDmWindows = await Promise.all(
+            Array.from(openDMWindowUsers.value).map((user) => WebviewWindow.getByLabel(dmWindowLabelForUser(user)).catch(() => null))
+          );
+          const currentHasDmWindows = currentDmWindows.some((windowHandle) => Boolean(windowHandle));
 
           if (!currentAgentAmpWindow && agentAmpWindow) {
             closedCount++;
           }
-          if (!currentDmWindow && dmWindow) {
+          if (!currentHasDmWindows && hasDmWindows) {
             closedCount++;
           }
 
@@ -1042,16 +1007,21 @@ function handleShowDMWindow() {
     return;
   }
 
-  if (dmWindowOpen.value) {
-    void focusDetachedDMWindow().then((focused) => {
+  const targetUser = getDMWindowLaunchUser();
+  if (!targetUser) {
+    return;
+  }
+
+  if (openDMWindowUsers.value.has(targetUser)) {
+    void focusDMWindow(targetUser).then((focused) => {
       if (!focused) {
-        void openDetachedDMWindow();
+        void openDMWindow(targetUser);
       }
     });
     return;
   }
 
-  void openDetachedDMWindow();
+  void openDMWindow(targetUser);
 }
 
 function handleShowAgentAmpWindow() {
@@ -1223,7 +1193,7 @@ async function handleDMRequest(user: string) {
     if (dm.value.activeChats.value.has(user)) {
       // Jump to existing chat
       focusedDMUser.value = user;
-      await openDetachedDMWindow();
+      await openDMWindow(user);
     } else {
       // Start new DM request
       await dm.value.requestDM(user);
@@ -1235,6 +1205,7 @@ function handleAcceptDM(user: string) {
   if (dm.value) {
     focusedDMUser.value = user;
     dm.value.acceptDM(user);
+    void openDMWindow(user);
   }
 }
 
@@ -1248,7 +1219,7 @@ function handleAcceptAudio(user: string) {
   if (dm.value) {
     focusedDMUser.value = user;
     dm.value.acceptAudioCall(user);
-    void openDetachedDMWindow();
+    void openDMWindow(user);
   }
 }
 
@@ -1262,7 +1233,7 @@ function handleAcceptVideo(user: string) {
   if (dm.value) {
     focusedDMUser.value = user;
     dm.value.acceptVideoCall(user);
-    void openDetachedDMWindow();
+    void openDMWindow(user);
   }
 }
 
@@ -1299,10 +1270,11 @@ function handleStopTyping(user: string) {
 function handleCloseDM(user: string) {
   if (dm.value) {
     dm.value.closeDM(user);
+    void closeDMWindow(user);
 
     if (dm.value.activeChats.value.size === 0) {
       focusedDMUser.value = null;
-      void closeDetachedDMWindow();
+      void closeAllDMWindows();
     }
   }
 }
@@ -1316,6 +1288,12 @@ function handleCancelPendingMessages(user: string) {
 function handleRequestAudio(user: string) {
   if (dm.value) {
     dm.value.requestAudioCall(user);
+  }
+}
+
+function handleEndCall(user: string) {
+  if (dm.value) {
+    dm.value.endCall(user);
   }
 }
 
@@ -1368,10 +1346,6 @@ function handleRemoveFile(user: string, fileId: string) {
 }
 
 function initializeWebDMBridge() {
-  debugLog('initializeWebDMBridge', {
-    broadcastChannelSupported: typeof BroadcastChannel !== 'undefined',
-  });
-
   if (!webMessageListenerBound) {
     window.addEventListener('message', handleWebPopupMessage);
     webMessageListenerBound = true;
@@ -1382,244 +1356,36 @@ function initializeWebDMBridge() {
   }
 
   dmWebChannel = new BroadcastChannel(DM_WEB_CHANNEL);
-  debugLog('BroadcastChannel created', { channel: DM_WEB_CHANNEL });
   dmWebChannel.onmessage = (event: MessageEvent) => {
     const message = event.data as { type?: string; payload?: unknown };
     if (message?.type === 'action') {
-      handleDetachedDMAction(message.payload as DMWindowAction);
-      return;
-    }
-
-    if (message?.type === DM_WINDOW_MEDIA_RELAY_ANSWER_EVENT) {
-      void handleMediaRelayAnswer(message as MediaRelayAnswerMessage);
-      return;
-    }
-
-    if (message?.type === DM_WINDOW_MEDIA_RELAY_ICE_EVENT) {
-      void handleMediaRelayIce(message as MediaRelayIceMessage);
+      handleDMWindowAction(message.payload as DMWindowAction);
     }
   };
 }
 
-function relayKey(user: string, kind: RelayStreamKind): string {
-  return `${user}::${kind}`;
-}
-
-function getTrackSignature(stream: MediaStream | null | undefined): string {
-  if (!stream) {
-    return 'none';
-  }
-
-  return stream.getTracks()
-    .map((track) => `${track.kind}:${track.id}:${track.readyState}`)
-    .sort()
-    .join('|');
-}
-
-function teardownRelaySender(user: string, kind: RelayStreamKind, notifyPeer = true) {
-  const key = relayKey(user, kind);
-  const existing = relaySenders.get(key);
-  if (!existing) {
+function emitDMWindowMediaState(targetUser: string | null = null) {
+  if (!dmWebChannel || openDMWindowUsers.value.size === 0) {
     return;
   }
 
-  try {
-    existing.pc.onicecandidate = null;
-    existing.pc.onconnectionstatechange = null;
-    existing.pc.close();
-  } catch (error) {
-    debugLog(`relay sender close failed for ${user}/${kind}`, error);
-  }
+  const filteredChats = targetUser
+    ? Array.from(dmActiveChats.value.values()).filter((chat) => sameDMUser(chat.user, targetUser))
+    : Array.from(dmActiveChats.value.values());
 
-  relaySenders.delete(key);
-
-  if (notifyPeer && dmWebChannel) {
-    const closeMessage: MediaRelayCloseMessage = {
-      type: DM_WINDOW_MEDIA_RELAY_CLOSE_EVENT,
-      user,
-      kind,
-    };
-    dmWebChannel.postMessage(closeMessage);
-  }
-}
-
-function teardownAllRelaySenders(notifyPeer = true) {
-  const keys = Array.from(relaySenders.keys());
-  for (const key of keys) {
-    const existing = relaySenders.get(key);
-    if (!existing) {
-      continue;
-    }
-
-    teardownRelaySender(existing.user, existing.kind, notifyPeer);
-  }
-}
-
-async function handleMediaRelayAnswer(message: MediaRelayAnswerMessage) {
-  const entry = relaySenders.get(relayKey(message.user, message.kind));
-  if (!entry) {
-    return;
-  }
-
-  try {
-    await entry.pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
-    debugLog(`relay answer applied for ${message.user}/${message.kind}`);
-  } catch (error) {
-    debugLog(`relay answer failed for ${message.user}/${message.kind}`, error);
-  }
-}
-
-async function handleMediaRelayIce(message: MediaRelayIceMessage) {
-  const entry = relaySenders.get(relayKey(message.user, message.kind));
-  if (!entry) {
-    return;
-  }
-
-  try {
-    await entry.pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-  } catch (error) {
-    debugLog(`relay ICE add failed for ${message.user}/${message.kind}`, error);
-  }
-}
-
-async function ensureRelaySenderForStream(user: string, kind: RelayStreamKind, stream: MediaStream | null) {
-  if (!dmWebChannel) {
-    return;
-  }
-
-  const tracks = stream?.getTracks() ?? [];
-  const hasLiveTrack = tracks.some((track) => track.readyState === 'live');
-
-  if (!stream || tracks.length === 0 || !hasLiveTrack) {
-    teardownRelaySender(user, kind, true);
-    return;
-  }
-
-  const key = relayKey(user, kind);
-  const trackSignature = getTrackSignature(stream);
-  const existing = relaySenders.get(key);
-  if (
-    existing
-    && existing.streamId === stream.id
-    && existing.trackSignature === trackSignature
-    && existing.pc.connectionState !== 'failed'
-    && existing.pc.connectionState !== 'closed'
-  ) {
-    return;
-  }
-
-  teardownRelaySender(user, kind, true);
-
-  const pc = new RTCPeerConnection({ iceServers: [] });
-  relaySenders.set(key, {
-    user,
-    kind,
-    streamId: stream.id,
-    trackSignature,
-    pc,
-  });
-
-  pc.onicecandidate = (event) => {
-    if (!event.candidate || !dmWebChannel) {
-      return;
-    }
-
-    const iceMessage: MediaRelayIceMessage = {
-      type: DM_WINDOW_MEDIA_RELAY_ICE_EVENT,
-      user,
-      kind,
-      candidate: event.candidate.toJSON(),
-    };
-    dmWebChannel.postMessage(iceMessage);
-  };
-
-  pc.onconnectionstatechange = () => {
-    debugLog(`relay sender state ${user}/${kind}`, {
-      state: pc.connectionState,
-      ice: pc.iceConnectionState,
-      stream: describeStream(stream),
-    });
-  };
-
-  for (const track of tracks) {
-    pc.addTrack(track, stream);
-  }
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-
-  const offerMessage: MediaRelayOfferMessage = {
-    type: DM_WINDOW_MEDIA_RELAY_OFFER_EVENT,
-    user,
-    kind,
-    sdp: offer,
-  };
-
-  dmWebChannel.postMessage(offerMessage);
-  debugLog(`relay offer posted for ${user}/${kind}`, { stream: describeStream(stream) });
-}
-
-async function syncTauriMediaRelays() {
-  if (!dmWebChannel || !dmWindowOpen.value) {
-    teardownAllRelaySenders(false);
-    return;
-  }
-
-  const expected = new Set<string>();
-
-  for (const chat of dmActiveChats.value.values()) {
-    expected.add(relayKey(chat.user, 'local'));
-    expected.add(relayKey(chat.user, 'remote'));
-
-    await ensureRelaySenderForStream(chat.user, 'local', chat.localMediaStream);
-    await ensureRelaySenderForStream(chat.user, 'remote', chat.remoteMediaStream);
-  }
-
-  const existingKeys = Array.from(relaySenders.keys());
-  for (const key of existingKeys) {
-    if (expected.has(key)) {
-      continue;
-    }
-
-    const [user, kind] = key.split('::') as [string, RelayStreamKind];
-    teardownRelaySender(user, kind, true);
-  }
-}
-
-function emitDMWindowMediaState() {
-  if (hasTauriWindow) {
-    void syncTauriMediaRelays();
-    return;
-  }
-
-  if (!dmWebChannel || !dmWindowOpen.value) {
-    debugLog('emitDMWindowMediaState skipped', {
-      hasChannel: Boolean(dmWebChannel),
-      dmWindowOpen: dmWindowOpen.value,
-    });
-    return;
-  }
-
-  const mediaPayload = Array.from(dmActiveChats.value.values()).map((chat) => ({
+  const mediaPayload = filteredChats.map((chat) => ({
     user: chat.user,
     localMediaStream: chat.localMediaStream,
     remoteMediaStream: chat.remoteMediaStream,
   }));
-
-  debugLog('emitDMWindowMediaState payload', mediaPayload.map((entry) => ({
-    user: entry.user,
-    local: describeStream(entry.localMediaStream),
-    remote: describeStream(entry.remoteMediaStream),
-  })));
 
   try {
     dmWebChannel.postMessage({
       type: DM_WINDOW_MEDIA_EVENT,
       payload: mediaPayload,
     });
-    debugLog('emitDMWindowMediaState posted');
   } catch (error) {
-    debugLog('emitDMWindowMediaState failed to post', error);
+    console.debug('emitDMWindowMediaState failed to post:', error);
   }
 }
 
@@ -1633,78 +1399,76 @@ function handleWebPopupMessage(event: MessageEvent) {
     return;
   }
 
-  handleDetachedDMAction(message.payload as DMWindowAction);
+  handleDMWindowAction(message.payload as DMWindowAction);
 }
 
-function startWebPopupHeartbeat() {
-  if (dmPopupWatchIntervalId !== null) {
+function startWebPopupHeartbeat(user: string) {
+  if (dmPopupWatchIntervals.has(user)) {
     return;
   }
 
-  dmPopupWatchIntervalId = window.setInterval(() => {
-    if (dmPopupWindow?.closed) {
-      dmPopupWindow = null;
-      dmWindowOpen.value = false;
-      window.clearInterval(dmPopupWatchIntervalId!);
-      dmPopupWatchIntervalId = null;
+  const intervalId = window.setInterval(() => {
+    const popup = dmPopupWindows.get(user);
+    if (!popup || popup.closed) {
+      dmPopupWindows.delete(user);
+      markDMWindowClosed(user);
+      const existingInterval = dmPopupWatchIntervals.get(user);
+      if (existingInterval !== undefined) {
+        window.clearInterval(existingInterval);
+        dmPopupWatchIntervals.delete(user);
+      }
     }
   }, 750);
+
+  dmPopupWatchIntervals.set(user, intervalId);
 }
 
-async function initializeDetachedDMActionListener() {
+async function initializeDMWindowActionListener() {
   if (!hasTauriWindow) {
     return;
   }
 
   const { listen } = await import('@tauri-apps/api/event');
   cleanupDMActionListener = await listen<DMWindowAction>(DM_WINDOW_ACTION_EVENT, (event) => {
-    handleDetachedDMAction(event.payload);
+    handleDMWindowAction(event.payload);
   });
 }
 
 async function emitDMWindowState() {
-  const payload = buildDMWindowStatePayload();
-  debugLog('emitDMWindowState', {
-    hasTauriWindow,
-    activeChats: payload.activeChats.length,
-    focusedDMUser: payload.focusedDMUser,
-  });
-
-  if (hasTauriWindow) {
-    const { emitTo } = await import('@tauri-apps/api/event');
-    await emitTo(DM_WINDOW_LABEL, DM_WINDOW_STATE_EVENT, payload);
-    // Tauri state events are JSON-only; relay live MediaStreams over BroadcastChannel.
-    emitDMWindowMediaState();
+  const openUsers = Array.from(openDMWindowUsers.value);
+  if (openUsers.length === 0) {
     return;
   }
 
-  const webPayload = toWebSerializablePayload(payload);
-
-  if (dmPopupWindow && !dmPopupWindow.closed) {
-    dmPopupWindow.postMessage({ type: 'state', payload: webPayload }, window.location.origin);
+  if (hasTauriWindow) {
+    const { emitTo } = await import('@tauri-apps/api/event');
+    for (const user of openUsers) {
+      const payload = buildDMWindowStatePayload(user);
+      await emitTo(dmWindowLabelForUser(user), DM_WINDOW_STATE_EVENT, payload);
+      emitDMWindowMediaState(user);
+    }
+    return;
   }
 
-  dmWebChannel?.postMessage({
-    type: 'state',
-    payload: webPayload,
-  });
+  for (const user of openUsers) {
+    const payload = buildDMWindowStatePayload(user);
+    const webPayload = toWebSerializablePayload(payload);
+    const popup = dmPopupWindows.get(user);
 
-  // MediaStreams cannot be carried through Tauri events or JSON payloads.
-  // Relay them over BroadcastChannel where structured cloning can preserve stream objects.
-  emitDMWindowMediaState();
+    if (popup && !popup.closed) {
+      popup.postMessage({ type: 'state', payload: webPayload }, window.location.origin);
+    }
+
+    dmWebChannel?.postMessage({
+      type: 'state',
+      payload: webPayload,
+    });
+
+    emitDMWindowMediaState(user);
+  }
 }
 
-async function bringDetachedDMWindowToFront(windowHandle: import('@tauri-apps/api/webviewWindow').WebviewWindow) {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const wasRaised = await invoke<boolean>('raise_dm_window');
-    if (wasRaised) {
-      return;
-    }
-  } catch (error) {
-    console.debug('Rust-side DM raise failed, falling back to frontend focus path:', error);
-  }
-
+async function bringDMWindowToFront(windowHandle: import('@tauri-apps/api/webviewWindow').WebviewWindow) {
   const { UserAttentionType } = await import('@tauri-apps/api/window');
 
   if (await windowHandle.isMinimized()) {
@@ -1782,17 +1546,44 @@ function toSerializedChats(): SerializedDMChat[] {
   return chats;
 }
 
-function buildDMWindowStatePayload(): DMWindowStatePayload {
+function buildDMWindowStatePayload(targetUser: string | null = null): DMWindowStatePayload {
+  const normalizedTarget = normalizeDMUser(targetUser);
+
+  const activeChats = normalizedTarget
+    ? toSerializedChats().filter((chat) => sameDMUser(chat.user, normalizedTarget))
+    : toSerializedChats();
+
+  const pendingRequests = normalizedTarget
+    ? dmPendingRequests.value.filter((request) => sameDMUser(request.from, normalizedTarget))
+    : dmPendingRequests.value;
+
+  const pendingAudioCalls = normalizedTarget
+    ? dmPendingAudioCalls.value.filter((request) => sameDMUser(request.from, normalizedTarget))
+    : dmPendingAudioCalls.value;
+
+  const pendingVideoCalls = normalizedTarget
+    ? dmPendingVideoCalls.value.filter((request) => sameDMUser(request.from, normalizedTarget))
+    : dmPendingVideoCalls.value;
+
+  const outgoingRequests = normalizedTarget
+    ? dmOutgoingRequests.value.filter((user) => sameDMUser(user, normalizedTarget))
+    : dmOutgoingRequests.value;
+
+  const notices = normalizedTarget
+    ? dmNotices.value.filter((notice) => !notice.from || sameDMUser(notice.from, normalizedTarget))
+    : dmNotices.value;
+
   return {
-    activeChats: toSerializedChats(),
-    pendingRequests: dmPendingRequests.value,
-    pendingAudioCalls: dmPendingAudioCalls.value,
-    pendingVideoCalls: dmPendingVideoCalls.value,
-    outgoingRequests: dmOutgoingRequests.value,
-    notices: dmNotices.value,
+    activeChats,
+    pendingRequests,
+    pendingAudioCalls,
+    pendingVideoCalls,
+    outgoingRequests,
+    notices,
     username: username.value,
     dmChatEffect: config.value.dmChatEffect,
-    focusedDMUser: focusedDMUser.value,
+    focusedDMUser: normalizedTarget ?? focusedDMUser.value,
+    targetUser: normalizedTarget,
   };
 }
 
@@ -1800,60 +1591,80 @@ function toWebSerializablePayload(payload: DMWindowStatePayload): DMWindowStateP
   return JSON.parse(JSON.stringify(payload)) as DMWindowStatePayload;
 }
 
-async function focusDetachedDMWindow(): Promise<boolean> {
-  if (hasTauriWindow) {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
-    if (existingWindow) {
-      await bringDetachedDMWindowToFront(existingWindow);
-      dmWindowOpen.value = true;
-      await emitDMWindowState();
-      return true;
-    }
-
-    dmWindowOpen.value = false;
+async function focusDMWindow(user: string): Promise<boolean> {
+  const normalizedUser = normalizeDMUser(user);
+  if (!normalizedUser) {
     return false;
   }
 
-  if (dmPopupWindow && !dmPopupWindow.closed) {
-    dmPopupWindow.focus();
-    dmWindowOpen.value = true;
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(dmWindowLabelForUser(normalizedUser));
+    if (existingWindow) {
+      await bringDMWindowToFront(existingWindow);
+      markDMWindowOpen(normalizedUser);
+      await emitDMWindowState();
+      return true;
+    }
+    return false;
+  }
+
+  const popup = dmPopupWindows.get(normalizedUser);
+  if (popup && !popup.closed) {
+    popup.focus();
+    markDMWindowOpen(normalizedUser);
     await emitDMWindowState();
     return true;
   }
-
-  dmWindowOpen.value = false;
   return false;
 }
 
-async function closeDetachedDMWindow() {
-  teardownAllRelaySenders(false);
-
-  if (hasTauriWindow) {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
-    if (existingWindow) {
-      try {
-        await existingWindow.close();
-      } catch (error) {
-        console.debug('Unable to close detached DM window:', error);
-      }
-    }
-
-    dmWindowOpen.value = false;
+async function closeDMWindow(user: string) {
+  const normalizedUser = normalizeDMUser(user);
+  if (!normalizedUser) {
     return;
   }
 
-  if (dmPopupWindow && !dmPopupWindow.closed) {
-    dmPopupWindow.close();
+  const usersToClose = [normalizedUser];
+
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    for (const userToClose of usersToClose) {
+      const existingWindow = await WebviewWindow.getByLabel(dmWindowLabelForUser(userToClose));
+      if (existingWindow) {
+        try {
+          await existingWindow.close();
+        } catch (error) {
+          console.debug(`Unable to close DM window for ${userToClose}:`, error);
+        }
+      }
+
+      markDMWindowClosed(userToClose);
+    }
+    return;
   }
 
-  dmPopupWindow = null;
-  dmWindowOpen.value = false;
+  for (const userToClose of usersToClose) {
+    const popup = dmPopupWindows.get(userToClose);
+    if (popup && !popup.closed) {
+      popup.close();
+    }
 
-  if (dmPopupWatchIntervalId !== null) {
-    window.clearInterval(dmPopupWatchIntervalId);
-    dmPopupWatchIntervalId = null;
+    dmPopupWindows.delete(userToClose);
+    markDMWindowClosed(userToClose);
+
+    const intervalId = dmPopupWatchIntervals.get(userToClose);
+    if (intervalId !== undefined) {
+      window.clearInterval(intervalId);
+      dmPopupWatchIntervals.delete(userToClose);
+    }
+  }
+}
+
+async function closeAllDMWindows() {
+  const usersToClose = Array.from(openDMWindowUsers.value);
+  for (const user of usersToClose) {
+    await closeDMWindow(user);
   }
 }
 
@@ -1993,22 +1804,31 @@ async function openDetachedAgentAmpWindow() {
   startAgentAmpWebPopupHeartbeat();
 }
 
-async function openDetachedDMWindow() {
+async function openDMWindow(user: string) {
+  const normalizedUser = normalizeDMUser(user);
+  if (!normalizedUser) {
+    return;
+  }
+
+  focusedDMUser.value = normalizedUser;
+
   if (hasTauriWindow) {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const existingWindow = await WebviewWindow.getByLabel(DM_WINDOW_LABEL);
+    const windowLabel = dmWindowLabelForUser(normalizedUser);
+    const existingWindow = await WebviewWindow.getByLabel(windowLabel);
     if (existingWindow) {
-      await bringDetachedDMWindowToFront(existingWindow);
-      dmWindowOpen.value = true;
+      await bringDMWindowToFront(existingWindow);
+      markDMWindowOpen(normalizedUser);
       await emitDMWindowState();
       return;
     }
 
     const dmWindowUrl = new URL(window.location.href);
     dmWindowUrl.searchParams.set('view', 'dm');
-    const dmWindow = new WebviewWindow(DM_WINDOW_LABEL, {
+    dmWindowUrl.searchParams.set('dmUser', normalizedUser);
+    const dmWindow = new WebviewWindow(windowLabel, {
       url: dmWindowUrl.toString(),
-      title: 'AGENT // DM',
+      title: `AGENT // DM // ${normalizedUser}`,
       width: DM_WINDOW_DEFAULT_WIDTH,
       height: DM_WINDOW_DEFAULT_HEIGHT,
       minWidth: DM_WINDOW_MIN_WIDTH,
@@ -2022,23 +1842,23 @@ async function openDetachedDMWindow() {
     });
 
     dmWindow.once('tauri://created', () => {
-      dmWindowOpen.value = true;
+      markDMWindowOpen(normalizedUser);
       void emitDMWindowState();
     });
 
     dmWindow.once('tauri://destroyed', () => {
-      dmWindowOpen.value = false;
+      markDMWindowClosed(normalizedUser);
     });
 
     dmWindow.once('tauri://error', (error) => {
-      console.error('Failed to create detached DM window:', error);
-      dmWindowOpen.value = false;
+      console.error(`Failed to create DM window for ${normalizedUser}:`, error);
+      markDMWindowClosed(normalizedUser);
     });
 
     return;
   }
 
-  const dmWindowUrl = `${window.location.pathname}?view=dm`;
+  const dmWindowUrl = `${window.location.pathname}?view=dm&dmUser=${encodeURIComponent(normalizedUser)}`;
   const popupFeatures = [
     'popup=yes',
     `width=${DM_WINDOW_DEFAULT_WIDTH}`,
@@ -2051,25 +1871,28 @@ async function openDetachedDMWindow() {
     'resizable=yes',
   ].join(',');
 
-  const popup = window.open(dmWindowUrl, 'agent-lobby-dm', popupFeatures);
+  const popup = window.open(dmWindowUrl, `agent-lobby-dm-${normalizedUser}`, popupFeatures);
   if (!popup) {
     return;
   }
 
-  dmPopupWindow = popup;
-  dmWindowOpen.value = true;
-  startWebPopupHeartbeat();
+  dmPopupWindows.set(normalizedUser, popup);
+  markDMWindowOpen(normalizedUser);
+  startWebPopupHeartbeat(normalizedUser);
   await emitDMWindowState();
 }
 
-function handleDetachedDMAction(action: DMWindowAction | undefined) {
+function handleDMWindowAction(action: DMWindowAction | undefined) {
   if (!action || !dm.value) {
     return;
   }
 
   switch (action.type) {
     case 'windowReady':
-      dmWindowOpen.value = true;
+      if (action.user) {
+        markDMWindowOpen(action.user);
+        focusedDMUser.value = action.user;
+      }
       void emitDMWindowState();
       break;
     case 'focusUser':
@@ -2117,6 +1940,9 @@ function handleDetachedDMAction(action: DMWindowAction | undefined) {
     case 'requestAudio':
       handleRequestAudio(action.user);
       break;
+    case 'endCall':
+      handleEndCall(action.user);
+      break;
     case 'toggleAudio':
       handleToggleAudio(action.user, action.enabled);
       break;
@@ -2142,9 +1968,15 @@ function handleDetachedDMAction(action: DMWindowAction | undefined) {
       handleRemoveFile(action.user, action.fileId);
       break;
     case 'windowClosed':
-      dmWindowOpen.value = false;
+      if (action.user && focusedDMUser.value === action.user) {
+        focusedDMUser.value = null;
+      }
+      if (action.user) {
+        markDMWindowClosed(action.user);
+      }
       break;
   }
 }
 </script>
+
 

@@ -13,57 +13,6 @@
         <button v-if="showHeaderClose" class="close-btn" @click="handleClose">✕</button>
       </div>
 
-      <!-- Tab Bar -->
-      <div class="tab-bar">
-        <div
-          v-for="tab in allTabs"
-          :key="tab"
-          :class="['tab', { active: currentTab === tab }]"
-          @click="selectTab(tab)"
-        >
-          <span class="tab-label" :style="{ color: getUserColor(tab) }">
-            {{ tab }}
-            <span v-if="audioEnabledMap.get(tab)" class="audio-indicator">☎</span>
-            <span v-if="isTabConnected(tab)" class="status-indicator">●</span>
-            <span v-else class="status-indicator disconnected">●</span>
-            <span v-if="props.activeChats.get(tab)?.callStartTime" class="call-duration-tab">
-              ⏱ {{ formatDuration(props.activeChats.get(tab)?.callDuration || 0) }}
-            </span>
-            <button
-              v-if="isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
-              class="tab-action-btn phone-btn"
-              @click.stop="handleRequestAudio"
-            >
-              ☎
-            </button>
-            <button
-              v-if="isTabConnected(tab) && !props.activeChats.get(tab)?.callStartTime"
-              class="tab-action-btn camera-btn"
-              @click.stop="handleRequestVideo"
-            >
-              📹
-            </button>
-            <button
-              v-if="props.activeChats.get(tab)?.callStartTime"
-              class="tab-action-btn end-call-btn"
-              @click.stop="handleEndCall(tab)"
-            >
-              ⊗
-            </button>
-            <span v-if="props.activeChats.get(tab)?.isTyping" class="typing-indicator">
-              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            </span>
-          </span>
-          <button
-            class="tab-close"
-            @click.stop="closeTab(tab)"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-
       <!-- Content Area -->
       <div class="modal-content">
         <div v-if="currentTab" class="chat-section" :class="{ 'has-video-call': !!activeVideoCallUser }">
@@ -72,12 +21,12 @@
               v-for="notice in chatToastNotices"
               :key="`notice-${notice.id}`"
               class="notice-item"
-              :class="notice.type || 'info'"
+              :class="[notice.type || 'info', { 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status' }]"
             >
               <span>{{ notice.message }}</span>
-              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer'" class="notice-buttons">
-                <button class="btn-accept" @click="acceptNotice(notice)">ACCEPT</button>
-                <button class="btn-reject" @click="rejectNotice(notice)">REJECT</button>
+              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer'" class="notice-buttons" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }">
+                <button class="btn-accept" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="acceptNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' ? '✅' : 'ACCEPT' }}</button>
+                <button class="btn-reject" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="rejectNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' ? '❌' : 'REJECT' }}</button>
               </div>
             </div>
 
@@ -228,7 +177,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../types/directMessage';
-import { useTheme } from '../composables/useTheme';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import VideoWindow from './VideoWindow.vue';
 
@@ -282,7 +230,6 @@ const emit = defineEmits<{
   removeFile: [user: string, fileId: string];
 }>();
 
-const { getUserColor } = useTheme();
 const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('');
 const messageInput = ref('');
@@ -311,7 +258,6 @@ function ensureMessageId(message: { user: string; message: string; effect?: stri
 
 const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
 const isTypingMap = new Map<string, boolean>(); // Track if we've sent typing signal for each user
-const audioEnabledMap = new Map<string, boolean>(); // Track audio enabled state per user
 const dragOverZone = ref(false); // Track drag-over state for file drop zone
 const activeVideoCallUser = ref<string | null>(null); // Track active video call user
 const filesCollapsed = ref<Record<string, boolean>>({}); // Collapsed state per tab
@@ -323,10 +269,6 @@ let tauriApisPromise: Promise<{
   path: TauriPathModule;
   opener: TauriOpenerModule;
 } | null> | null = null;
-
-function selectTab(tab: string) {
-  currentTab.value = tab;
-}
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -397,16 +339,41 @@ function removeFileTransfer(fileId: string) {
 }
 
 const allTabs = computed(() => Array.from(props.activeChats.keys()));
+
+function sameDMUser(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = left?.trim().toLowerCase();
+  const normalizedRight = right?.trim().toLowerCase();
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return normalizedLeft === normalizedRight;
+}
+
+function resolveTabUser(user: string | null | undefined): string | null {
+  if (!user) {
+    return null;
+  }
+
+  const exact = allTabs.value.find((tab) => tab === user);
+  if (exact) {
+    return exact;
+  }
+
+  const caseInsensitive = allTabs.value.find((tab) => sameDMUser(tab, user));
+  return caseInsensitive ?? user;
+}
+
 const chatToastNotices = computed(() => {
   if (!currentTab.value) return [];
 
   return props.notices.filter((notice) => {
-    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer') {
-      return notice.from === currentTab.value;
+    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status' || notice.type === 'file-offer') {
+      return sameDMUser(notice.from, currentTab.value);
     }
 
     if (notice.type === 'info') {
-      return !notice.from || notice.from === currentTab.value;
+      return !notice.from || sameDMUser(notice.from, currentTab.value);
     }
 
     return false;
@@ -414,7 +381,7 @@ const chatToastNotices = computed(() => {
 });
 
 const outgoingRequestsForCurrentTab = computed(() =>
-  currentTab.value ? props.outgoingRequests.filter((user) => user === currentTab.value) : []
+  currentTab.value ? props.outgoingRequests.filter((user) => sameDMUser(user, currentTab.value)) : []
 );
 
 function acceptNotice(notice: DMNotice) {
@@ -457,13 +424,18 @@ function rejectNotice(notice: DMNotice) {
 watch(allTabs, (newTabs) => {
   if (!newTabs.includes(currentTab.value) && newTabs.length > 0) {
     currentTab.value = newTabs[0];
+    return;
+  }
+
+  if (!currentTab.value && props.focusedDMUser) {
+    currentTab.value = resolveTabUser(props.focusedDMUser) ?? '';
   }
 });
 
 // Switch to focused user when requested
 watch(() => props.focusedDMUser, (focusedUser) => {
-  if (focusedUser && props.activeChats.has(focusedUser)) {
-    currentTab.value = focusedUser;
+  if (focusedUser) {
+    currentTab.value = resolveTabUser(focusedUser) ?? '';
   }
 });
 
@@ -569,17 +541,6 @@ function handleClose() {
   emit('close');
 }
 
-function closeTab(user: string) {
-  emit('closeDm', user);
-  // Close the DM connection via parent and switch tab
-  const tabs = allTabs.value.filter(t => t !== user);
-  if (tabs.length > 0) {
-    currentTab.value = tabs[0];
-  } else {
-    handleClose();
-  }
-}
-
 function sendMessage() {
   if (!messageInput.value.trim() || !currentTab.value) return;
 
@@ -598,36 +559,6 @@ function handleMessageInputEnter() {
 
 function getCurrentChat(): DMChat | undefined {
   return props.activeChats.get(currentTab.value);
-}
-
-function isTabConnected(tab: string): boolean {
-  return props.activeChats.get(tab)?.isConnected ?? false;
-}
-
-function handleRequestAudio() {
-  if (!currentTab.value) return;
-  emit('requestAudio', currentTab.value);
-}
-
-function handleRequestVideo() {
-  if (!currentTab.value) return;
-  emit('requestVideo', currentTab.value);
-}
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-  return `${minutes}:${String(secs).padStart(2, '0')}`;
-}
-
-function handleEndCall(user: string) {
-  activeVideoCallUser.value = null;
-  emit('closeDm', user);
 }
 
 function handleVideoWindowClose() {
@@ -1049,6 +980,10 @@ watch(
   gap: 8px;
 }
 
+.notice-stack-inline {
+  align-items: flex-end;
+}
+
 .notice-item {
   border: 1px solid var(--color-dmchatmodal-notice-danger-border);
   background: var(--color-dmchatmodal-notice-danger-bg);
@@ -1063,8 +998,26 @@ watch(
   gap: 10px;
 }
 
+.notice-item.stack-like {
+  border: none;
+  border-radius: 10px;
+  background: var(--color-dm-request-card-bg);
+  box-shadow: var(--color-dm-request-call-shadow);
+  padding: 8px 10px;
+  max-width: min(420px, calc(100vw - 40px));
+  width: max-content;
+  min-width: 280px;
+  margin-left: auto;
+}
+
 .notice-item.audio-call,
 .notice-item.video-call {
+  border-color: var(--color-dmchatmodal-notice-call-border);
+  background: var(--color-dmchatmodal-notice-call-bg);
+  color: var(--color-dmchatmodal-notice-call-color);
+}
+
+.notice-item.call-status {
   border-color: var(--color-dmchatmodal-notice-call-border);
   background: var(--color-dmchatmodal-notice-call-bg);
   color: var(--color-dmchatmodal-notice-call-color);
@@ -1088,10 +1041,36 @@ watch(
   flex-shrink: 0;
 }
 
+.notice-buttons.stack-like {
+  gap: 6px;
+}
+
 .notice-item.audio-call .btn-accept,
 .notice-item.video-call .btn-accept {
   border-color: var(--color-accent);
   color: var(--color-accent);
+}
+
+.notice-item.stack-like .btn-accept.stack-like,
+.notice-item.stack-like .btn-reject.stack-like {
+  border: none;
+  background: transparent;
+  width: 24px;
+  height: 22px;
+  min-width: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.notice-item.stack-like .btn-accept.stack-like:hover {
+  background: var(--color-dm-request-accept-hover);
+}
+
+.notice-item.stack-like .btn-reject.stack-like:hover {
+  background: var(--color-dm-request-reject-hover);
 }
 
 .notice-item.audio-call .btn-accept:hover,
@@ -1168,122 +1147,6 @@ watch(
 }
 
 .close-btn:hover {
-  opacity: 1;
-}
-
-/* Tab Bar */
-.tab-bar {
-  display: flex;
-  border-bottom: 1px solid var(--color-accent-muted);
-  background: var(--color-chat-surface);
-  overflow-x: auto;
-  flex-shrink: 0;
-}
-
-#dm-modal.presentation-window .tab-bar {
-  border-bottom: 1px solid var(--color-dmchatmodal-tab-bar-window-border);
-  background: var(--color-dmchatmodal-tab-bar-window-bg);
-}
-
-.tab {
-  flex: 1;
-  min-width: 120px;
-  padding: 10px 15px;
-  border-right: 1px solid var(--color-accent-muted);
-  color: var(--color-chat-text-muted);
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: all 0.2s;
-  user-select: none;
-  font-size: 12px;
-  text-transform: uppercase;
-  white-space: nowrap;
-  background: transparent;
-}
-
-#dm-modal.presentation-window .tab {
-  min-width: 144px;
-  padding: 12px 16px;
-  border-right: 1px solid var(--color-dmchatmodal-tab-border-window);
-}
-
-.tab:hover {
-  background: var(--color-dmchatmodal-tab-hover-bg);
-}
-
-.tab.active {
-  background: var(--color-dmchatmodal-tab-active-bg);
-  color: var(--color-accent);
-  border-bottom: 2px solid var(--color-accent);
-}
-
-#dm-modal.presentation-window .tab.active {
-  background: var(--color-dmchatmodal-tab-active-window-bg);
-  box-shadow: var(--color-dmchatmodal-tab-active-window-box-shadow);
-}
-
-.tab-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-}
-
-.tab-action-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 2px 3px;
-  transition: all 0.2s;
-  opacity: 0.7;
-}
-
-.tab-action-btn:hover {
-  opacity: 1;
-  text-shadow: 0 0 8px currentColor;
-}
-
-.phone-btn,
-.camera-btn {
-  color: var(--color-chat-text);
-}
-
-.end-call-btn {
-  color: var(--color-danger);
-}
-
-.call-duration-tab {
-  font-size: 10px;
-  color: var(--color-accent);
-  font-family: 'Courier New', monospace;
-  text-shadow: 0 0 4px var(--color-accent);
-  margin: 0 4px;
-}
-
-.badge {
-  background: var(--color-danger);
-  color: var(--color-on-danger);
-  border-radius: 3px;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.tab-close {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.6;
-  transition: opacity 0.2s;
-  padding: 0 4px;
-}
-
-.tab-close:hover {
   opacity: 1;
 }
 
@@ -1551,10 +1414,18 @@ watch(
 #dm-modal.presentation-window .input-bar {
   border-top: 1px solid var(--color-dmchatmodal-input-bar-window-border);
   background: var(--color-dmchatmodal-input-bar-window-bg);
+  height: 40px;
 }
 
 #dm-modal.presentation-window .input-bar input {
-  padding: 0 18px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+#dm-modal.presentation-window .send-btn {
+  padding: 0 12px;
+  min-width: 56px;
+  font-size: 11px;
 }
 
 .waiting-indicator {

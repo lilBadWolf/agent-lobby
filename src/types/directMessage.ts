@@ -51,7 +51,7 @@ export interface DMChat {
 export interface DMNotice {
   id: number;
   message: string;
-  type?: 'audio-call' | 'video-call' | 'info' | 'file-offer';
+  type?: 'audio-call' | 'video-call' | 'call-status' | 'info' | 'file-offer';
   from?: string;
   fileId?: string;
 }

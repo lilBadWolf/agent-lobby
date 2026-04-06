@@ -357,6 +357,13 @@ export function useDirectMessage(
         pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
         pendingVideoCalls.value.push({ from: fromUser, timestamp: Date.now() });
         clearCallRequestNotice(fromUser, 'video-call');
+
+        try {
+          await acquireLocalMediaStream(fromUser, true);
+        } catch (videoPreviewError) {
+          console.warn('Failed to initialize local video preview for incoming video request:', videoPreviewError);
+        }
+
         pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser, undefined, 0);
       }
     } else if (data.type === 'accept-video') {
@@ -392,6 +399,7 @@ export function useDirectMessage(
       }
       pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
       clearCallRequestNotice(fromUser, 'video-call');
+      endCall(fromUser, false);
       pushNotice(`${fromUser} declined your video call request.`, 'call-status', fromUser);
     } else if (data.type === 'end-call') {
       if (isPresenceRuntime) {
@@ -1392,6 +1400,7 @@ export function useDirectMessage(
 
     pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
     clearCallRequestNotice(fromUser, 'video-call');
+    cleanupPendingVideoPreview(fromUser);
 
     if (!mqttClient) return;
 
@@ -1814,6 +1823,64 @@ export function useDirectMessage(
     }
   }
 
+  async function acquireLocalMediaStream(user: string, includeVideo: boolean): Promise<MediaStream> {
+    const chat = activeChats.value.get(user);
+    if (!chat) {
+      return new MediaStream();
+    }
+
+    const hasExistingVideo = chat.localMediaStream?.getVideoTracks().some((track) => track.readyState === 'live');
+    if (includeVideo && hasExistingVideo) {
+      return chat.localMediaStream as MediaStream;
+    }
+
+    const noMicSelected = audioConfig?.audioInputDeviceId === NO_MIC_DEVICE_ID;
+    const audioConstraints: MediaTrackConstraints | boolean = noMicSelected
+      ? false
+      : audioConfig
+        ? { deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined }
+        : {};
+
+    const noWebcamSelected = audioConfig?.videoInputDeviceId === NO_WEBCAM_DEVICE_ID;
+    const videoConstraints: MediaTrackConstraints | boolean = includeVideo && !noWebcamSelected
+      ? audioConfig
+        ? { deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined }
+        : {}
+      : false;
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: videoConstraints
+      });
+    } catch (mediaError) {
+      console.warn('No local media devices available, proceeding receive-only:', mediaError);
+      stream = new MediaStream();
+      pushNotice('No mic/camera found — joining as listener only.');
+    }
+
+    chat.localMediaStream = stream;
+    setOrUpdateChat(user, chat);
+    return stream;
+  }
+
+  function cleanupPendingVideoPreview(user: string) {
+    const chat = activeChats.value.get(user);
+    if (!chat || chat.videoCallActive || !chat.localMediaStream) {
+      return;
+    }
+
+    const hasVideoTrack = chat.localMediaStream.getVideoTracks().length > 0;
+    if (!hasVideoTrack) {
+      return;
+    }
+
+    chat.localMediaStream.getTracks().forEach((track) => track.stop());
+    chat.localMediaStream = null;
+    setOrUpdateChat(user, chat);
+  }
+
   // Request video call
   async function requestVideoCall(targetUser: string) {
     if (isPresenceRuntime) return;
@@ -1925,35 +1992,11 @@ export function useDirectMessage(
     clearCallRequestNotice(fromUser, 'video-call');
 
     try {
-      const noMicSelected = audioConfig?.audioInputDeviceId === NO_MIC_DEVICE_ID;
-      const audioConstraints: MediaTrackConstraints | boolean = noMicSelected
-        ? false
-        : audioConfig
-          ? { deviceId: audioConfig.audioInputDeviceId ? { ideal: audioConfig.audioInputDeviceId } : undefined }
-          : {};
-
-      const noWebcamSelected = audioConfig?.videoInputDeviceId === NO_WEBCAM_DEVICE_ID;
-      const videoConstraints: MediaTrackConstraints | boolean = noWebcamSelected
-        ? false
-        : audioConfig
-          ? {
-              deviceId: audioConfig.videoInputDeviceId ? { ideal: audioConfig.videoInputDeviceId } : undefined
-            }
-          : {};
-
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: audioConstraints,
-          video: videoConstraints
-        });
-      } catch (mediaError) {
-        console.warn('No local media devices available, proceeding receive-only:', mediaError);
-        stream = new MediaStream();
-        pushNotice('No mic/camera found — joining as listener only.');
-      }
-
       const chat = activeChats.value.get(fromUser);
+      const stream = chat?.localMediaStream?.getVideoTracks().some((track) => track.readyState === 'live')
+        ? chat.localMediaStream
+        : await acquireLocalMediaStream(fromUser, true);
+
       if (chat) {
         console.log('Setting local stream for video call, tracks:', stream.getTracks());
         chat.localMediaStream = stream;
@@ -2060,7 +2103,12 @@ export function useDirectMessage(
       for (const sender of rtcConn.peerConnection.getSenders()) {
         const kind = sender.track?.kind;
         if (kind === 'audio' || kind === 'video') {
-          void sender.replaceTrack(null).catch(() => undefined);
+          try {
+            rtcConn.peerConnection.removeTrack(sender);
+          } catch {
+            // Fallback: detach the sender if removeTrack isn't supported.
+            void sender.replaceTrack(null).catch(() => undefined);
+          }
         }
       }
     }

@@ -1,6 +1,6 @@
 [package]
 name = "agent-lobby"
-version = "0.3.3"
+version = "0.3.4"
 description = "A Chat App"
 authors = ["thecompanyofwolves"]
 edition = "2021"

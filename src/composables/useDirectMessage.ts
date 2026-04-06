@@ -39,6 +39,7 @@ export function useDirectMessage(
   const notices = ref<DMNotice[]>([]);
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
+  const pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
   const callTimers = new Map<string, NodeJS.Timeout>();
   const pendingOutgoingFiles = new Map<string, { user: string; file: File }>();
   const pendingTextMessages = new Map<string, Array<{ messageId: string; message: string; effect: string; duration: number }>>();
@@ -490,6 +491,49 @@ export function useDirectMessage(
       type: description.type,
       signalingState: peerConnection.signalingState,
     });
+
+    // Applying remote SDP unlocks ICE candidate application for this peer.
+    await flushPendingIceCandidates(peerConnection, `setRemoteDescriptionSafely:${context}`);
+  }
+
+  function resolveUserFromPeerConnection(peerConnection: RTCPeerConnection): string | null {
+    return Array.from(rtcConnections.entries()).find(([, conn]) => conn.peerConnection === peerConnection)?.[0] ?? null;
+  }
+
+  async function flushPendingIceCandidates(peerConnection: RTCPeerConnection, context: string) {
+    const user = resolveUserFromPeerConnection(peerConnection);
+    if (!user) {
+      return;
+    }
+
+    const pending = pendingIceCandidates.get(user);
+    if (!pending || pending.length === 0) {
+      return;
+    }
+
+    if (!peerConnection.remoteDescription) {
+      return;
+    }
+
+    pendingIceCandidates.delete(user);
+    console.log('[DMRTC] flushPendingIceCandidates:start', {
+      user,
+      count: pending.length,
+      context,
+    });
+
+    for (const candidate of pending) {
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.debug('Pending ICE candidate error:', error);
+      }
+    }
+
+    console.log('[DMRTC] flushPendingIceCandidates:done', {
+      user,
+      context,
+    });
   }
 
   // Apply a signaling message (offer, answer, or ICE candidate)
@@ -520,6 +564,20 @@ export function useDirectMessage(
         await waitForStableSignalingState(peerConnection);
         await setRemoteDescriptionSafely(peerConnection, data, 'handleSignal:answer');
       } else if (data.candidate) {
+        const user = resolveUserFromPeerConnection(peerConnection);
+        if (!peerConnection.remoteDescription) {
+          if (user) {
+            const pending = pendingIceCandidates.get(user) ?? [];
+            pending.push(data);
+            pendingIceCandidates.set(user, pending);
+            console.log('[DMRTC] queueIceCandidate:remoteDescription-null', {
+              user,
+              pendingCount: pending.length,
+            });
+          }
+          return;
+        }
+
         try {
           await peerConnection.addIceCandidate(new RTCIceCandidate(data));
         } catch (e) {
@@ -1493,6 +1551,7 @@ export function useDirectMessage(
     }
 
     rtcConnections.delete(otherUser);
+    pendingIceCandidates.delete(otherUser);
     signalQueue.delete(otherUser);
     stopCallTimer(otherUser);
     outgoingRequests.value = outgoingRequests.value.filter((user) => user !== otherUser);
@@ -2034,6 +2093,7 @@ export function useDirectMessage(
       rtcConn.peerConnection.close();
     });
     rtcConnections.clear();
+    pendingIceCandidates.clear();
     signalQueue.clear();
     pendingTextMessages.clear();
     pendingOutgoingFiles.clear();

@@ -61,15 +61,6 @@
         ></span>
       </div>
     </div>
-    <button
-      v-if="props.showDmLauncher"
-      id="show-dm-btn"
-      type="button"
-      :class="{ 'compact-show-dm-btn': props.isCompact }"
-      @click="emit('showDmWindow')"
-    >
-      {{ props.isCompact ? 'DM' : 'SHOW DM' }}
-    </button>
     <button id="disconnect-btn" :class="{ 'compact-disconnect-btn': props.isCompact }" @click="emit('disconnect')">{{ props.isCompact ? 'X' : 'TERMINATE' }}</button>
   </aside>
 </template>

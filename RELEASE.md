@@ -1,9 +1,9 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.0**
+🎉 **Release highlights for agent-lobby 0.3.1**
 
-- 🎶 **AgentAMP playlist improvements**: playlist handling and playback flow now feel smoother and more responsive.
-- 🔐 **CSP / IPC hotfix**: resolved the recent content-security and IPC regression for safer, more stable app connectivity.
-- 🛠️ **Polish and reliability**: tightened startup behavior for AgentAMP and reduced edge-case playback glitches.
+- 🎥 **Video timing fix**: improved push/video timing to eliminate playback jitter and restore smoother remote media flow.
+- 🔧 **DM window and sequencing polish**: stabilized the DM/video handshake and sequencing behavior after the recent refactor.
+- 🛠️ **UX trim and reliability**: reduced input/shrink issues and tightened app behavior for a more dependable launch.
 
-> This release sharpens the AgentAMP experience and fixes a critical security/connectivity regression for more dependable app performance.
+> This release focuses on video/DM stability and reliability improvements across the lobby experience.

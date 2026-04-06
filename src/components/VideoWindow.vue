@@ -410,7 +410,7 @@ function setMediaElementStream(element: HTMLMediaElement, stream: MediaStream | 
 }
 
 function buildTrackOnlyStream(stream: MediaStream, kind: 'audio' | 'video'): MediaStream | null {
-  const tracks = stream.getTracks().filter((track) => track.kind === kind && track.readyState === 'live');
+  const tracks = stream.getTracks().filter((track) => track.kind === kind);
   if (tracks.length === 0) {
     return null;
   }
@@ -485,6 +485,13 @@ async function applyRemoteElementStreams(sourceStream: MediaStream | null) {
 
   remoteVideoElementStream.value = buildTrackOnlyStream(sourceStream, 'video');
   remoteAudioElementStream.value = buildTrackOnlyStream(sourceStream, 'audio');
+
+  if (!remoteVideoElementStream.value && sourceStream.getVideoTracks().length > 0) {
+    remoteVideoElementStream.value = sourceStream;
+  }
+  if (!remoteAudioElementStream.value && sourceStream.getAudioTracks().length > 0) {
+    remoteAudioElementStream.value = sourceStream;
+  }
 
   if (remoteVideoRef.value) {
     remoteVideoRef.value.muted = true;

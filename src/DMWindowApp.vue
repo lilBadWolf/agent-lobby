@@ -5,7 +5,7 @@
       <div v-if="activeDMUser" class="titlebar-call-controls">
         <span v-if="hasActiveCall" class="titlebar-call-duration">⏱ {{ activeCallDurationLabel }}</span>
         <button
-          v-if="canRequestCalls"
+          v-if="canRequestCalls && activeDMChat?.isConnected"
           class="titlebar-action-btn"
           type="button"
           @click="handleTitlebarRequestAudio"
@@ -13,7 +13,7 @@
           ☎
         </button>
         <button
-          v-if="canRequestCalls"
+          v-if="canRequestCalls && activeDMChat?.isConnected"
           class="titlebar-action-btn"
           type="button"
           @click="handleTitlebarRequestVideo"

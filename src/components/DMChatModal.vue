@@ -70,6 +70,12 @@
               <div v-if="dragOverZone" class="drop-overlay">
                 Drop files to send
               </div>
+
+              <div v-if="isWaitingForConnection" class="connection-wait-overlay">
+                <div class="connection-wait-box">
+                  <span class="connection-wait-text">Connecting<span class="connection-wait-dots"></span></span>
+                </div>
+              </div>
             </div>
 
             <!-- File Downloads -->
@@ -197,6 +203,10 @@ const showHeaderClose = computed(() => props.showHeaderClose ?? true);
 const showHeaderTitle = computed(() => props.showHeaderTitle ?? true);
 const showHeaderBar = computed(() => showHeaderClose.value || showHeaderTitle.value);
 const presentationMode = computed(() => props.presentation ?? 'modal');
+const isWaitingForConnection = computed(() => {
+  const chat = getCurrentChat();
+  return Boolean(currentTab.value && chat && !chat.isConnected);
+});
 
 const emit = defineEmits<{
   close: [];
@@ -1470,6 +1480,46 @@ watch(
 .input-bar input:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.connection-wait-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.26);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.connection-wait-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: rgba(12, 16, 24, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.connection-wait-text {
+  color: var(--color-accent);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.connection-wait-dots::after {
+  content: '';
+  animation: connection-wait-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes connection-wait-dots {
+  0%, 20% { content: ''; }
+  40% { content: '.'; }
+  60% { content: '..'; }
+  80%, 100% { content: '...'; }
 }
 
 .cancel-btn {

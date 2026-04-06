@@ -1,3 +1,4 @@
+use audiotags::Tag;
 use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Manager, UserAttentionType};
 use serde::{Deserialize, Serialize};
@@ -422,20 +423,58 @@ fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<
     let path_buf = PathBuf::from(&normalized);
 
     if !path_buf.exists() {
-        return Err(format!("Failed to read MP3 for metadata save: file does not exist: {}", normalized));
+        return Err(format!("Failed to save audio metadata: file does not exist: {}", normalized));
     }
 
-    let raw_bytes = fs::read(&path_buf)
-        .map_err(|error| format!("Failed to read MP3 for metadata save: {}", error))?;
+    let extension = path_buf
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
 
-    let cleaned_audio = strip_existing_id3(&raw_bytes);
-    let new_tag = build_id3v2_tag(&metadata);
-    let mut output = Vec::with_capacity(new_tag.len() + cleaned_audio.len());
-    output.extend_from_slice(&new_tag);
-    output.extend_from_slice(cleaned_audio);
+    if extension == "m4a" || extension == "mp4" {
+        let mut tag = Tag::new()
+            .read_from_path(&normalized)
+            .map_err(|error| format!("Failed to read M4A metadata: {}", error))?;
 
-    fs::write(&path_buf, &output)
-        .map_err(|error| format!("Failed to write MP3 metadata: {}", error))
+        if let Some(artist) = metadata.artist.as_ref() {
+            tag.set_artist(artist);
+        }
+        if let Some(title) = metadata.title.as_ref() {
+            tag.set_title(title);
+        }
+        if let Some(album) = metadata.album.as_ref() {
+            tag.set_album_title(album);
+        }
+        if let Some(year) = metadata.year.as_ref() {
+            if let Ok(year) = year.parse::<i32>() {
+                tag.set_year(year);
+            }
+        }
+        if let Some(genre) = metadata.genre.as_ref() {
+            tag.set_genre(genre);
+        }
+        if let Some(track_number) = metadata.track_number.as_ref() {
+            if let Ok(track_number) = track_number.parse::<u16>() {
+                tag.set_track_number(track_number);
+            }
+        }
+
+        tag.write_to_path(&normalized)
+            .map_err(|error| format!("Failed to write M4A metadata: {}", error))
+    } else {
+        let raw_bytes = fs::read(&path_buf)
+            .map_err(|error| format!("Failed to read MP3 for metadata save: {}", error))?;
+
+        let cleaned_audio = strip_existing_id3(&raw_bytes);
+        let new_tag = build_id3v2_tag(&metadata);
+        let mut output = Vec::with_capacity(new_tag.len() + cleaned_audio.len());
+        output.extend_from_slice(&new_tag);
+        output.extend_from_slice(cleaned_audio);
+
+        fs::write(&path_buf, &output)
+            .map_err(|error| format!("Failed to write MP3 metadata: {}", error))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

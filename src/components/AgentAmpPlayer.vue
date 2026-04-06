@@ -4,7 +4,7 @@
       ref="fileInputEl"
       class="agentamp-file-input"
       type="file"
-      accept=".mp3,audio/mpeg"
+      accept=".mp3,.m4a,audio/mpeg,audio/mp4"
       multiple
       @change="handleFileSelection"
     />
@@ -250,7 +250,7 @@
           </button>
         </div>
       </li>
-      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3 FILES TO BUILD A PLAYLIST.</li>
+      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3 OR M4A FILES TO BUILD A PLAYLIST.</li>
     </ul>
 
     <div v-if="editingMetadataIndex !== null" class="agentamp-modal-backdrop" @click.self="closeMetadataEditor">
@@ -1393,13 +1393,17 @@ async function getTauriPath() {
 function extractNameFromPath(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   const filename = segments[segments.length - 1] ?? path;
-  return filename.replace(/\.mp3$/i, '');
+  return filename.replace(/\.(mp3|m4a)$/i, '');
+}
+
+function isSupportedAudioPath(path: string): boolean {
+  return /\.(mp3|m4a)$/i.test(path);
 }
 
 async function addTracksFromPaths(paths: string[]) {
   const normalized = paths
     .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0 && /\.mp3$/i.test(entry));
+    .filter((entry) => entry.length > 0 && isSupportedAudioPath(entry));
 
   if (!normalized.length) {
     return;
@@ -1466,7 +1470,8 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
 
     arrayBuffer = await response.arrayBuffer();
     bytes = new Uint8Array(arrayBuffer);
-    const metadata = parseMp3Metadata(bytes);
+    const isM4a = isM4aTrack(track);
+    const metadata = isM4a ? parseMp4Metadata(bytes) : parseMp3Metadata(bytes);
 
     if (metadata) {
       const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
@@ -1498,7 +1503,7 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     }
 
     if (!track.duration || track.duration <= 0) {
-      metadataSourceUrl = arrayBuffer ? URL.createObjectURL(new Blob([arrayBuffer], { type: 'audio/mpeg' })) : null;
+      metadataSourceUrl = arrayBuffer ? URL.createObjectURL(new Blob([arrayBuffer], { type: isM4a ? 'audio/mp4' : 'audio/mpeg' })) : null;
     }
   } catch (error) {
     console.log(`[AgentAmp] failed to read metadata for ${track.name}`, error);
@@ -1695,6 +1700,123 @@ function parseId3v1(data: Uint8Array): { artist?: string; title?: string; album?
   };
 }
 
+function parseMp4Metadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
+  function readAtomHeader(offset: number) {
+    if (offset + 8 > data.length) {
+      return null;
+    }
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const size = view.getUint32(offset, false);
+    const type = String.fromCharCode(
+      data[offset + 4],
+      data[offset + 5],
+      data[offset + 6],
+      data[offset + 7]
+    );
+    return { size, type };
+  }
+
+  function readStringAtomPayload(atomOffset: number): string | null {
+    const header = readAtomHeader(atomOffset);
+    if (!header || header.type !== 'data') {
+      return null;
+    }
+
+    const dataOffset = atomOffset + 8 + 8;
+    if (dataOffset > data.length) {
+      return null;
+    }
+
+    const payload = data.subarray(dataOffset, atomOffset + header.size);
+    try {
+      return new TextDecoder('utf-8').decode(payload).replace(/\u0000.*$/, '').trim();
+    } catch {
+      return null;
+    }
+  }
+
+  function readTrackNumberAtom(atomOffset: number): string | null {
+    const header = readAtomHeader(atomOffset);
+    if (!header || header.type !== 'data') {
+      return null;
+    }
+
+    const dataOffset = atomOffset + 8 + 8;
+    if (dataOffset + 2 > data.length) {
+      return null;
+    }
+
+    const view = new DataView(data.buffer, data.byteOffset + dataOffset, 2);
+    const trackNum = view.getUint16(0, false);
+    return trackNum > 0 ? String(trackNum) : null;
+  }
+
+  const atomStack: Array<{ offset: number; type: string; size: number }> = [];
+  let offset = 0;
+  const result: { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } = {};
+
+  while (offset + 8 <= data.length) {
+    const header = readAtomHeader(offset);
+    if (!header || header.size < 8) {
+      break;
+    }
+
+    if (header.type === 'moov' || header.type === 'udta' || header.type === 'meta' || header.type === 'ilst') {
+      atomStack.push({ offset, type: header.type, size: header.size });
+      if (header.type === 'meta') {
+        offset += 8 + 4;
+        continue;
+      }
+      offset += 8;
+      continue;
+    }
+
+    if (atomStack.length > 0 && atomStack[atomStack.length - 1].type === 'ilst') {
+      const atomType = header.type;
+
+      if (atomType === '©nam') {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          result.title = value;
+        }
+      } else if (atomType === '©ART') {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          result.artist = value;
+        }
+      } else if (atomType === '©alb') {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          result.album = value;
+        }
+      } else if (atomType === '©day' || atomType === '©too') {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          result.year = value;
+        }
+      } else if (atomType === '©gen') {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          result.genre = value;
+        }
+      } else if (atomType === 'trkn') {
+        const value = readTrackNumberAtom(offset + 8);
+        if (value) {
+          result.trackNumber = value;
+        }
+      }
+    }
+
+    offset += header.size;
+  }
+
+  if (Object.keys(result).length === 0) {
+    return null;
+  }
+
+  return result;
+}
+
 function parseMp3Metadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
   const parsed = parseId3v2(data);
   if (parsed && (parsed.artist || parsed.title || parsed.album || parsed.year || parsed.genre || parsed.trackNumber)) {
@@ -1712,6 +1834,28 @@ async function loadPlaylistMetadata(tracks: PlaylistTrack[]) {
 
 function isPlaylistPath(path: string): boolean {
   return /\.(m3u8?|pls)$/i.test(path);
+}
+
+function getTrackMimeType(track: PlaylistTrack): string | null {
+  if (track.source === 'path') {
+    const match = track.location.match(/\.(mp3|m4a)(?:[?#].*)?$/i);
+    if (!match) {
+      return null;
+    }
+    return match[1].toLowerCase() === 'm4a' ? 'audio/mp4' : 'audio/mpeg';
+  }
+
+  if (track.source === 'dataUrl' && track.location.startsWith('data:')) {
+    const match = track.location.match(/^data:([^;]+);/i);
+    return match?.[1] ?? null;
+  }
+
+  return null;
+}
+
+function isM4aTrack(track: PlaylistTrack): boolean {
+  const mimeType = getTrackMimeType(track);
+  return mimeType === 'audio/mp4' || mimeType === 'audio/x-m4a' || track.location.toLowerCase().endsWith('.m4a');
 }
 
 function isAbsolutePath(path: string): boolean {
@@ -1737,7 +1881,7 @@ function parsePlaylistEntries(content: string): string[] {
     entries.push(line);
   }
 
-  return entries.filter((entry) => /\.mp3(\?|$)/i.test(entry));
+  return entries.filter((entry) => /\.(mp3|m4a)(\?|$)/i.test(entry));
 }
 
 async function resolvePlaylistEntryPath(entry: string, playlistPath: string): Promise<string | null> {
@@ -1866,8 +2010,8 @@ async function openFilePicker() {
     const selection = await dialogOpen({
       multiple: true,
       filters: [
-        { name: 'Audio and Playlists', extensions: ['mp3', 'm3u', 'm3u8', 'pls'] },
-        { name: 'MP3 Audio', extensions: ['mp3'] },
+        { name: 'Audio and Playlists', extensions: ['mp3', 'm4a', 'm3u', 'm3u8', 'pls'] },
+        { name: 'Audio Files', extensions: ['mp3', 'm4a'] },
         { name: 'Playlists', extensions: ['m3u', 'm3u8', 'pls'] },
       ],
     });
@@ -1897,11 +2041,12 @@ async function openFilePicker() {
 async function handleFileSelection(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []).filter((file) => {
-    if (file.type === 'audio/mpeg') {
+    if (file.type === 'audio/mpeg' || file.type === 'audio/mp4' || file.type === 'audio/x-m4a') {
       return true;
     }
 
-    return file.name.toLowerCase().endsWith('.mp3');
+    const lowerName = file.name.toLowerCase();
+    return lowerName.endsWith('.mp3') || lowerName.endsWith('.m4a');
   });
 
   if (!files.length) {
@@ -1912,7 +2057,7 @@ async function handleFileSelection(event: Event) {
   const nextTracks = await Promise.all(
     files.map(async (file, index) => ({
       id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name.replace(/\.mp3$/i, ''),
+      name: file.name.replace(/\.(mp3|m4a)$/i, ''),
       source: 'dataUrl' as const,
       location: await readFileAsDataUrl(file),
       order: playlist.value.length + index,

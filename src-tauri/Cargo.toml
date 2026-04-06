@@ -30,5 +30,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+audiotags = "0.5.0"
 rustfft = "6"
 

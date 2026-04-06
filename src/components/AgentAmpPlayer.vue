@@ -4,7 +4,7 @@
       ref="fileInputEl"
       class="agentamp-file-input"
       type="file"
-      accept=".mp3,.m4a,audio/mpeg,audio/mp4"
+      accept=".mp3,.m4a,.mp4,.webm,.mov,audio/mpeg,audio/mp4,video/mp4,video/webm,video/quicktime"
       multiple
       @change="handleFileSelection"
     />
@@ -361,6 +361,7 @@ type PlaylistTrack = {
   year?: string;
   genre?: string;
   trackNumber?: string;
+  mediaType?: 'audio' | 'video';
 };
 
 type PlaylistDisplayItem = {
@@ -1090,6 +1091,10 @@ function normalizeTrackFsPath(path: string): string {
     // Keep original value when the path is not URI-encoded.
   }
 
+  if (normalized.startsWith('//')) {
+    return normalized.replace(/\//g, '\\');
+  }
+
   return normalized.replace(/\\/g, '/');
 }
 
@@ -1294,9 +1299,22 @@ watch(
   }
 );
 
-watch([isPlaying, currentTrack], () => {
+watch([isPlaying, currentTrack, currentTime, duration], async () => {
   publishPlaybackState();
+  await publishAgentAmpVideoState();
 });
+
+function ensureAgentAmpStatusChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === 'undefined') {
+    return null;
+  }
+
+  if (!agentAmpStatusChannel) {
+    agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
+  }
+
+  return agentAmpStatusChannel;
+}
 
 function publishPlaybackState() {
   const playing = Boolean(isPlaying.value && currentTrack.value);
@@ -1309,13 +1327,60 @@ function publishPlaybackState() {
     }
   }
 
-  if (typeof BroadcastChannel !== 'undefined') {
-    if (!agentAmpStatusChannel) {
-      agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
-    }
-
-    agentAmpStatusChannel.postMessage({ type: 'playback-state', playing });
+  const channel = ensureAgentAmpStatusChannel();
+  if (!channel) {
+    return;
   }
+
+  channel.postMessage({ type: 'playback-state', playing });
+}
+
+async function publishAgentAmpVideoState() {
+  const channel = ensureAgentAmpStatusChannel();
+  if (!channel) {
+    return;
+  }
+
+  const track = currentTrack.value;
+  if (!track || track.mediaType !== 'video') {
+    channel.postMessage({ type: 'agentamp-video-state', track: null });
+    return;
+  }
+
+  let sourceUrl: string | null = track.location;
+  if (track.source === 'path' && isTauriRuntime()) {
+    try {
+      const convertFileSrc = await getTauriConvertFileSrc();
+      if (!convertFileSrc) {
+        console.warn('[AgentAmp] publishAgentAmpVideoState convertFileSrc unavailable', track.location);
+        sourceUrl = null;
+      } else {
+        sourceUrl = convertFileSrc(normalizeTrackFsPath(track.location));
+      }
+    } catch (error) {
+      console.warn('[AgentAmp] publishAgentAmpVideoState failed to convert path', track.location, error);
+      sourceUrl = null;
+    }
+  }
+
+  if (!sourceUrl) {
+    channel.postMessage({ type: 'agentamp-video-state', track: null });
+    return;
+  }
+
+  channel.postMessage({
+    type: 'agentamp-video-state',
+    playing: Boolean(isPlaying.value),
+    track: {
+      id: track.id,
+      name: track.name,
+      source: track.source,
+      location: sourceUrl,
+      mediaType: 'video',
+    },
+    currentTime: Number.isFinite(audioEl.value?.currentTime) ? audioEl.value?.currentTime ?? 0 : currentTime.value,
+    duration: Number.isFinite(duration.value) ? duration.value : 0,
+  });
 }
 
 function isTauriRuntime(): boolean {
@@ -1393,17 +1458,36 @@ async function getTauriPath() {
 function extractNameFromPath(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   const filename = segments[segments.length - 1] ?? path;
-  return filename.replace(/\.(mp3|m4a)$/i, '');
+  return filename.replace(/\.(mp3|m4a|mp4|webm|mov)$/i, '');
 }
 
 function isSupportedAudioPath(path: string): boolean {
   return /\.(mp3|m4a)$/i.test(path);
 }
 
+function isVideoPath(path: string): boolean {
+  return /\.(mp4|webm|mov)$/i.test(path);
+}
+
+function getTrackMediaType(path: string): 'audio' | 'video' {
+  return isVideoPath(path) ? 'video' : 'audio';
+}
+
+function isSupportedMediaPath(path: string): boolean {
+  return isSupportedAudioPath(path) || isVideoPath(path);
+}
+
+function getMediaTypeFromFile(file: File): 'audio' | 'video' {
+  if (file.type.startsWith('video/') || isVideoPath(file.name)) {
+    return 'video';
+  }
+  return 'audio';
+}
+
 async function addTracksFromPaths(paths: string[]) {
   const normalized = paths
     .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0 && isSupportedAudioPath(entry));
+    .filter((entry) => entry.length > 0 && isSupportedMediaPath(entry));
 
   if (!normalized.length) {
     return;
@@ -1422,6 +1506,7 @@ async function addTracksFromPaths(paths: string[]) {
     year: undefined,
     genre: undefined,
     trackNumber: undefined,
+    mediaType: getTrackMediaType(path),
   }));
 
   playlist.value = [...playlist.value, ...nextTracks];
@@ -1441,6 +1526,10 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     typeof track.artist === 'string' && track.artist.trim() &&
     typeof track.title === 'string' && track.title.trim()
   ) {
+    return;
+  }
+
+  if (track.mediaType === 'video') {
     return;
   }
 
@@ -1513,14 +1602,17 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     return;
   }
 
-  const metadataAudio = document.createElement('audio');
-  metadataAudio.preload = 'metadata';
-  metadataAudio.src = metadataSourceUrl ?? sourceUrl ?? track.location;
+  const metadataElement = track.mediaType === undefined && isVideoPath(track.location)
+    ? document.createElement('video')
+    : document.createElement('audio');
+
+  metadataElement.preload = 'metadata';
+  metadataElement.src = metadataSourceUrl ?? sourceUrl ?? track.location;
 
   await new Promise<void>((resolve) => {
     const cleanup = () => {
-      metadataAudio.removeEventListener('loadedmetadata', onLoadedMetadata);
-      metadataAudio.removeEventListener('error', onError);
+      metadataElement.removeEventListener('loadedmetadata', onLoadedMetadata);
+      metadataElement.removeEventListener('error', onError);
       if (metadataSourceUrl) {
         URL.revokeObjectURL(metadataSourceUrl);
       }
@@ -1528,7 +1620,7 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     };
 
     const onLoadedMetadata = () => {
-      const trackDuration = Number.isFinite(metadataAudio.duration) ? metadataAudio.duration : 0;
+      const trackDuration = Number.isFinite(metadataElement.duration) ? metadataElement.duration : 0;
       if (trackDuration > 0) {
         track.duration = trackDuration;
         playlist.value = [...playlist.value];
@@ -1541,9 +1633,9 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
       cleanup();
     };
 
-    metadataAudio.addEventListener('loadedmetadata', onLoadedMetadata);
-    metadataAudio.addEventListener('error', onError);
-    metadataAudio.load();
+    metadataElement.addEventListener('loadedmetadata', onLoadedMetadata);
+    metadataElement.addEventListener('error', onError);
+    metadataElement.load();
   });
 
   await nextTick();
@@ -2010,8 +2102,9 @@ async function openFilePicker() {
     const selection = await dialogOpen({
       multiple: true,
       filters: [
-        { name: 'Audio and Playlists', extensions: ['mp3', 'm4a', 'm3u', 'm3u8', 'pls'] },
+        { name: 'Audio and Video Files', extensions: ['mp3', 'm4a', 'mp4', 'webm', 'mov'] },
         { name: 'Audio Files', extensions: ['mp3', 'm4a'] },
+        { name: 'Video Files', extensions: ['mp4', 'webm', 'mov'] },
         { name: 'Playlists', extensions: ['m3u', 'm3u8', 'pls'] },
       ],
     });
@@ -2041,12 +2134,25 @@ async function openFilePicker() {
 async function handleFileSelection(event: Event) {
   const input = event.target as HTMLInputElement;
   const files = Array.from(input.files ?? []).filter((file) => {
-    if (file.type === 'audio/mpeg' || file.type === 'audio/mp4' || file.type === 'audio/x-m4a') {
+    if (
+      file.type === 'audio/mpeg' ||
+      file.type === 'audio/mp4' ||
+      file.type === 'audio/x-m4a' ||
+      file.type === 'video/mp4' ||
+      file.type === 'video/webm' ||
+      file.type === 'video/quicktime'
+    ) {
       return true;
     }
 
     const lowerName = file.name.toLowerCase();
-    return lowerName.endsWith('.mp3') || lowerName.endsWith('.m4a');
+    return (
+      lowerName.endsWith('.mp3') ||
+      lowerName.endsWith('.m4a') ||
+      lowerName.endsWith('.mp4') ||
+      lowerName.endsWith('.webm') ||
+      lowerName.endsWith('.mov')
+    );
   });
 
   if (!files.length) {
@@ -2057,7 +2163,7 @@ async function handleFileSelection(event: Event) {
   const nextTracks = await Promise.all(
     files.map(async (file, index) => ({
       id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name.replace(/\.(mp3|m4a)$/i, ''),
+      name: file.name.replace(/\.(mp3|m4a|mp4|webm|mov)$/i, ''),
       source: 'dataUrl' as const,
       location: await readFileAsDataUrl(file),
       order: playlist.value.length + index,
@@ -2068,6 +2174,7 @@ async function handleFileSelection(event: Event) {
       year: undefined,
       genre: undefined,
       trackNumber: undefined,
+      mediaType: getMediaTypeFromFile(file),
     }))
   );
 
@@ -2099,10 +2206,23 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
     player.crossOrigin = 'anonymous';
     void getTauriConvertFileSrc().then((convertFileSrc) => {
       if (!convertFileSrc) {
+        console.warn('[AgentAmp] convertFileSrc unavailable for path track', track.location);
+        player.src = track.location;
+        player.currentTime = 0;
+        currentTime.value = pendingRestoreTime;
+        duration.value = 0;
         return;
       }
 
-      player.src = convertFileSrc(normalizeTrackFsPath(track.location));
+      const converted = convertFileSrc(normalizeTrackFsPath(track.location));
+      player.src = converted;
+      console.debug('[AgentAmp] path track src set', track.location, player.src);
+      player.currentTime = 0;
+      currentTime.value = pendingRestoreTime;
+      duration.value = 0;
+    }).catch((error) => {
+      console.error('[AgentAmp] failed to convert path src', track.location, error);
+      player.src = track.location;
       player.currentTime = 0;
       currentTime.value = pendingRestoreTime;
       duration.value = 0;
@@ -2111,7 +2231,6 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
   }
 
   player.src = track.location;
-  player.currentTime = 0;
   currentTime.value = pendingRestoreTime;
   duration.value = 0;
 }
@@ -2128,7 +2247,9 @@ function togglePlayback() {
   }
 
   if (player.paused) {
-    void player.play().catch(() => {
+    console.debug('[AgentAmp] play requested', player.src, currentTrack.value?.location, currentTrack.value?.mediaType);
+    void player.play().catch((error) => {
+      console.error('[AgentAmp] player.play() failed', error, player.src, currentTrack.value?.location, currentTrack.value?.mediaType);
       isPlaying.value = false;
     });
   } else {
@@ -2741,11 +2862,12 @@ async function restorePlayerState() {
               return null;
             }
 
+            const location = typeof track.location === 'string' ? track.location : '';
             const base = {
               id: track.id,
               name: track.name,
               source: track.source === 'path' ? 'path' : 'dataUrl',
-              location: typeof track.location === 'string' ? track.location : '',
+              location,
               order: typeof track.order === 'number' ? track.order : index,
               duration: typeof track.duration === 'number' ? track.duration : undefined,
               artist: typeof track.artist === 'string' ? track.artist : undefined,
@@ -2754,6 +2876,7 @@ async function restorePlayerState() {
               year: typeof track.year === 'string' ? track.year : undefined,
               genre: typeof track.genre === 'string' ? track.genre : undefined,
               trackNumber: typeof track.trackNumber === 'string' ? track.trackNumber : undefined,
+              mediaType: getTrackMediaType(location),
             } as PlaylistTrack;
 
             if (track.source === 'path' && typeof track.location === 'string') {
@@ -2840,19 +2963,21 @@ onMounted(() => {
   window.addEventListener('pagehide', flushPlayerStateOnShutdown);
   window.addEventListener('beforeunload', flushPlayerStateOnShutdown);
 
-  // When detached, listen for a stop-for-transition signal from the main app
-  // so audio stops immediately before the docked player starts playing.
-  if (props.detached && typeof BroadcastChannel !== 'undefined') {
+  // Listen for a stop-for-transition signal from the main app so audio
+  // stops immediately when another pinned source takes priority.
+  if (typeof BroadcastChannel !== 'undefined') {
     agentAmpStopChannel = new BroadcastChannel(AGENTAMP_STOP_CHANNEL);
     agentAmpStopChannel.onmessage = (event) => {
       if (event.data === 'stop-for-transition') {
-        // Write handoff state immediately so the docked instance can restore
-        // from live detached state before this window is actually closed.
-        writeTransitionState({
-          wasPlaying: isPlaying.value,
-          timestamp: Date.now(),
-          playerState: buildPersistedPlayerStateSnapshot(),
-        });
+        if (props.detached) {
+          // Write handoff state immediately so the docked instance can restore
+          // from live detached state before this window is actually closed.
+          writeTransitionState({
+            wasPlaying: isPlaying.value,
+            timestamp: Date.now(),
+            playerState: buildPersistedPlayerStateSnapshot(),
+          });
+        }
 
         audioEl.value?.pause();
         isPlaying.value = false;

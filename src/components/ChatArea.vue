@@ -88,20 +88,36 @@
         </div>
       </div>
     </div>
-    <div v-if="pinnedTwitchEmbed" class="pinned-video-panel">
+    <div v-else-if="pinnedTwitchEmbed" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ getTwitchEmbedHeader(pinnedTwitchEmbed.url) }}</span>
         <div class="pinned-video-actions">
-          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">
-            &lt;
-          </button>
-          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">
-            &gt;
-          </button>
-          <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">
-            UNPIN
-          </button>
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">&lt;</button>
+          <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">&gt;</button>
+          <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">UNPIN</button>
         </div>
+      </div>
+      <div class="video-player-shell pinned-video-shell"
+        :style="{
+          height: `${pinnedVideoHeight}px`,
+          '--pinned-video-height': `${pinnedVideoHeight}px`,
+          '--pinned-control-scale': pinnedControlScale.toString(),
+        }"
+      >
+        <iframe
+          class="pinned-video-frame"
+          :key="pinnedTwitchEmbed.channel"
+          :src="getTwitchEmbedSrc(pinnedTwitchEmbed.channel)"
+          sandbox="allow-scripts allow-same-origin allow-presentation"
+          allow="autoplay; fullscreen; picture-in-picture"
+          allowfullscreen
+          referrerpolicy="strict-origin"
+        ></iframe>
+      </div>
+    </div>
+    <div v-else-if="props.agentAmpPinnedVideo" class="pinned-video-panel">
+      <div class="pinned-video-header">
+        <span class="pinned-video-title">{{ props.agentAmpPinnedVideo.title }}</span>
       </div>
       <div
         class="video-player-shell pinned-video-shell"
@@ -111,15 +127,17 @@
           '--pinned-control-scale': pinnedControlScale.toString(),
         }"
       >
-        <div class="twitch-player-host pinned-twitch-player-host">
-          <iframe
-            :key="pinnedTwitchEmbed.channel"
-            class="twitch-player-frame"
-            :src="getTwitchEmbedSrc(pinnedTwitchEmbed.channel)"
-            allow="autoplay; fullscreen; picture-in-picture"
-            scrolling="no"
-          ></iframe>
-        </div>
+        <video
+          ref="pinnedVideoElement"
+          class="pinned-video-frame"
+          :key="props.agentAmpPinnedVideo.sourceKey"
+          :src="props.agentAmpPinnedVideo.src"
+          muted
+          playsinline
+          autoplay
+          preload="metadata"
+          @loadedmetadata="syncPinnedVideoElementFromState"
+        ></video>
       </div>
     </div>
     <div
@@ -462,6 +480,15 @@ type YouTubeApiLike = {
   };
 };
 
+type AgentAmpPinnedVideo = {
+  sourceKey: string;
+  title: string;
+  src: string;
+  playing: boolean;
+  currentTime: number;
+  duration: number;
+};
+
 type FullscreenElementWithLegacy = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
   msRequestFullscreen?: () => Promise<void> | void;
@@ -492,6 +519,7 @@ const props = defineProps<{
   activeLobbyId?: string;
   defaultLobbyId?: string;
   mentionRequest?: { username: string; nonce: number } | null;
+  agentAmpPinnedVideo?: AgentAmpPinnedVideo | null;
 }>();
 
 const emit = defineEmits<{
@@ -500,6 +528,7 @@ const emit = defineEmits<{
   joinLobby: [lobbyId: string];
   switchLobby: [lobbyId: string];
   closeLobby: [lobbyId: string];
+  agentAmpStop: [];
 }>();
 
 const { getUserColor } = useTheme();
@@ -641,6 +670,7 @@ let youtubeApiPromise: Promise<YouTubeApiLike> | null = null;
 let tauriOpenerPromise: Promise<TauriOpenerModule | null> | null = null;
 let youtubeSyncInterval: ReturnType<typeof setInterval> | null = null;
 const fullscreenChangeTick = ref(0);
+const pinnedVideoElement = ref<HTMLVideoElement | null>(null);
 const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
 const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const PINNED_YOUTUBE_KEY = 'pinned:top';
@@ -656,14 +686,15 @@ const RESTORED_PINNED_SOURCE_KEY_PREFIX = 'restored:';
 
 type PersistedPinnedVideoState =
   | { type: 'youtube'; url: string; height: number }
-  | { type: 'twitch'; url: string; height: number };
+  | { type: 'twitch'; url: string; height: number }
+  | { type: 'agentAmp'; height: number };
 
 let pinnedStateHydrated = false;
 const pinnedYouTubeEmbed = ref<{ sourceKey: string; url: string; videoId: string } | null>(null);
 const pinnedTwitchEmbed = ref<{ sourceKey: string; url: string; channel: string } | null>(null);
 const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
 const shouldAutoplayPinnedOnReady = ref(false);
-const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value));
+const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value || props.agentAmpPinnedVideo));
 const pinnedControlScale = computed(() => {
   const rawScale = pinnedVideoHeight.value / PINNED_VIDEO_DEFAULT_HEIGHT;
   return Math.max(0.78, Math.min(1.2, rawScale));
@@ -924,7 +955,7 @@ async function restorePersistedPinnedVideoState(): Promise<void> {
 
   try {
     const persisted = await getPersistedValue<PersistedPinnedVideoState>(PINNED_VIDEO_STATE_STORAGE_KEY);
-    if (!persisted || !persisted.url) {
+    if (!persisted) {
       return;
     }
 
@@ -950,6 +981,10 @@ async function restorePersistedPinnedVideoState(): Promise<void> {
         url: persisted.url,
         channel,
       };
+    } else if (persisted.type === 'agentAmp') {
+      // Local agentAMP videos are not persisted as a URL.
+      // We still restore the last pinned height when available.
+      return;
     }
   } catch {
     // Ignore storage errors.
@@ -973,7 +1008,9 @@ function persistPinnedVideoState() {
 
   const persisted: PersistedPinnedVideoState = pinnedYouTubeEmbed.value
     ? { type: 'youtube', url: pinnedYouTubeEmbed.value.url, height }
-    : { type: 'twitch', url: pinnedTwitchEmbed.value!.url, height };
+    : pinnedTwitchEmbed.value
+    ? { type: 'twitch', url: pinnedTwitchEmbed.value.url, height }
+    : { type: 'agentAmp', height };
 
   void setPersistedValue(PINNED_VIDEO_STATE_STORAGE_KEY, persisted);
 }
@@ -1090,6 +1127,7 @@ function togglePinYouTubeEmbed(messageIndex: number, embedUrl: string, embedInde
   if (pinnedTwitchEmbed.value) {
     unpinTwitchEmbed();
   }
+  emit('agentAmpStop');
   collapsePinButtonDetails(event);
   pinEmbedBySource(sourceKey, embedUrl, videoId);
 
@@ -1118,6 +1156,7 @@ function togglePinTwitchEmbed(messageIndex: number, embedUrl: string, embedIndex
     unpinYouTubeEmbed();
   }
 
+  emit('agentAmpStop');
   collapsePinButtonDetails(event);
 
   pinnedTwitchEmbed.value = {
@@ -1622,6 +1661,43 @@ function isYouTubeFullscreen(key: string): boolean {
   if (!shell || !currentFullscreenEl) return false;
   return currentFullscreenEl === shell;
 }
+
+function syncPinnedVideoElementFromState() {
+  const state = props.agentAmpPinnedVideo;
+  const video = pinnedVideoElement.value;
+  if (!state || !video) {
+    return;
+  }
+
+  const targetTime = Number.isFinite(state.currentTime)
+    ? Math.max(0, Math.min(state.currentTime, state.duration || video.duration || state.currentTime))
+    : video.currentTime;
+
+  if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.5) {
+    try {
+      video.currentTime = targetTime;
+    } catch {
+      // Ignore seek failures until metadata is ready.
+    }
+  }
+
+  if (state.playing) {
+    void video.play().catch(() => {
+      // Autoplay may be blocked, but video is muted so this is usually okay.
+    });
+  } else {
+    video.pause();
+  }
+}
+
+watch(
+  () => [props.agentAmpPinnedVideo?.src, props.agentAmpPinnedVideo?.playing, props.agentAmpPinnedVideo?.currentTime],
+  async () => {
+    await nextTick();
+    syncPinnedVideoElementFromState();
+  },
+  { immediate: true }
+);
 
 function formatYouTubeTime(seconds: number): string {
   const totalSeconds = Math.max(0, Math.floor(seconds));
@@ -2928,6 +3004,15 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding-top: 0;
   border-bottom: none;
+}
+
+.pinned-video-shell .pinned-video-frame {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: none;
+  background: #000;
+  object-fit: contain;
 }
 
 .pinned-video-shell .video-custom-controls {

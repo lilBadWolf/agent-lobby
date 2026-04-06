@@ -86,11 +86,13 @@
           :active-lobby-id="activeLobbyId"
           :default-lobby-id="networkConfig.defaultLobby"
           :mention-request="mentionRequest"
+          :agent-amp-pinned-video="agentAmpPinnedVideo"
           @send="handleChatSend"
           @join-lobby="handleJoinLobby"
           @switch-lobby="handleSwitchLobby"
           @close-lobby="handleCloseLobby"
           @typing="(typing) => setTyping(typing)"
+          @agent-amp-stop="sendAgentAmpStopPlayback"
         />
         <Sidebar
           :users="users"
@@ -363,9 +365,19 @@ const AGENTAMP_WINDOW_MIN_WIDTH = 560;
 const AGENTAMP_WINDOW_MIN_HEIGHT = 380;
 const AGENTAMP_STATUS_CHANNEL = 'agent-lobby-agentamp-status';
 const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
+const AGENTAMP_STOP_CHANNEL = 'agent-lobby-agentamp-stop';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
+
+type AgentAmpPinnedVideo = {
+  sourceKey: string;
+  title: string;
+  src: string;
+  playing: boolean;
+  currentTime: number;
+  duration: number;
+};
 const DM_LOG_PREFIX = '[AppDM]';
 
 function dmLog(message: string, details?: unknown) {
@@ -389,6 +401,7 @@ let agentAmpPopupWatchIntervalId: number | null = null;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
+const agentAmpPinnedVideo = ref<AgentAmpPinnedVideo | null>(null);
 let cleanupDMActionListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
@@ -581,6 +594,20 @@ function updateAgentAmpPlayingState(nextPlaying: boolean) {
   isAgentAmpPlaying.value = nextPlaying;
 }
 
+function sendAgentAmpStopPlayback() {
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  try {
+    const channel = new BroadcastChannel(AGENTAMP_STOP_CHANNEL);
+    channel.postMessage('stop-for-transition');
+    channel.close();
+  } catch {
+    // Ignore channel failures.
+  }
+}
+
 function markAgentAmpStopped() {
   updateAgentAmpPlayingState(false);
 
@@ -635,12 +662,35 @@ function initializeAgentAmpStatusBridge() {
 
   agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
   agentAmpStatusChannel.onmessage = (event: MessageEvent) => {
-    const message = event.data as { type?: string; playing?: boolean };
-    if (message?.type !== 'playback-state' || typeof message.playing !== 'boolean') {
+    const message = event.data as { type?: string; playing?: boolean; track?: { id?: string; name?: string; location?: string; source?: string; mediaType?: string }; currentTime?: number; duration?: number };
+
+    if (message?.type === 'playback-state' && typeof message.playing === 'boolean') {
+      updateAgentAmpPlayingState(message.playing);
       return;
     }
 
-    updateAgentAmpPlayingState(message.playing);
+    if (message?.type === 'agentamp-video-state') {
+      if (
+        message.playing === true &&
+        message.track?.mediaType === 'video' &&
+        typeof message.track.name === 'string' &&
+        typeof message.track.location === 'string'
+      ) {
+        agentAmpPinnedVideo.value = {
+          sourceKey: message.track.id ?? `${message.track.name}:${message.track.location}`,
+          title: message.track.name,
+          src: message.track.location,
+          playing: true,
+          currentTime: Number.isFinite(message.currentTime ?? NaN) ? message.currentTime ?? 0 : 0,
+          duration: Number.isFinite(message.duration ?? NaN) ? message.duration ?? 0 : 0,
+        };
+      } else {
+        agentAmpPinnedVideo.value = null;
+      }
+      return;
+    }
+
+    updateAgentAmpPlayingState(readPersistedAgentAmpPlayingState());
   };
 }
 

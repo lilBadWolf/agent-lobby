@@ -1,9 +1,8 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.2**
+🎉 **Release highlights for agent-lobby 0.3.3**
 
-- 🎥 **Video timing fix**: improved push/video timing to eliminate playback jitter and restore smoother remote media flow.
-- 🔧 **DM window and sequencing polish**: stabilized the DM/video handshake and sequencing behavior after the recent refactor.
-- 🛠️ **UX trim and reliability**: reduced input/shrink issues and tightened app behavior for a more dependable launch.
+- 🧩 **Version metadata sync**: updated package and Tauri app version metadata for clean builds and release tracking.
+- 🔧 **Packaging consistency**: aligned desktop bundle metadata across `package.json`, `tauri.conf.json`, and `Cargo.toml`.
 
-> This release focuses on video/DM stability and reliability improvements across the lobby experience.
+> This release is a metadata and version alignment patch for the app release workflow.

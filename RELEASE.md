@@ -1,6 +1,6 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.1**
+🎉 **Release highlights for agent-lobby 0.3.2**
 
 - 🎥 **Video timing fix**: improved push/video timing to eliminate playback jitter and restore smoother remote media flow.
 - 🔧 **DM window and sequencing polish**: stabilized the DM/video handshake and sequencing behavior after the recent refactor.

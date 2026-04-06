@@ -250,7 +250,7 @@
           </button>
         </div>
       </li>
-      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3 OR M4A FILES TO BUILD A PLAYLIST.</li>
+      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3, M4A, MP4, WEBM, OR MOV FILES TO BUILD A PLAYLIST.</li>
     </ul>
 
     <div v-if="editingMetadataIndex !== null" class="agentamp-modal-backdrop" @click.self="closeMetadataEditor">
@@ -996,7 +996,15 @@ function handleTrackDblClick(index: number) {
 }
 
 function isMetadataEditable(track: PlaylistTrack): boolean {
-  return track.source === 'path' && track.location.trim().length > 0;
+  if (track.source !== 'path' || !track.location.trim().length) {
+    return false;
+  }
+
+  if (track.mediaType === 'video' || (track.mediaType === undefined && isVideoPath(track.location))) {
+    return false;
+  }
+
+  return true;
 }
 
 function openMetadataEditor(index: number) {
@@ -1484,6 +1492,32 @@ function getMediaTypeFromFile(file: File): 'audio' | 'video' {
   return 'audio';
 }
 
+function getTrackBlobMimeType(track: PlaylistTrack): string {
+  const explicitMimeType = getTrackMimeType(track);
+  if (explicitMimeType) {
+    return explicitMimeType;
+  }
+
+  const mediaType = track.mediaType !== undefined
+    ? track.mediaType
+    : (isVideoPath(track.location) ? 'video' : 'audio');
+  const lowerPath = track.location.toLowerCase();
+
+  if (lowerPath.endsWith('.webm')) {
+    return mediaType === 'video' ? 'video/webm' : 'audio/webm';
+  }
+
+  if (lowerPath.endsWith('.mov')) {
+    return 'video/quicktime';
+  }
+
+  if (lowerPath.endsWith('.mp4')) {
+    return mediaType === 'video' ? 'video/mp4' : 'audio/mp4';
+  }
+
+  return mediaType === 'video' ? 'video/mp4' : 'audio/mpeg';
+}
+
 async function addTracksFromPaths(paths: string[]) {
   const normalized = paths
     .map((entry) => entry.trim())
@@ -1529,9 +1563,7 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     return;
   }
 
-  if (track.mediaType === 'video') {
-    return;
-  }
+  const isVideoTrack = track.mediaType === 'video' || (track.mediaType === undefined && isVideoPath(track.location));
 
   const sourceUrl = await (async () => {
     if (track.source === 'path') {
@@ -1560,7 +1592,9 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     arrayBuffer = await response.arrayBuffer();
     bytes = new Uint8Array(arrayBuffer);
     const isM4a = isM4aTrack(track);
-    const metadata = isM4a ? parseMp4Metadata(bytes) : parseMp3Metadata(bytes);
+    const metadata = !isVideoTrack
+      ? (isM4a ? parseMp4Metadata(bytes) : parseMp3Metadata(bytes))
+      : null;
 
     if (metadata) {
       const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
@@ -1592,7 +1626,8 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     }
 
     if (!track.duration || track.duration <= 0) {
-      metadataSourceUrl = arrayBuffer ? URL.createObjectURL(new Blob([arrayBuffer], { type: isM4a ? 'audio/mp4' : 'audio/mpeg' })) : null;
+      const blobType = getTrackBlobMimeType(track);
+      metadataSourceUrl = arrayBuffer ? URL.createObjectURL(new Blob([arrayBuffer], { type: blobType })) : null;
     }
   } catch (error) {
     console.log(`[AgentAmp] failed to read metadata for ${track.name}`, error);
@@ -1602,9 +1637,7 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     return;
   }
 
-  const metadataElement = track.mediaType === undefined && isVideoPath(track.location)
-    ? document.createElement('video')
-    : document.createElement('audio');
+  const metadataElement = isVideoTrack ? document.createElement('video') : document.createElement('audio');
 
   metadataElement.preload = 'metadata';
   metadataElement.src = metadataSourceUrl ?? sourceUrl ?? track.location;

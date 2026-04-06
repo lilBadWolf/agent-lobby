@@ -203,7 +203,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   }
   if (typeof soundpack === 'string') saved.soundpack = soundpack;
   if (typeof theme === 'string') saved.theme = theme;
-  if (dmChatEffect === 'none' || dmChatEffect === 'matrix' || dmChatEffect === 'glitch' || dmChatEffect === 'flames') {
+  if (dmChatEffect === 'none' || dmChatEffect === 'matrix' || dmChatEffect === 'glitch' || dmChatEffect === 'flames' || dmChatEffect === 'rust') {
     saved.dmChatEffect = dmChatEffect;
   }
   if (typeof audioInputDeviceId === 'string') saved.audioInputDeviceId = audioInputDeviceId;

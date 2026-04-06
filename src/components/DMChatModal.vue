@@ -858,7 +858,7 @@ async function processPendingMessage(): Promise<void> {
     messagesContainer.value.appendChild(animContainer);
   }
 
-  const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
+  const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames' | 'rust';
   try {
     await playAnimation(effect, nextMsg.message, textContainer);
   } catch (e) {

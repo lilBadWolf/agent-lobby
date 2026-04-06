@@ -33,7 +33,7 @@ export interface AudioConfig {
   scanlines?: boolean;
   soundpack: string;
   theme: string;
-  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames';
+  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames' | 'rust';
   audioInputDeviceId: string;
   audioOutputDeviceId: string;
   videoInputDeviceId: string;

@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames';
+type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames' | 'rust';
 
 interface WordAppendState {
   currentWordContainer: HTMLSpanElement | null;
@@ -127,6 +127,41 @@ function ensureAnimationStyles() {
       }
     }
 
+    @keyframes rust-decay {
+      0% { 
+        color: #efefef; 
+        text-shadow: 0 0 0px #000;
+        transform: scale(1);
+        filter: sepia(0) brightness(1) blur(0);
+      }
+      20% { 
+        color: #8e442d; /* Raw Sienna / Rust */
+        text-shadow: 2px 2px 2px #2c1a1a;
+        filter: sepia(0.8) brightness(0.8) contrast(1.2);
+      }
+      80% {
+        opacity: 1;
+        transform: translateY(0) rotate(0deg);
+        filter: sepia(1) brightness(0.5) blur(0.5px);
+      }
+      100% { 
+        opacity: 0; 
+        color: #2c1a1a;
+        transform: translateY(40px) rotate(10deg) scale(0.8);
+        filter: sepia(1) brightness(0.2) blur(4px);
+      }
+    }
+
+    .rust-char {
+      display: inline-block;
+      font-weight: 900;
+      white-space: pre;
+      /* 0.8s to turn to rust, 3s to fully crumble */
+      animation: rust-decay 3.8s cubic-bezier(0.4, 0, 1, 1) forwards;
+      will-change: transform, filter, opacity;
+    }
+
+
     .animation-container {
       position: relative;
       display: inline-block;
@@ -231,6 +266,8 @@ export function getAnimationDuration(effect: AnimationEffect, textLength: number
       return 1200 + baseLength * 20;
     case 'flames':
       return 1800 + baseLength * 40;
+    case 'rust':
+      return 3800 + baseLength * 45;
     default:
       return 0;
   }
@@ -432,6 +469,58 @@ async function playFlamesAnimation(text: string, element: HTMLElement): Promise<
   });
 }
 
+async function playRustAnimation(text: string, element: HTMLElement): Promise<void> {
+  return new Promise((resolve) => {
+    ensureAnimationStyles();
+    element.innerHTML = '';
+    const chars = Array.from(text);
+    const baseDelay = 45; // Speed of "typing" the rusted text
+    let charIndex = 0;
+    const appendState = createWordAppendState();
+
+    function addRustChar() {
+      if (charIndex < chars.length) {
+        const currentChar = chars[charIndex];
+
+        // Handle whitespace
+        if (/\s/.test(currentChar)) {
+          appendCharacterPreservingWords(element, currentChar, appendState, () => {
+            const span = document.createElement('span');
+            span.innerHTML = '&nbsp;';
+            return span;
+          });
+        } else {
+          appendCharacterPreservingWords(element, currentChar, appendState, (val) => {
+            const span = document.createElement('span');
+            span.className = 'rust-char';
+            span.textContent = val;
+
+            // Stagger the animation so the "decay" ripples through the text
+            // instead of everyone crumbling at the exact same moment.
+            span.style.animationDelay = `${charIndex * baseDelay}ms`;
+            return span;
+          });
+        }
+
+        charIndex++;
+        setTimeout(addRustChar, baseDelay);
+      } else {
+        // We wait for the longest animation to finish. 
+        // 3800ms (CSS duration) + (length * delay)
+        const totalDuration = 3800 + (chars.length * baseDelay);
+
+        setTimeout(() => {
+          element.innerHTML = '';
+          resolve();
+        }, totalDuration);
+      }
+    }
+
+    addRustChar();
+  });
+}
+
+
 // Main animation player function
 export function useMessageAnimations() {
   const isPlaying = ref(false);
@@ -458,6 +547,9 @@ export function useMessageAnimations() {
         case 'flames':
           await playFlamesAnimation(text, element);
           break;
+        case 'rust':
+          await playRustAnimation(text, element);
+          break;
         default:
           // 'none' effect - just clear element
           element.innerHTML = '';
@@ -475,6 +567,7 @@ export function useMessageAnimations() {
     playScanAnimation,
     playMatrixAnimation,
     playGlitchAnimation,
-    playFlamesAnimation
+    playFlamesAnimation,
+    playRustAnimation,
   };
 }

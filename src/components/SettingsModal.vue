@@ -93,6 +93,7 @@
               <option value="matrix">MATRIX</option>
               <option value="glitch">GLITCH</option>
               <option value="flames">FLAMES</option>
+              <option value="rust">RUST</option>
             </select>
           </div>
           <div class="setting-row">

@@ -272,8 +272,13 @@ export function useDirectMessage(
       }
 
       if (data.offer) {
+        console.log('[DMRTC] signaling:audio-request', {
+          fromUser,
+          hasOffer: true,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         try {
-          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+          await setRemoteDescriptionSafely(rtcConn.peerConnection, data.offer, 'audio-request');
         } catch (e) {
           console.error('Failed to set remote description for audio request:', e);
         }
@@ -297,8 +302,14 @@ export function useDirectMessage(
       // Acceptor accepted our audio call, handle their answer if present
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && data.answer) {
+        console.log('[DMRTC] signaling:accept-audio', {
+          fromUser,
+          hasAnswer: true,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         try {
-          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          await waitForStableSignalingState(rtcConn.peerConnection);
+          await setRemoteDescriptionSafely(rtcConn.peerConnection, data.answer, 'accept-audio');
         } catch (e) {
           console.error('Failed to set remote description for accept-audio:', e);
         }
@@ -326,8 +337,13 @@ export function useDirectMessage(
       }
 
       if (data.offer) {
+        console.log('[DMRTC] signaling:video-request', {
+          fromUser,
+          hasOffer: true,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         try {
-          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+          await setRemoteDescriptionSafely(rtcConn.peerConnection, data.offer, 'video-request');
         } catch (e) {
           console.error('Failed to set remote description for video request:', e);
         }
@@ -355,8 +371,14 @@ export function useDirectMessage(
       // Acceptor accepted our video call and may include an SDP answer.
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && data.answer) {
+        console.log('[DMRTC] signaling:accept-video', {
+          fromUser,
+          hasAnswer: true,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         try {
-          await rtcConn.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+          await waitForStableSignalingState(rtcConn.peerConnection);
+          await setRemoteDescriptionSafely(rtcConn.peerConnection, data.answer, 'accept-video');
         } catch (e) {
           console.error('Failed to set remote description for accept-video:', e);
         }
@@ -394,13 +416,95 @@ export function useDirectMessage(
     }
   }
 
+  async function waitForStableSignalingState(peerConnection: RTCPeerConnection, timeoutMs = 1500) {
+    if (peerConnection.signalingState === 'stable') {
+      return;
+    }
+
+    console.log('[DMRTC] waitForStableSignalingState:start', {
+      signalingState: peerConnection.signalingState,
+      timeoutMs,
+    });
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+
+      const cleanup = () => {
+        peerConnection.removeEventListener('signalingstatechange', onStateChange);
+      };
+
+      const complete = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        console.log('[DMRTC] waitForStableSignalingState:done', {
+          signalingState: peerConnection.signalingState,
+        });
+        resolve();
+      };
+
+      const onStateChange = () => {
+        if (peerConnection.signalingState === 'stable') {
+          complete();
+        }
+      };
+
+      peerConnection.addEventListener('signalingstatechange', onStateChange);
+      setTimeout(() => complete(), timeoutMs);
+    });
+  }
+
+  async function setRemoteDescriptionSafely(
+    peerConnection: RTCPeerConnection,
+    description: RTCSessionDescriptionInit,
+    context: string
+  ) {
+    console.log('[DMRTC] setRemoteDescriptionSafely:start', {
+      context,
+      type: description.type,
+      signalingState: peerConnection.signalingState,
+    });
+    // If an offer arrives while we're not stable, roll back first to avoid glare races.
+    if (description.type === 'offer' && peerConnection.signalingState !== 'stable') {
+      dmLog(`setRemoteDescriptionSafely rollback before offer (${context})`, {
+        signalingState: peerConnection.signalingState,
+      });
+      console.log('[DMRTC] setRemoteDescriptionSafely:rollback', {
+        context,
+        signalingState: peerConnection.signalingState,
+      });
+      try {
+        await peerConnection.setLocalDescription({ type: 'rollback' });
+      } catch (rollbackError) {
+        console.warn(`Failed to rollback local description (${context}):`, rollbackError);
+      }
+      await waitForStableSignalingState(peerConnection);
+    }
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(description));
+    console.log('[DMRTC] setRemoteDescriptionSafely:done', {
+      context,
+      type: description.type,
+      signalingState: peerConnection.signalingState,
+    });
+  }
+
   // Apply a signaling message (offer, answer, or ICE candidate)
   async function handleSignal(peerConnection: RTCPeerConnection, data: any) {
     try {
       if (data.type === 'offer') {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        console.log('[DMRTC] handleSignal:offer', {
+          signalingState: peerConnection.signalingState,
+        });
+        await setRemoteDescriptionSafely(peerConnection, data, 'handleSignal:offer');
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
+        console.log('[DMRTC] handleSignal:offer:created-answer', {
+          signalingState: peerConnection.signalingState,
+        });
 
         // Send answer back via MQTT
         const fromUser = Array.from(rtcConnections.entries()).find(
@@ -410,7 +514,11 @@ export function useDirectMessage(
           mqttClient.publish(getSignalTopic(fromUser), JSON.stringify(answer));
         }
       } else if (data.type === 'answer') {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+        console.log('[DMRTC] handleSignal:answer', {
+          signalingState: peerConnection.signalingState,
+        });
+        await waitForStableSignalingState(peerConnection);
+        await setRemoteDescriptionSafely(peerConnection, data, 'handleSignal:answer');
       } else if (data.candidate) {
         try {
           await peerConnection.addIceCandidate(new RTCIceCandidate(data));
@@ -427,6 +535,13 @@ export function useDirectMessage(
   // Create and setup an RTCPeerConnection
   function createRTCConnection(otherUser: string, isInitiator: boolean): RTCConnection {
     const peerConnection = new RTCPeerConnection(rtcConfig);
+    console.log('[DMRTC] createRTCConnection', {
+      user: otherUser,
+      isInitiator,
+      signalingState: peerConnection.signalingState,
+      connectionState: peerConnection.connectionState,
+      iceConnectionState: peerConnection.iceConnectionState,
+    });
 
     // If initiator, create data channel
     if (isInitiator) {
@@ -456,6 +571,12 @@ export function useDirectMessage(
     };
 
     peerConnection.onconnectionstatechange = () => {
+      console.log('[DMRTC] connectionstatechange', {
+        user: otherUser,
+        signalingState: peerConnection.signalingState,
+        connectionState: peerConnection.connectionState,
+        iceConnectionState: peerConnection.iceConnectionState,
+      });
       const chat = activeChats.value.get(otherUser);
       if (chat) {
         chat.isConnected = peerConnection.connectionState === 'connected';
@@ -464,6 +585,24 @@ export function useDirectMessage(
       if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
         closeDM(otherUser, false);
       }
+    };
+
+    peerConnection.onsignalingstatechange = () => {
+      console.log('[DMRTC] signalingstatechange', {
+        user: otherUser,
+        signalingState: peerConnection.signalingState,
+        connectionState: peerConnection.connectionState,
+        iceConnectionState: peerConnection.iceConnectionState,
+      });
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('[DMRTC] iceconnectionstatechange', {
+        user: otherUser,
+        signalingState: peerConnection.signalingState,
+        connectionState: peerConnection.connectionState,
+        iceConnectionState: peerConnection.iceConnectionState,
+      });
     };
 
     return {
@@ -1481,8 +1620,20 @@ export function useDirectMessage(
 
       // Create offer
       try {
-        const offer = await rtcConn.peerConnection.createOffer();
+        console.log('[DMRTC] requestAudioCall:createOffer:start', {
+          targetUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
+        await waitForStableSignalingState(rtcConn.peerConnection);
+        const offer = await rtcConn.peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: false,
+        });
         await rtcConn.peerConnection.setLocalDescription(offer);
+        console.log('[DMRTC] requestAudioCall:createOffer:done', {
+          targetUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
 
         mqttClient!.publish(
           getSignalTopic(targetUser),
@@ -1548,8 +1699,16 @@ export function useDirectMessage(
 
       // Create answer
       try {
+        console.log('[DMRTC] acceptAudioCall:createAnswer:start', {
+          fromUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         const answer = await rtcConn.peerConnection.createAnswer();
         await rtcConn.peerConnection.setLocalDescription(answer);
+        console.log('[DMRTC] acceptAudioCall:createAnswer:done', {
+          fromUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
 
         // Send accept signal with answer
         mqttClient.publish(
@@ -1663,8 +1822,20 @@ export function useDirectMessage(
         });
 
         // Explicitly renegotiate from requester, mirroring audio-request flow.
-        const offer = await rtcConn.peerConnection.createOffer();
+        console.log('[DMRTC] requestVideoCall:createOffer:start', {
+          targetUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
+        await waitForStableSignalingState(rtcConn.peerConnection);
+        const offer = await rtcConn.peerConnection.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
+        });
         await rtcConn.peerConnection.setLocalDescription(offer);
+        console.log('[DMRTC] requestVideoCall:createOffer:done', {
+          targetUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
 
         mqttClient.publish(
           getSignalTopic(targetUser),
@@ -1746,8 +1917,16 @@ export function useDirectMessage(
         });
 
         // Answer requester's offer (same semantics as accept-audio).
+        console.log('[DMRTC] acceptVideoCall:createAnswer:start', {
+          fromUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
         const answer = await rtcConn.peerConnection.createAnswer();
         await rtcConn.peerConnection.setLocalDescription(answer);
+        console.log('[DMRTC] acceptVideoCall:createAnswer:done', {
+          fromUser,
+          signalingState: rtcConn.peerConnection.signalingState,
+        });
 
         mqttClient.publish(
           getSignalTopic(fromUser),

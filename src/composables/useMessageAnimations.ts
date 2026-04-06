@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import * as anime from 'animejs';
 
 type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames' | 'rust';
 
@@ -19,105 +20,6 @@ function ensureAnimationStyles() {
       50%, 99% { opacity: 0; }
     }
 
-    @keyframes matrix-fall {
-      0% {
-        opacity: 0;
-        transform: translateY(-100px) scaleY(2);
-        text-shadow: 0 0 5px rgba(57, 255, 20, 0);
-      }
-      50% {
-        opacity: 1;
-        text-shadow: 0 0 15px rgba(57, 255, 20, 0.8);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0) scaleY(1);
-        text-shadow: 0 0 25px rgba(57, 255, 20, 1), 0 0 40px rgba(57, 255, 20, 0.6), inset 0 0 10px rgba(57, 255, 20, 0.4);
-      }
-    }
-
-    @keyframes matrix-settle {
-      0% {
-        text-shadow: 0 0 25px rgba(57, 255, 20, 1), 0 0 40px rgba(57, 255, 20, 0.6);
-      }
-      100% {
-        text-shadow: 0 0 10px rgba(57, 255, 20, 0.6);
-      }
-    }
-
-    @keyframes glitch-corrupt {
-      0% {
-        opacity: 0;
-        transform: translateX(-10px) skewX(-5deg);
-        color: #00ccff;
-        text-shadow: -2px 0 #0088ff, 2px 0 #00ffff;
-      }
-      25% {
-        opacity: 0.7;
-        transform: translateX(5px) skewX(3deg);
-        color: #0088ff;
-        text-shadow: -3px 0 #00ccff, 3px 0 #00ffff;
-      }
-      50% {
-        opacity: 0.9;
-        transform: translateX(-3px) skewX(-2deg);
-        color: #00ffff;
-        text-shadow: -2px 0 #0044ff, 2px 0 #00ccff;
-      }
-      75% {
-        opacity: 0.8;
-        transform: translateX(2px) skewX(1deg);
-        color: #0088ff;
-        text-shadow: -1px 0 #00ffff, 2px 0 #0044ff;
-      }
-      100% {
-        opacity: 1;
-        transform: translateX(0) skewX(0deg);
-        color: #00ffff;
-        text-shadow: 0 0 15px rgba(0, 200, 255, 0.8), 0 0 25px rgba(0, 136, 255, 0.5);
-      }
-    }
-
-    @keyframes flames-ignite {
-      0% {
-        opacity: 0;
-        color: #ffffff;
-        text-shadow:
-          0 0 5px #ffff00,
-          0 0 10px #ff8800,
-          0 0 15px #ff3300;
-        transform: translateY(0) scale(0.8);
-      }
-      30% {
-        opacity: 1;
-        color: #ffff00;
-        text-shadow:
-          0 0 10px #ffff00,
-          0 0 20px #ff8800,
-          0 0 30px #ff3300,
-          0 0 40px #ff0000;
-        transform: translateY(-10px) scale(1.1);
-      }
-      60% {
-        opacity: 1;
-        color: #ff8800;
-        text-shadow:
-          0 0 15px #ff8800,
-          0 0 25px #ff3300,
-          0 0 35px #ff0000,
-          0 0 50px #cc0000;
-        transform: translateY(-20px) scale(1);
-      }
-      100% {
-        opacity: 0;
-        color: #ff0000;
-        text-shadow:
-          0 0 10px #ff0000,
-          0 0 20px #ff0000;
-        transform: translateY(-40px) scale(0.3) rotateZ(15deg);
-      }
-    }
-
     @keyframes scan-reveal {
       from {
         clip-path: inset(0 0 100% 0);
@@ -127,54 +29,38 @@ function ensureAnimationStyles() {
       }
     }
 
-    @keyframes rust-decay {
-      0% { 
-        color: #efefef; 
-        text-shadow: 0 0 0px #000;
-        transform: scale(1);
-        filter: sepia(0) brightness(1) blur(0);
-      }
-      20% { 
-        color: #8e442d; /* Raw Sienna / Rust */
-        text-shadow: 2px 2px 2px #2c1a1a;
-        filter: sepia(0.8) brightness(0.8) contrast(1.2);
-      }
-      80% {
-        opacity: 1;
-        transform: translateY(0) rotate(0deg);
-        filter: sepia(1) brightness(0.5) blur(0.5px);
-      }
-      100% { 
-        opacity: 0; 
-        color: #2c1a1a;
-        transform: translateY(40px) rotate(10deg) scale(0.8);
-        filter: sepia(1) brightness(0.2) blur(4px);
-      }
-    }
-
-    .rust-char {
-      display: inline-block;
-      font-weight: 900;
-      white-space: pre;
-      /* 0.8s to turn to rust, 3s to fully crumble */
-      animation: rust-decay 3.8s cubic-bezier(0.4, 0, 1, 1) forwards;
-      will-change: transform, filter, opacity;
-    }
-
-
     .animation-container {
       position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .animation-text {
+      display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      text-align: center;
+      white-space: pre-wrap;
+      line-height: 1;
+      font-family: inherit;
+    }
+
+    .animation-char {
       display: inline-block;
+      white-space: pre;
+      will-change: transform, opacity, filter, color, text-shadow;
     }
 
     .anim-word {
-      display: inline-block;
+      display: inline-flex;
       white-space: nowrap;
       vertical-align: baseline;
     }
 
     .typewriter-char {
-      display: inline;
+      display: inline-block;
       font-family: inherit;
       font-size: inherit;
       color: inherit;
@@ -187,32 +73,6 @@ function ensureAnimationStyles() {
       background: currentColor;
       margin-left: 2px;
       animation: typewriter-blink 1s step-end infinite;
-    }
-
-    .matrix-char {
-      display: inline-block;
-      animation: matrix-fall 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-      color: var(--color-accent, #39ff14);
-      font-weight: bold;
-      letter-spacing: 2px;
-    }
-
-    .matrix-char.settle {
-      animation: matrix-settle 0.4s ease-out forwards;
-    }
-
-    .glitch-char {
-      display: inline-block;
-      animation: glitch-corrupt 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
-      font-weight: bold;
-      letter-spacing: 1px;
-    }
-
-    .flames-char {
-      display: inline-block;
-      animation: flames-ignite 2s ease-in-out forwards;
-      font-weight: bold;
-      filter: blur(0px);
     }
 
     .scan-text {
@@ -251,6 +111,40 @@ function appendCharacterPreservingWords(
   state.currentWordContainer.appendChild(createCharElement(char));
 }
 
+function createAnimatedCharSpans(element: HTMLElement, text: string): HTMLElement[] {
+  const spans: HTMLElement[] = [];
+  let currentWord: HTMLElement | null = null;
+  const chars = Array.from(text);
+
+  for (const char of chars) {
+    if (/\s/.test(char)) {
+      element.appendChild(document.createTextNode(char));
+      currentWord = null;
+      continue;
+    }
+
+    if (!currentWord) {
+      currentWord = document.createElement('span');
+      currentWord.className = 'anim-word';
+      element.appendChild(currentWord);
+    }
+
+    const charSpan = document.createElement('span');
+    charSpan.className = 'animation-char';
+    charSpan.textContent = char;
+    charSpan.style.opacity = '0';
+    charSpan.style.transform = 'translateY(-8px) scale(1)';
+    currentWord.appendChild(charSpan);
+    spans.push(charSpan);
+  }
+
+  return spans;
+}
+
+function getRandomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
 // Helper to calculate animation duration
 export function getAnimationDuration(effect: AnimationEffect, textLength: number): number {
   const baseLength = Math.max(1, textLength);
@@ -261,13 +155,13 @@ export function getAnimationDuration(effect: AnimationEffect, textLength: number
     case 'scan':
       return 1000 + baseLength * 20;
     case 'matrix':
-      return 1500 + baseLength * 30;
+      return 1400 + baseLength * 20;
     case 'glitch':
-      return 1200 + baseLength * 20;
+      return 1400 + baseLength * 18;
     case 'flames':
-      return 1800 + baseLength * 40;
+      return 1600 + baseLength * 30;
     case 'rust':
-      return 3800 + baseLength * 45;
+      return 2000 + baseLength * 35;
     default:
       return 0;
   }
@@ -336,50 +230,41 @@ async function playMatrixAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
-    const chars = Array.from(text);
-    const charDelay = 40;
-    let addedChars = 0;
-    const totalChars = chars.filter((char) => !/\s/.test(char)).length;
-    const appendState = createWordAppendState();
+    const spans = createAnimatedCharSpans(element, text);
+    element.style.color = 'var(--color-accent, #39ff14)';
+    element.style.textShadow = '0 0 16px rgba(57,255,20,0.75), 0 0 26px rgba(57,255,20,0.35)';
 
-    for (let i = 0; i < chars.length; i++) {
-      setTimeout(() => {
-        const currentChar = chars[i];
-        if (/\s/.test(currentChar)) {
-          appendCharacterPreservingWords(element, currentChar, appendState, () => {
-            const noop = document.createElement('span');
-            noop.textContent = '';
-            return noop;
-          });
-          return;
-        }
+    const timeline = anime.createTimeline({ autoplay: true });
 
-        appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
-          const span = document.createElement('span');
-          span.className = 'matrix-char';
-          span.textContent = value;
-          span.style.animationDelay = '0ms';
-          return span;
-        });
+    timeline.add(spans, {
+      opacity: [0, 1],
+      translateY: ['-120%', '0%'],
+      scaleY: [1.8, 1],
+      rotateX: [-20, 0],
+      easing: 'easeOutQuart',
+      duration: 700,
+      delay: anime.stagger(22),
+    });
 
-        addedChars++;
+    timeline.add(spans, {
+      translateY: [0, -6, 0],
+      duration: 550,
+      easing: 'easeInOutSine',
+      delay: anime.stagger(18),
+      offset: '-=280',
+    });
 
-        // After all chars are added, add settling animation
-        if (totalChars > 0 && addedChars === totalChars) {
-          setTimeout(() => {
-            Array.from(element.querySelectorAll('.matrix-char')).forEach((char) => {
-              (char as HTMLElement).classList.add('settle');
-            });
-          }, 600);
-        }
-      }, i * charDelay);
-    }
+    timeline.add(element, {
+      opacity: [1, 0.9, 1],
+      duration: 600,
+      easing: 'easeInOutSine',
+      offset: '-=550',
+    });
 
-    // Clear after animation completes
-    setTimeout(() => {
+    timeline.then(() => {
       element.innerHTML = '';
       resolve();
-    }, 2000);
+    });
   });
 }
 
@@ -389,40 +274,46 @@ async function playGlitchAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
-    const chars = Array.from(text);
-    const charDelay = 30;
-    let charIndex = 0;
-    const appendState = createWordAppendState();
+    const spans = createAnimatedCharSpans(element, text);
+    element.style.color = '#e8fbff';
+    element.style.textShadow = '0 0 24px rgba(0,255,255,0.65), 0 0 36px rgba(255,0,255,0.5)';
 
-    function addGlitchChar() {
-      if (charIndex < chars.length) {
-        const currentChar = chars[charIndex];
-        if (/\s/.test(currentChar)) {
-          appendCharacterPreservingWords(element, currentChar, appendState, () => {
-            const noop = document.createElement('span');
-            noop.textContent = '';
-            return noop;
-          });
-        } else {
-          appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
-            const span = document.createElement('span');
-            span.className = 'glitch-char';
-            span.textContent = value;
-            span.style.animationDelay = `${charIndex * charDelay}ms`;
-            return span;
-          });
-        }
-        charIndex++;
-        setTimeout(addGlitchChar, charDelay);
-      } else {
-        setTimeout(() => {
-          element.innerHTML = '';
-          resolve();
-        }, 2000);
-      }
-    }
+    const timeline = anime.createTimeline({ autoplay: true });
 
-    addGlitchChar();
+    timeline.add(spans, {
+      opacity: [0, 1],
+      translateX: ['30%', '0%'],
+      rotate: [15, 0],
+      skewX: [20, 0],
+      duration: 420,
+      easing: 'easeOutQuart',
+      delay: anime.stagger(18),
+    });
+
+    timeline.add(spans, {
+      translateX: [0, 10, -10, 0],
+      duration: 280,
+      easing: 'easeInOutSine',
+      delay: anime.stagger(12),
+      offset: '-=260',
+    });
+
+    timeline.add(element, {
+      opacity: [1, 0.92, 1],
+      duration: 1100,
+      easing: 'easeInOutSine',
+      update: () => {
+        const offsetX = getRandomInt(-2, 2);
+        const offsetY = getRandomInt(-2, 2);
+        element.style.textShadow = `${offsetX}px ${offsetY}px 24px rgba(0,255,255,0.75), ${-offsetX}px ${offsetY}px 28px rgba(255,0,255,0.75), 0 0 18px rgba(255,255,255,0.2)`;
+      },
+      offset: '-=820',
+    });
+
+    timeline.then(() => {
+      element.innerHTML = '';
+      resolve();
+    });
   });
 }
 
@@ -432,40 +323,49 @@ async function playFlamesAnimation(text: string, element: HTMLElement): Promise<
     ensureAnimationStyles();
     element.innerHTML = '';
 
-    const chars = Array.from(text);
-    const baseDelay = 60;
-    let charIndex = 0;
-    const appendState = createWordAppendState();
+    const spans = createAnimatedCharSpans(element, text);
+    element.style.color = '#ffd96f';
+    element.style.textShadow = '0 0 36px rgba(255,160,0,0.7), 0 0 64px rgba(255,80,0,0.35)';
 
-    function addFlamesChar() {
-      if (charIndex < chars.length) {
-        const currentChar = chars[charIndex];
-        if (/\s/.test(currentChar)) {
-          appendCharacterPreservingWords(element, currentChar, appendState, () => {
-            const noop = document.createElement('span');
-            noop.textContent = '';
-            return noop;
-          });
-        } else {
-          appendCharacterPreservingWords(element, currentChar, appendState, (value) => {
-            const span = document.createElement('span');
-            span.className = 'flames-char';
-            span.textContent = value;
-            span.style.animationDelay = `${charIndex * baseDelay}ms`;
-            return span;
-          });
-        }
-        charIndex++;
-        setTimeout(addFlamesChar, baseDelay);
-      } else {
-        setTimeout(() => {
-          element.innerHTML = '';
-          resolve();
-        }, 2500);
-      }
-    }
+    const timeline = anime.createTimeline({ autoplay: true });
 
-    addFlamesChar();
+    timeline.add(spans, {
+      opacity: [0, 1],
+      translateY: ['20%', '0%'],
+      scale: [0.8, 1],
+      color: ['#fff9d4', '#ffab3b'],
+      duration: 500,
+      easing: 'easeOutExpo',
+      delay: anime.stagger(30),
+    });
+
+    timeline.add(spans, {
+      translateY: [0, -8, 0],
+      duration: 700,
+      easing: 'easeInOutSine',
+      delay: anime.stagger(20),
+      offset: '-=320',
+    });
+
+    timeline.add(element, {
+      filter: ['blur(8px)', 'blur(0px)'],
+      duration: 800,
+      easing: 'easeOutCirc',
+      offset: '-=520',
+    });
+
+    timeline.add(spans, {
+      scale: [1, 1.04, 1],
+      duration: 720,
+      easing: 'easeInOutSine',
+      delay: anime.stagger(18),
+      offset: '-=520',
+    });
+
+    timeline.then(() => {
+      element.innerHTML = '';
+      resolve();
+    });
   });
 }
 
@@ -473,50 +373,46 @@ async function playRustAnimation(text: string, element: HTMLElement): Promise<vo
   return new Promise((resolve) => {
     ensureAnimationStyles();
     element.innerHTML = '';
-    const chars = Array.from(text);
-    const baseDelay = 45; // Speed of "typing" the rusted text
-    let charIndex = 0;
-    const appendState = createWordAppendState();
 
-    function addRustChar() {
-      if (charIndex < chars.length) {
-        const currentChar = chars[charIndex];
+    const spans = createAnimatedCharSpans(element, text);
+    element.style.color = '#e9e0c9';
+    element.style.textShadow = '0 0 8px rgba(168,101,28,0.55)';
 
-        // Handle whitespace
-        if (/\s/.test(currentChar)) {
-          appendCharacterPreservingWords(element, currentChar, appendState, () => {
-            const span = document.createElement('span');
-            span.innerHTML = '&nbsp;';
-            return span;
-          });
-        } else {
-          appendCharacterPreservingWords(element, currentChar, appendState, (val) => {
-            const span = document.createElement('span');
-            span.className = 'rust-char';
-            span.textContent = val;
+    const timeline = anime.createTimeline({ autoplay: true });
 
-            // Stagger the animation so the "decay" ripples through the text
-            // instead of everyone crumbling at the exact same moment.
-            span.style.animationDelay = `${charIndex * baseDelay}ms`;
-            return span;
-          });
-        }
+    timeline.add(spans, {
+      opacity: [0, 1],
+      translateY: ['-16%', '0%'],
+      rotate: ['-18deg', '0deg'],
+      duration: 480,
+      easing: 'easeOutBack',
+      delay: anime.stagger(24),
+    });
 
-        charIndex++;
-        setTimeout(addRustChar, baseDelay);
-      } else {
-        // We wait for the longest animation to finish. 
-        // 3800ms (CSS duration) + (length * delay)
-        const totalDuration = 3800 + (chars.length * baseDelay);
+    timeline.add(spans, {
+      color: ['#eae1d0', '#8e442d'],
+      filter: ['sepia(0) brightness(1) blur(0px)', 'sepia(1) brightness(0.65) blur(1px)'],
+      duration: 900,
+      easing: 'easeInOutSine',
+      delay: anime.stagger(18),
+      offset: '-=320',
+    });
 
-        setTimeout(() => {
-          element.innerHTML = '';
-          resolve();
-        }, totalDuration);
-      }
-    }
+    timeline.add(spans, {
+      opacity: [1, 0],
+      translateX: [0, 18],
+      translateY: [0, 26],
+      rotate: ['0deg', '20deg'],
+      duration: 820,
+      easing: 'easeInQuad',
+      delay: anime.stagger(28),
+      offset: '+=150',
+    });
 
-    addRustChar();
+    timeline.then(() => {
+      element.innerHTML = '';
+      resolve();
+    });
   });
 }
 

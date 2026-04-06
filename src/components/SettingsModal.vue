@@ -471,6 +471,14 @@ const previewResolutionLabel = ref('N/A');
 let previewStream: MediaStream | null = null;
 const { playAnimation } = useMessageAnimations();
 
+const EFFECT_PREVIEW_LABELS: Record<AudioConfig['dmChatEffect'] | 'none', string> = {
+  none: 'DM READY',
+  matrix: 'NEON STREAM',
+  glitch: 'SYSTEM GLITCH',
+  flames: 'FIREWALL',
+  rust: 'CORRODE',
+};
+
 const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
 
 watch(
@@ -631,14 +639,25 @@ function handleClearLog() {
 async function previewEffect() {
   showEffectPreview.value = true;
   await nextTick(); // Wait for DOM to render
-  if (previewElement.value) {
-    previewElement.value.innerHTML = '';
-    const effectName = localConfig.value.dmChatEffect.toUpperCase();
-    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
+  if (!previewElement.value) {
+    return;
+  }
+
+  const previewText = EFFECT_PREVIEW_LABELS[localConfig.value.dmChatEffect] ?? localConfig.value.dmChatEffect.toUpperCase();
+  previewElement.value.innerHTML = '';
+  previewElement.value.textContent = previewText;
+
+  if (localConfig.value.dmChatEffect === 'none') {
     setTimeout(() => {
       showEffectPreview.value = false;
-    }, 300);
+    }, 900);
+    return;
   }
+
+  await playAnimation(localConfig.value.dmChatEffect as any, previewText, previewElement.value);
+  setTimeout(() => {
+    showEffectPreview.value = false;
+  }, 300);
 }
 
 async function startVideoPreview() {
@@ -1110,26 +1129,45 @@ label {
 .effect-preview {
   position: fixed;
   inset: 0;
-  background: var(--color-settings-effect-overlay);
+  background: radial-gradient(circle at center, rgba(35, 38, 50, 0.7), rgba(8, 12, 18, 0.92) 72%);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 401;
   pointer-events: none;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  animation: preview-fade-in 0.18s ease-out forwards;
 }
 
 .preview-text {
-  font-size: 48px;
-  font-weight: bold;
+  font-size: clamp(2.6rem, 5.2vw, 5.8rem);
+  font-weight: 900;
   text-transform: uppercase;
   font-family: 'Courier New', Courier, monospace;
-  letter-spacing: 3px;
+  letter-spacing: 0.18em;
   text-align: center;
   color: var(--color-accent);
-  min-height: 60px;
-  display: flex;
+  min-height: 82px;
+  max-width: min(90vw, 800px);
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  text-shadow: 0 0 24px rgba(57, 255, 20, 0.75), 0 0 48px rgba(57, 255, 20, 0.25);
+  border-radius: 0;
+  background: transparent;
+}
+
+@keyframes preview-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .folder-btn {

@@ -1417,7 +1417,7 @@ watch(
 .input-bar {
   display: flex;
   border-top: 1px solid var(--color-accent-muted);
-  height: 36px;
+  height: 26px;
   background: var(--color-chat-surface);
   flex-shrink: 0;
   align-items: center;

@@ -409,7 +409,17 @@ const agentAmpPinnedVideo = ref<AgentAmpPinnedVideo | null>(null);
 const chatAreaRef = ref<any>(null);
 const currentAgentAmpMedia = ref<ActiveMedia | null>(null);
 const currentChatPinnedMedia = ref<ActiveMedia | null>(null);
-const activeMediaSource = computed<ActiveMedia | null>(() => currentChatPinnedMedia.value ?? currentAgentAmpMedia.value);
+const activeMediaSource = computed<ActiveMedia | null>(() =>
+  currentChatPinnedMedia.value ??
+  currentAgentAmpMedia.value ??
+  (agentAmpPinnedVideo.value
+    ? {
+        label: agentAmpPinnedVideo.value.title,
+        url: agentAmpPinnedVideo.value.src,
+        mediaType: 'video',
+      }
+    : null)
+);
 watch(activeMediaSource, (next) => {
   setActiveMedia(next);
 }, { immediate: true });

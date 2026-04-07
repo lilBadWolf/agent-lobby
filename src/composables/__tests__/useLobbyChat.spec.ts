@@ -340,6 +340,39 @@ describe('useLobbyChat', () => {
     vi.useRealTimers();
   });
 
+  it('does not auto-away while active media is playing or pinned', () => {
+    vi.useFakeTimers();
+    const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const chat = useLobbyChat();
+
+    chat.boot('HOTEL', 'intel');
+    const activeClient = clients[1];
+    activeClient.emit('connect');
+
+    chat.config.value.autoAwayMinutes = 10;
+    chat.updateSettings();
+
+    chat.setActiveMedia({
+      label: 'Pinned watch',
+      url: 'https://example.test/video',
+      mediaType: 'video',
+    });
+
+    hasFocusSpy.mockReturnValue(false);
+    window.dispatchEvent(new Event('blur'));
+
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(chat.isAway.value).toBe(false);
+
+    chat.setActiveMedia(null);
+    vi.advanceTimersByTime(1);
+
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(chat.isAway.value).toBe(true);
+
+    vi.useRealTimers();
+  });
+
   it('returns from auto-away when app regains focus', () => {
     vi.useFakeTimers();
     const hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);

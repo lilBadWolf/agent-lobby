@@ -80,10 +80,10 @@
       </div>
     </div>
     <div v-if="contextMenu.visible" class="user-context-tooltip" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop @mouseleave="hideContextMenu">
-      <div class="user-context-title">{{ contextMenu.url ? 'WATCHING' : 'LISTENING TO' }}</div>
-      <div class="user-context-label">{{ contextMenu.label }}</div>
+      <div class="user-context-title">{{ contextMenuUrl ? 'WATCHING' : 'LISTENING TO' }}</div>
+      <div class="user-context-label">{{ contextMenuLabel }}</div>
       <button
-        v-if="contextMenu.url"
+        v-if="contextMenuUrl"
         type="button"
         class="user-context-action"
         @click="pinUserMedia"
@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 
@@ -132,9 +132,25 @@ const contextMenu = ref<{
   visible: boolean;
   x: number;
   y: number;
-  label: string;
-  url: string | null;
-}>({ visible: false, x: 0, y: 0, label: '', url: null });
+  username: string | null;
+}>({ visible: false, x: 0, y: 0, username: null });
+const contextMenuActiveMedia = computed(() => {
+  const currentUsername = contextMenu.value.username;
+  const presence = currentUsername ? props.users?.[currentUsername] : undefined;
+  if (!presence?.mediaSharing || !presence?.activeMedia?.label) {
+    return null;
+  }
+  return presence.activeMedia;
+});
+const contextMenuLabel = computed(() => contextMenuActiveMedia.value?.label ?? '');
+const contextMenuUrl = computed(() => (typeof contextMenuActiveMedia.value?.url === 'string' ? contextMenuActiveMedia.value.url : null));
+
+watch(contextMenuActiveMedia, (next) => {
+  if (contextMenu.value.visible && !next) {
+    hideContextMenu();
+  }
+});
+
 const userList = computed(() => {
   const filteredUsers = Object.values(props.users || {}).filter(
     user => user.username !== props.currentUsername
@@ -176,6 +192,7 @@ function getCompactUserLabel(user: string): string {
 
 function hideContextMenu() {
   contextMenu.value.visible = false;
+  contextMenu.value.username = null;
 }
 
 function showUserContextMenu(user: UserPresence, event: MouseEvent) {
@@ -184,22 +201,20 @@ function showUserContextMenu(user: UserPresence, event: MouseEvent) {
     return;
   }
 
-  const label = presence.activeMedia.label;
   contextMenu.value = {
     visible: true,
     x: Math.min(window.innerWidth - 280, event.clientX + 6),
     y: Math.min(window.innerHeight - 120, event.clientY + 6),
-    label,
-    url: typeof presence.activeMedia.url === 'string' ? presence.activeMedia.url : null,
+    username: user.username,
   };
 }
 
 function pinUserMedia() {
-  if (!contextMenu.value.url) {
+  if (!contextMenuUrl.value) {
     return;
   }
 
-  emit('pinUserMedia', contextMenu.value.url);
+  emit('pinUserMedia', contextMenuUrl.value);
   hideContextMenu();
 }
 </script>

@@ -774,7 +774,7 @@ export function useLobbyChat() {
 
   function scheduleAutoAwayTimer() {
     const delayMs = getAutoAwayDelayMs();
-    if (!isConnected.value || isAway.value || delayMs <= 0) {
+    if (!isConnected.value || isAway.value || delayMs <= 0 || activeMedia.value) {
       clearAutoAwayTimer();
       return;
     }
@@ -785,6 +785,20 @@ export function useLobbyChat() {
       setAway(true, 'auto');
     }, delayMs);
   }
+
+  watch(
+    () => activeMedia.value,
+    (nextActiveMedia) => {
+      if (nextActiveMedia) {
+        clearAutoAwayTimer();
+        return;
+      }
+
+      if (typeof document !== 'undefined' && !document.hasFocus() && isConnected.value && !isAway.value && getAutoAwayDelayMs() > 0) {
+        scheduleAutoAwayTimer();
+      }
+    }
+  );
 
   function setTyping(typing: boolean) {
     ensureLobbyState(activeLobbyId.value);

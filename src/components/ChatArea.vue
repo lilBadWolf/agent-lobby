@@ -3114,7 +3114,6 @@ onBeforeUnmount(() => {
 
 .pinned-video-divider {
   height: 14px;
-  border-bottom: 1px solid var(--color-accent);
   background: var(--color-chat-surface-strong);
   display: flex;
   align-items: center;
@@ -3129,15 +3128,11 @@ onBeforeUnmount(() => {
   border-radius: 3px;
   background: repeating-linear-gradient(
     90deg,
-    rgba(57, 255, 20, 0.18) 0,
-    rgba(57, 255, 20, 0.18) 8px,
-    rgba(57, 255, 20, 0.06) 8px,
-    rgba(57, 255, 20, 0.06) 16px
+    var(--color-accent-muted) 0,
+    var(--color-accent-muted) 8px,
+    var(--color-chat-border) 8px,
+    var(--color-chat-border) 16px
   );
-}
-
-.pinned-video-divider:hover .pinned-video-divider-grip {
-  border-color: var(--color-accent);
 }
 
 .youtube-player-host {

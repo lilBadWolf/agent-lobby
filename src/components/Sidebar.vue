@@ -41,7 +41,7 @@
           class="user-bullet-btn"
           :class="{ 'user-bullet-clickable': user.mediaSharing && user.activeMedia?.label }"
           :aria-label="`Show presence menu for ${user.username}`"
-          @click.stop="showUserContextMenu(user, $event)"
+          @mouseenter.stop="showUserContextMenu(user, $event)"
         >
           <span v-if="user.isBot" aria-hidden="true">🤖</span>
           <span v-else-if="user.isAway" aria-hidden="true">💤</span>
@@ -58,6 +58,7 @@
           :class="{ 'compact-user-handle-btn': props.isCompact, 'typing-user': user.isTyping }"
           :aria-label="`Mention ${user.username}`"
           @click="emit('mentionRequest', user.username)"
+          @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
         >
           {{ props.isCompact ? getCompactUserLabel(user.username) : user.username }}
         </button>

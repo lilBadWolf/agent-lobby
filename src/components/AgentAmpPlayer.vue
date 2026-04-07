@@ -1308,6 +1308,8 @@ watch(
 );
 
 watch([isPlaying, currentTrack, currentTime, duration], async () => {
+  updateMediaSessionMetadata();
+  updateMediaSessionPlaybackState();
   publishPlaybackState();
   await publishAgentAmpVideoState();
 });
@@ -1341,6 +1343,126 @@ function publishPlaybackState() {
   }
 
   channel.postMessage({ type: 'playback-state', playing });
+}
+
+function updateMediaSessionMetadata() {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+    return;
+  }
+
+  const track = currentTrack.value;
+  if (!track) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: 'AgentAmp' });
+    } catch {
+      // Ignore unsupported metadata.
+    }
+    return;
+  }
+
+  const inferred = inferArtistTitle(track);
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: inferred.title || track.name,
+      artist: inferred.artist,
+      album: track.album,
+    });
+  } catch {
+    // Ignore unsupported metadata.
+  }
+}
+
+function updateMediaSessionPlaybackState() {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+    return;
+  }
+
+  try {
+    navigator.mediaSession.playbackState = isPlaying.value ? 'playing' : 'paused';
+  } catch {
+    // Ignore unsupported playback state.
+  }
+}
+
+function initializeMediaSession() {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+    return;
+  }
+
+  try {
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (audioEl.value?.paused ?? true) {
+        togglePlayback();
+      }
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (!(audioEl.value?.paused ?? true)) {
+        togglePlayback();
+      }
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      playPrevious();
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      playNext();
+    });
+    navigator.mediaSession.setActionHandler('stop', () => {
+      stopPlayback();
+    });
+  } catch {
+    // Ignore unsupported action handlers.
+  }
+}
+
+function clearMediaSessionHandlers() {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+    return;
+  }
+
+  try {
+    navigator.mediaSession.setActionHandler('play', null);
+    navigator.mediaSession.setActionHandler('pause', null);
+    navigator.mediaSession.setActionHandler('previoustrack', null);
+    navigator.mediaSession.setActionHandler('nexttrack', null);
+    navigator.mediaSession.setActionHandler('stop', null);
+  } catch {
+    // Ignore unsupported action handlers.
+  }
+}
+
+function handleMediaKeyEvent(event: KeyboardEvent) {
+  switch (event.code) {
+    case 'MediaPlayPause':
+      event.preventDefault();
+      togglePlayback();
+      break;
+    case 'MediaPlay':
+      event.preventDefault();
+      if (audioEl.value?.paused ?? true) {
+        togglePlayback();
+      }
+      break;
+    case 'MediaPause':
+      event.preventDefault();
+      if (!(audioEl.value?.paused ?? true)) {
+        togglePlayback();
+      }
+      break;
+    case 'MediaTrackNext':
+      event.preventDefault();
+      playNext();
+      break;
+    case 'MediaTrackPrevious':
+      event.preventDefault();
+      playPrevious();
+      break;
+    case 'MediaStop':
+      event.preventDefault();
+      stopPlayback();
+      break;
+    default:
+      return;
+  }
 }
 
 async function publishAgentAmpVideoState() {
@@ -3020,11 +3142,17 @@ onMounted(() => {
 
   restorePlayerState();
   restartNowCycle();
+  updateMediaSessionMetadata();
+  updateMediaSessionPlaybackState();
   publishPlaybackState();
+  window.addEventListener('keydown', handleMediaKeyEvent);
+  initializeMediaSession();
 });
 
 onBeforeUnmount(() => {
   stopDockedPlaylistResize();
+  window.removeEventListener('keydown', handleMediaKeyEvent);
+  clearMediaSessionHandlers();
 
   window.removeEventListener('pagehide', flushPlayerStateOnShutdown);
   window.removeEventListener('beforeunload', flushPlayerStateOnShutdown);

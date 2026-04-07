@@ -581,6 +581,56 @@ function getYouTubeVideoId(url: string): string | null {
   }
 }
 
+function parseYouTubeTimeValue(value: string | null): number | null {
+  if (!value || !value.trim()) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized);
+  }
+
+  const match = normalized.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1] ?? 0);
+  const minutes = Number(match[2] ?? 0);
+  const seconds = Number(match[3] ?? 0);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function getYouTubeStartTime(url: string): number | null {
+  try {
+    const parsed = new URL(url);
+    const startValue = parsed.searchParams.get('start') ?? parsed.searchParams.get('t');
+    const queryTime = parseYouTubeTimeValue(startValue);
+    if (Number.isFinite(queryTime ?? NaN)) {
+      return queryTime;
+    }
+
+    const hash = parsed.hash.replace(/^#/, '');
+    if (hash) {
+      const hashParams = new URLSearchParams(hash);
+      const hashTime = parseYouTubeTimeValue(hashParams.get('t') ?? hashParams.get('start'));
+      if (Number.isFinite(hashTime ?? NaN)) {
+        return hashTime;
+      }
+
+      const plainHashTime = parseYouTubeTimeValue(hash);
+      if (Number.isFinite(plainHashTime ?? NaN)) {
+        return plainHashTime;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const TWITCH_RESERVED_PATHS = new Set([
   'clip',
   'clips',
@@ -707,6 +757,7 @@ watch(
         label: getYouTubeEmbedHeader(pinnedYouTubeEmbed.value.url),
         url: pinnedYouTubeEmbed.value.url,
         mediaType: 'video',
+        currentTime: getPlayerState(PINNED_YOUTUBE_KEY).currentTime,
       });
       return;
     }
@@ -725,6 +776,8 @@ watch(
   { immediate: true }
 );
 
+const lastPinnedYouTubeTimeSent = ref<number>(0);
+
 watch(pinnedYouTubeEmbed, (next) => {
   if (next) {
     void ensureYouTubeTitle(next.url);
@@ -736,6 +789,28 @@ watch(pinnedTwitchEmbed, (next) => {
     void ensureTwitchTitle(next.url);
   }
 }, { immediate: true });
+
+watch(
+  () => getPlayerState(PINNED_YOUTUBE_KEY).currentTime,
+  (currentTime) => {
+    if (!pinnedYouTubeEmbed.value) {
+      return;
+    }
+
+    const roundedTime = Math.floor(currentTime);
+    if (roundedTime === lastPinnedYouTubeTimeSent.value) {
+      return;
+    }
+
+    lastPinnedYouTubeTimeSent.value = roundedTime;
+    emit('pinnedVideoChange', {
+      label: getYouTubeEmbedHeader(pinnedYouTubeEmbed.value.url),
+      url: pinnedYouTubeEmbed.value.url,
+      mediaType: 'video',
+      currentTime: roundedTime,
+    });
+  }
+);
 
 watch(
   () => getPlayerState(PINNED_YOUTUBE_KEY).currentTime,
@@ -965,7 +1040,9 @@ function setPendingPinnedYouTubeTime(startTime: number | undefined | null) {
 function pinMediaUrl(payload: PinMediaPayload) {
   const rawUrl = typeof payload === 'string' ? payload : payload.url;
   const normalizedUrl = normalizeUrlToken(rawUrl);
-  const startTime = typeof payload === 'object' ? payload.currentTime : undefined;
+  const explicitStartTime = typeof payload === 'object' ? payload.currentTime : undefined;
+  const urlStartTime = getYouTubeStartTime(normalizedUrl);
+  const startTime = Number.isFinite(explicitStartTime ?? NaN) ? explicitStartTime : urlStartTime;
   let youtubeId = getYouTubeVideoId(normalizedUrl);
 
   if (!youtubeId) {
@@ -1479,6 +1556,20 @@ async function ensureYouTubeApi(): Promise<YouTubeApiLike> {
 
 function syncYouTubePlayerStates() {
   youtubePlayers.forEach((player, key) => {
+    const playerState = getPlayerState(key);
+    if (!playerState.ready) {
+      return;
+    }
+
+    if (
+      typeof player.getCurrentTime !== 'function' ||
+      typeof player.getDuration !== 'function' ||
+      typeof player.getVolume !== 'function' ||
+      typeof player.getPlayerState !== 'function'
+    ) {
+      return;
+    }
+
     const current = Number(player.getCurrentTime()) || 0;
     const duration = Number(player.getDuration()) || 0;
     const volume = Number(player.getVolume()) || 0;

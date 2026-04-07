@@ -2734,7 +2734,7 @@ onBeforeUnmount(() => {
   margin: 15px 0;
   letter-spacing: 1px;
   font-weight: bold;
-  background: linear-gradient(90deg, transparent, rgba(57, 255, 20, 0.05), transparent);
+  background: linear-gradient(90deg, transparent, var(--color-accent-muted), transparent);
 }
 
 .sender {

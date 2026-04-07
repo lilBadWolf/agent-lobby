@@ -697,26 +697,42 @@ const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
 const shouldAutoplayPinnedOnReady = ref(false);
 const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value || props.agentAmpPinnedVideo));
 
-watch([pinnedYouTubeEmbed, pinnedTwitchEmbed], () => {
-  if (pinnedYouTubeEmbed.value) {
-    emit('pinnedVideoChange', {
-      label: getYouTubeEmbedHeader(pinnedYouTubeEmbed.value.url),
-      url: pinnedYouTubeEmbed.value.url,
-      mediaType: 'video',
-    });
-    return;
-  }
+watch(
+  [pinnedYouTubeEmbed, pinnedTwitchEmbed, youtubeTitleCache, twitchTitleCache],
+  () => {
+    if (pinnedYouTubeEmbed.value) {
+      emit('pinnedVideoChange', {
+        label: getYouTubeEmbedHeader(pinnedYouTubeEmbed.value.url),
+        url: pinnedYouTubeEmbed.value.url,
+        mediaType: 'video',
+      });
+      return;
+    }
 
-  if (pinnedTwitchEmbed.value) {
-    emit('pinnedVideoChange', {
-      label: getTwitchEmbedHeader(pinnedTwitchEmbed.value.url),
-      url: pinnedTwitchEmbed.value.url,
-      mediaType: 'video',
-    });
-    return;
-  }
+    if (pinnedTwitchEmbed.value) {
+      emit('pinnedVideoChange', {
+        label: getTwitchEmbedHeader(pinnedTwitchEmbed.value.url),
+        url: pinnedTwitchEmbed.value.url,
+        mediaType: 'video',
+      });
+      return;
+    }
 
-  emit('pinnedVideoChange', null);
+    emit('pinnedVideoChange', null);
+  },
+  { immediate: true }
+);
+
+watch(pinnedYouTubeEmbed, (next) => {
+  if (next) {
+    void ensureYouTubeTitle(next.url);
+  }
+}, { immediate: true });
+
+watch(pinnedTwitchEmbed, (next) => {
+  if (next) {
+    void ensureTwitchTitle(next.url);
+  }
 }, { immediate: true });
 
 const pinnedControlScale = computed(() => {

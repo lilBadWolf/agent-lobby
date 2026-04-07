@@ -81,10 +81,16 @@
       </div>
     </div>
     <div v-if="contextMenu.visible" class="user-context-tooltip" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop @mouseleave="hideContextMenu">
-      <div class="user-context-title">{{ contextMenuUrl ? 'WATCHING' : 'LISTENING TO' }}</div>
+      <div class="user-context-title">{{ contextMenuTitle }}</div>
+      <div
+        v-if="contextMenuWatcherLine && contextMenuTitle !== 'BOTH WATCHING'"
+        class="user-context-title user-context-watcher-line"
+      >
+        {{ contextMenuWatcherLine }}
+      </div>
       <div class="user-context-label">{{ contextMenuLabel }}</div>
       <button
-        v-if="contextMenuUrl"
+        v-if="contextMenuActionVisible"
         type="button"
         class="user-context-action"
         @click="pinUserMedia"
@@ -145,6 +151,64 @@ const contextMenuActiveMedia = computed(() => {
 });
 const contextMenuLabel = computed(() => contextMenuActiveMedia.value?.label ?? '');
 const contextMenuUrl = computed(() => (typeof contextMenuActiveMedia.value?.url === 'string' ? contextMenuActiveMedia.value.url : null));
+const contextMenuTargetUsername = computed(() => contextMenu.value.username);
+const contextMenuWatcherCount = computed(() => {
+  const url = contextMenuUrl.value;
+  if (!url) {
+    return 0;
+  }
+  return Object.values(props.users || {}).filter(
+    (user) => user.activeMedia?.url === url
+  ).length;
+});
+const contextMenuIsCurrentUserPinnedSameVideo = computed(() => {
+  const currentPresence = props.currentUsername ? props.users?.[props.currentUsername] : undefined;
+  return Boolean(contextMenuUrl.value && currentPresence?.activeMedia?.url === contextMenuUrl.value);
+});
+const contextMenuWatcherUsernames = computed(() => {
+  const url = contextMenuUrl.value;
+  if (!url) {
+    return [] as string[];
+  }
+  return Object.values(props.users || {})
+    .filter((user) => user.activeMedia?.url === url && user.username !== contextMenuTargetUsername.value)
+    .map((user) => user.username)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+});
+const contextMenuOtherWatcherNames = computed(() => {
+  const currentUsername = props.currentUsername;
+  return contextMenuWatcherUsernames.value.filter((username) => username !== currentUsername);
+});
+const contextMenuTitle = computed(() => {
+  if (!contextMenuUrl.value) {
+    return 'LISTENING TO';
+  }
+
+  const count = contextMenuWatcherCount.value;
+  if (count > 2 && contextMenuIsCurrentUserPinnedSameVideo.value) {
+    return `${count} AGENTS WATCHING`;
+  }
+  if (count === 2 && contextMenuIsCurrentUserPinnedSameVideo.value) {
+    return 'BOTH WATCHING';
+  }
+  if (contextMenuWatcherUsernames.value.length > 0) {
+    return 'WATCHING WITH';
+  }
+  return 'WATCHING';
+});
+const contextMenuWatcherLine = computed(() => {
+  if (contextMenuWatcherUsernames.value.length === 0) {
+    return '';
+  }
+
+  if (contextMenuIsCurrentUserPinnedSameVideo.value) {
+    return ['You', ...contextMenuOtherWatcherNames.value].join(', ');
+  }
+
+  return contextMenuWatcherUsernames.value.join(', ');
+});
+const contextMenuActionVisible = computed(() => Boolean(contextMenuUrl.value && !contextMenuIsCurrentUserPinnedSameVideo.value));
 
 watch(contextMenuActiveMedia, (next) => {
   if (contextMenu.value.visible && !next) {
@@ -618,6 +682,12 @@ function pinUserMedia() {
   max-height: 3.9em;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.user-context-watcher-line {
+  margin-top: 4px;
+  margin-bottom: 8px;
+  color: var(--color-accent);
 }
 
 .user-context-action {

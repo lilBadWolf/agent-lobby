@@ -2,6 +2,7 @@ export interface ActiveMedia {
   label: string;
   url?: string;
   mediaType?: 'audio' | 'video';
+  currentTime?: number;
 }
 
 export interface UserPresence {

@@ -750,12 +750,12 @@ function handlePinnedVideoChange(media: ActiveMedia | null) {
   currentChatPinnedMedia.value = media ? { ...media, mediaType: media.mediaType ?? 'video' } : null;
 }
 
-function handlePinUserMedia(url: string) {
-  if (!url) {
+function handlePinUserMedia(payload: { url: string; currentTime?: number }) {
+  if (!payload?.url) {
     return;
   }
 
-  chatAreaRef.value?.pinMediaUrl?.(url);
+  chatAreaRef.value?.pinMediaUrl?.(payload);
 }
 
 function initializeAgentAmpActionBridge() {

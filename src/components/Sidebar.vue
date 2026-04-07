@@ -126,7 +126,7 @@ const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
   mentionRequest: [user: string];
-  pinUserMedia: [url: string];
+  pinUserMedia: [{ url: string; currentTime?: number }];
   showDmWindow: [];
   toggleAway: [];
 }>();
@@ -279,7 +279,10 @@ function pinUserMedia() {
     return;
   }
 
-  emit('pinUserMedia', contextMenuUrl.value);
+  emit('pinUserMedia', {
+    url: contextMenuUrl.value,
+    currentTime: contextMenuActiveMedia.value?.currentTime,
+  });
   hideContextMenu();
 }
 </script>

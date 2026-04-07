@@ -685,8 +685,10 @@ const WINDOW_LAYOUT_CHANGED_EVENT = 'agent-lobby-window-layout-changed';
 const PINNED_VIDEO_STATE_STORAGE_KEY = 'agent_chat_pinned_video_state';
 const RESTORED_PINNED_SOURCE_KEY_PREFIX = 'restored:';
 
+let restoredPinnedYouTubeTime: number | null = null;
+
 type PersistedPinnedVideoState =
-  | { type: 'youtube'; url: string; height: number }
+  | { type: 'youtube'; url: string; height: number; currentTime?: number }
   | { type: 'twitch'; url: string; height: number }
   | { type: 'agentAmp'; height: number };
 
@@ -734,6 +736,15 @@ watch(pinnedTwitchEmbed, (next) => {
     void ensureTwitchTitle(next.url);
   }
 }, { immediate: true });
+
+watch(
+  () => getPlayerState(PINNED_YOUTUBE_KEY).currentTime,
+  () => {
+    if (pinnedYouTubeEmbed.value && getPlayerState(PINNED_YOUTUBE_KEY).duration > 0) {
+      persistPinnedVideoState();
+    }
+  }
+);
 
 const pinnedControlScale = computed(() => {
   const rawScale = pinnedVideoHeight.value / PINNED_VIDEO_DEFAULT_HEIGHT;
@@ -935,8 +946,26 @@ function pinEmbedBySource(sourceKey: string, url: string, videoId: string) {
   collapseEmbedInChatFeed(sourceKey);
 }
 
-function pinMediaUrl(url: string) {
-  const normalizedUrl = normalizeUrlToken(url);
+type PinMediaPayload = string | { url: string; currentTime?: number };
+
+function setPendingPinnedYouTubeTime(startTime: number | undefined | null) {
+  if (!Number.isFinite(startTime ?? NaN) || (startTime ?? 0) < 0) {
+    return;
+  }
+
+  restoredPinnedYouTubeTime = startTime ?? null;
+  const player = youtubePlayers.get(PINNED_YOUTUBE_KEY);
+  if (player && getPlayerState(PINNED_YOUTUBE_KEY).ready) {
+    const seekTime = restoredPinnedYouTubeTime ?? 0;
+    player.seekTo(seekTime, true);
+    patchPlayerState(PINNED_YOUTUBE_KEY, { currentTime: seekTime });
+  }
+}
+
+function pinMediaUrl(payload: PinMediaPayload) {
+  const rawUrl = typeof payload === 'string' ? payload : payload.url;
+  const normalizedUrl = normalizeUrlToken(rawUrl);
+  const startTime = typeof payload === 'object' ? payload.currentTime : undefined;
   let youtubeId = getYouTubeVideoId(normalizedUrl);
 
   if (!youtubeId) {
@@ -948,6 +977,7 @@ function pinMediaUrl(url: string) {
 
   if (youtubeId) {
     pinEmbedBySource(`remote:${normalizedUrl}`, normalizedUrl, youtubeId);
+    setPendingPinnedYouTubeTime(startTime);
     void initializeYouTubePlayers();
     return;
   }
@@ -1038,6 +1068,9 @@ async function restorePersistedPinnedVideoState(): Promise<void> {
       }
 
       const sourceKey = findSourceKeyForYouTubeUrl(persisted.url) ?? `${RESTORED_PINNED_SOURCE_KEY_PREFIX}${persisted.url}`;
+      if (Number.isFinite(persisted.currentTime ?? NaN)) {
+        restoredPinnedYouTubeTime = persisted.currentTime ?? null;
+      }
       pinEmbedBySource(sourceKey, persisted.url, videoId);
       await initializeYouTubePlayers();
     } else if (persisted.type === 'twitch') {
@@ -1076,8 +1109,13 @@ function persistPinnedVideoState() {
   const height = clampPinnedVideoHeight(pinnedVideoHeight.value);
   pinnedVideoHeight.value = height;
 
+  const pinnedYouTubeState = pinnedYouTubeEmbed.value ? getPlayerState(PINNED_YOUTUBE_KEY) : null;
+  const youtubeCurrentTime = pinnedYouTubeState && pinnedYouTubeState.duration > 0 && Number.isFinite(pinnedYouTubeState.currentTime)
+    ? Math.max(0, Math.min(pinnedYouTubeState.currentTime, pinnedYouTubeState.duration))
+    : undefined;
+
   const persisted: PersistedPinnedVideoState = pinnedYouTubeEmbed.value
-    ? { type: 'youtube', url: pinnedYouTubeEmbed.value.url, height }
+    ? { type: 'youtube', url: pinnedYouTubeEmbed.value.url, height, currentTime: youtubeCurrentTime }
     : pinnedTwitchEmbed.value
     ? { type: 'twitch', url: pinnedTwitchEmbed.value.url, height }
     : { type: 'agentAmp', height };
@@ -1517,11 +1555,19 @@ async function initializeYouTubePlayers() {
       },
       events: {
         onReady: () => {
+          const duration = Number(player.getDuration()) || 0;
           patchPlayerState(key, {
             ready: true,
-            duration: Number(player.getDuration()) || 0,
+            duration,
             volume: Number(player.getVolume()) || 70,
           });
+
+          if (key === PINNED_YOUTUBE_KEY && restoredPinnedYouTubeTime !== null && duration > 0) {
+            const seekToTime = Math.max(0, Math.min(restoredPinnedYouTubeTime, duration));
+            player.seekTo(seekToTime, true);
+            patchPlayerState(key, { currentTime: seekToTime });
+            restoredPinnedYouTubeTime = null;
+          }
 
           if (key === PINNED_YOUTUBE_KEY && shouldAutoplayPinnedOnReady.value) {
             shouldAutoplayPinnedOnReady.value = false;

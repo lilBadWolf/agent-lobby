@@ -126,6 +126,15 @@
         </div>
         <div v-if="activeTab === 'agentamp'" class="tab-panel media-panel">
           <div class="setting-row">
+            <label>MEDIA SHARING</label>
+            <input
+              v-model="localConfig.mediaSharing"
+              type="checkbox"
+              id="set-media-sharing-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
             <label>AGENTAMP</label>
             <input
               v-model="localConfig.agentAmpEnabled"
@@ -440,6 +449,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     spectrumBarCount: config.spectrumBarCount ?? 64,
     spectrumFftSize: config.spectrumFftSize ?? 2048,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
+    mediaSharing: config.mediaSharing ?? true,
     agentAmpDetached: config.agentAmpDetached ?? false,
     scanlines: config.scanlines ?? true,
     customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),

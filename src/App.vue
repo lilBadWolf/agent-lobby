@@ -78,6 +78,7 @@
         :class="{ 'sidebar-compact': !isSidebarVisible }"
       >
         <ChatArea
+          ref="chatAreaRef"
           :messages="messages"
           :username="username"
           :is-connected="isConnected"
@@ -87,6 +88,7 @@
           :default-lobby-id="networkConfig.defaultLobby"
           :mention-request="mentionRequest"
           :agent-amp-pinned-video="agentAmpPinnedVideo"
+          @pinned-video-change="handlePinnedVideoChange"
           @send="handleChatSend"
           @join-lobby="handleJoinLobby"
           @switch-lobby="handleSwitchLobby"
@@ -105,6 +107,7 @@
           @dm-request="handleDMRequest"
           @show-dm-window="handleShowDMWindow"
           @mention-request="handleMentionRequest"
+          @pin-user-media="handlePinUserMedia"
           @toggle-away="handleToggleAway"
         />
       </div>
@@ -294,7 +297,7 @@ import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
 import { getPersistedValue, setPersistedValue } from './composables/usePlatformStorage';
-import type { AudioConfig } from './types/chat';
+import type { ActiveMedia, AudioConfig } from './types/chat';
 import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
@@ -342,6 +345,7 @@ const {
   setTyping,
   toggleAway,
   isAway,
+  setActiveMedia,
 } = useLobbyChat();
 const { availableThemes, applyTheme } = useTheme();
 const {
@@ -402,6 +406,13 @@ let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
 const agentAmpPinnedVideo = ref<AgentAmpPinnedVideo | null>(null);
+const chatAreaRef = ref<any>(null);
+const currentAgentAmpMedia = ref<ActiveMedia | null>(null);
+const currentChatPinnedMedia = ref<ActiveMedia | null>(null);
+const activeMediaSource = computed<ActiveMedia | null>(() => currentChatPinnedMedia.value ?? currentAgentAmpMedia.value);
+watch(activeMediaSource, (next) => {
+  setActiveMedia(next);
+}, { immediate: true });
 let cleanupDMActionListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
@@ -662,10 +673,23 @@ function initializeAgentAmpStatusBridge() {
 
   agentAmpStatusChannel = new BroadcastChannel(AGENTAMP_STATUS_CHANNEL);
   agentAmpStatusChannel.onmessage = (event: MessageEvent) => {
-    const message = event.data as { type?: string; playing?: boolean; track?: { id?: string; name?: string; location?: string; source?: string; mediaType?: string }; currentTime?: number; duration?: number };
+    const message = event.data as { type?: string; playing?: boolean; track?: { id?: string; name?: string; location?: string; source?: string; mediaType?: string }; currentTime?: number; duration?: number; activeMedia?: { label?: string; url?: string; mediaType?: string } | null };
 
     if (message?.type === 'playback-state' && typeof message.playing === 'boolean') {
       updateAgentAmpPlayingState(message.playing);
+      return;
+    }
+
+    if (message?.type === 'agentamp-media-state') {
+      if (message.activeMedia && typeof message.activeMedia.label === 'string') {
+        currentAgentAmpMedia.value = {
+          label: message.activeMedia.label,
+          url: typeof message.activeMedia.url === 'string' ? message.activeMedia.url : undefined,
+          mediaType: message.activeMedia.mediaType === 'audio' || message.activeMedia.mediaType === 'video' ? message.activeMedia.mediaType : undefined,
+        };
+      } else {
+        currentAgentAmpMedia.value = null;
+      }
       return;
     }
 
@@ -710,6 +734,18 @@ function handleAgentAmpActionMessage(event: MessageEvent) {
 
   config.value.agentAmpDetached = false;
   updateSettings();
+}
+
+function handlePinnedVideoChange(media: ActiveMedia | null) {
+  currentChatPinnedMedia.value = media ? { ...media, mediaType: media.mediaType ?? 'video' } : null;
+}
+
+function handlePinUserMedia(url: string) {
+  if (!url) {
+    return;
+  }
+
+  chatAreaRef.value?.pinMediaUrl?.(url);
 }
 
 function initializeAgentAmpActionBridge() {

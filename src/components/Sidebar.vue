@@ -1,5 +1,5 @@
 <template>
-  <aside id="sidebar" :class="{ compact: props.isCompact }">
+  <aside id="sidebar" :class="{ compact: props.isCompact }" @contextmenu.prevent>
     <div v-if="!props.isCompact" class="sidebar-header">
       <div class="agent-header-title">
         <span>[{{ onlineCount }}] AGENTS</span>
@@ -27,14 +27,31 @@
         <span v-else aria-hidden="true">💤</span>
       </button>
     </div>
-    <div id="user-list">
+    <div id="user-list" @click="hideContextMenu">
       <div
         v-for="user in userList"
         :key="user.username"
         class="user-node"
-        :class="{ 'away-user': user.isAway, 'compact-user-node': props.isCompact }"
+        :class="{ 'away-user': user.isAway, 'compact-user-node': props.isCompact, 'media-active': user.mediaSharing && user.activeMedia?.label }"
         :style="{ color: getUserColor(user.username) }"
       >
+        <button
+          v-if="!props.isCompact"
+          type="button"
+          class="user-bullet-btn"
+          :class="{ 'user-bullet-clickable': user.mediaSharing && user.activeMedia?.label }"
+          :aria-label="`Show presence menu for ${user.username}`"
+          @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
+        >
+          <span v-if="user.isBot" aria-hidden="true">🤖</span>
+          <span v-else-if="user.isAway" aria-hidden="true">💤</span>
+          <span v-else-if="user.isTyping" aria-hidden="true" class="typing-bullet">
+            <span></span><span></span><span></span>
+          </span>
+          <span v-else-if="user.activeMedia?.mediaType === 'audio'" aria-hidden="true">⚡</span>
+          <span v-else-if="user.activeMedia?.label" aria-hidden="true">🎞️</span>
+          <span v-else aria-hidden="true" class="status-dot"></span>
+        </button>
         <button
           type="button"
           class="user-handle-btn"
@@ -50,6 +67,7 @@
           :class="[{ 'compact-dm-btn': props.isCompact }, getDMBubbleClass(user.username)]"
           :aria-label="getDMBubbleTitle(user.username)"
           @click="emit('dmRequest', user.username)"
+          @contextmenu.prevent.stop
         >
           {{ getDMBubbleIcon(user.username) }}
         </button>
@@ -61,12 +79,24 @@
         ></span>
       </div>
     </div>
+    <div v-if="contextMenu.visible" class="user-context-tooltip" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop @mouseleave="hideContextMenu">
+      <div class="user-context-title">{{ contextMenu.url ? 'WATCHING' : 'LISTENING TO' }}</div>
+      <div class="user-context-label">{{ contextMenu.label }}</div>
+      <button
+        v-if="contextMenu.url"
+        type="button"
+        class="user-context-action"
+        @click="pinUserMedia"
+      >
+        PIN SAME VIDEO
+      </button>
+    </div>
     <button id="disconnect-btn" :class="{ 'compact-disconnect-btn': props.isCompact }" @click="emit('disconnect')">{{ props.isCompact ? 'X' : 'TERMINATE' }}</button>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 
@@ -89,6 +119,7 @@ const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
   mentionRequest: [user: string];
+  pinUserMedia: [url: string];
   showDmWindow: [];
   toggleAway: [];
 }>();
@@ -97,6 +128,13 @@ const { getUserColor } = useTheme();
 const onlineCount = computed(() =>
   Object.values(props.users || {}).filter(user => Boolean(user.username)).length
 );
+const contextMenu = ref<{
+  visible: boolean;
+  x: number;
+  y: number;
+  label: string;
+  url: string | null;
+}>({ visible: false, x: 0, y: 0, label: '', url: null });
 const userList = computed(() => {
   const filteredUsers = Object.values(props.users || {}).filter(
     user => user.username !== props.currentUsername
@@ -135,6 +173,35 @@ function getDMBubbleTitle(user: string): string {
 function getCompactUserLabel(user: string): string {
   return user.toUpperCase();
 }
+
+function hideContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+function showUserContextMenu(user: UserPresence, event: MouseEvent) {
+  const presence = props.users?.[user.username];
+  if (!presence?.mediaSharing || !presence.activeMedia?.label) {
+    return;
+  }
+
+  const label = presence.activeMedia.label;
+  contextMenu.value = {
+    visible: true,
+    x: Math.min(window.innerWidth - 280, event.clientX + 6),
+    y: Math.min(window.innerHeight - 120, event.clientY + 6),
+    label,
+    url: typeof presence.activeMedia.url === 'string' ? presence.activeMedia.url : null,
+  };
+}
+
+function pinUserMedia() {
+  if (!contextMenu.value.url) {
+    return;
+  }
+
+  emit('pinUserMedia', contextMenu.value.url);
+  hideContextMenu();
+}
 </script>
 
 <style scoped>
@@ -142,7 +209,6 @@ function getCompactUserLabel(user: string): string {
   grid-area: sidebar;
   width: 220px;
   padding: 10px;
-  padding-bottom: 20px;
   background: var(--color-sidebar-bg);
   display: flex;
   flex-direction: column;
@@ -213,12 +279,53 @@ function getCompactUserLabel(user: string): string {
 }
 
 .status-dot {
+  display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   background: var(--color-sidebar-status-dot);
   box-shadow: 0 0 8px var(--color-sidebar-status-dot-glow);
   animation: status-dot-flash 2.6s ease-in-out infinite;
+}
+
+.typing-bullet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 18px;
+}
+
+.typing-bullet span {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: typing-dot-flash 1s linear infinite;
+}
+
+.typing-bullet span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-bullet span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-bullet span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-dot-flash {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes status-dot-flash {
@@ -253,25 +360,34 @@ function getCompactUserLabel(user: string): string {
   justify-content: space-between;
   padding: 2px 0;
   transition: opacity 0.2s;
+  cursor: default;
 }
 
 .user-node:hover {
   opacity: 0.8;
 }
 
-.user-node.away-user {
-  opacity: 0.45;
+.away-user {
+  opacity: 0.55;
 }
 
-.user-node.away-user:hover {
-  opacity: 0.6;
+.user-bullet-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: bold;
+  cursor: default;
+  width: 22px;
+  padding: 0;
+  text-align: center;
 }
 
-.user-node::before {
-  content: '[O] ';
-  color: var(--color-accent);
-  opacity: 0.5;
-  margin-right: 4px;
+.user-bullet-clickable {
+  cursor: pointer;
 }
 
 #sidebar.compact .user-node {
@@ -282,8 +398,7 @@ function getCompactUserLabel(user: string): string {
   min-width: 0;
 }
 
-#sidebar.compact .user-node::before {
-  content: none;
+#sidebar.compact .user-bullet-btn {
   display: none;
 }
 
@@ -425,7 +540,7 @@ function getCompactUserLabel(user: string): string {
 }
 
 #disconnect-btn {
-  margin-top: 10px;
+  margin-top: auto;
   background: transparent;
   border: 1px solid var(--color-danger);
   color: var(--color-danger);
@@ -439,7 +554,6 @@ function getCompactUserLabel(user: string): string {
 }
 
 #disconnect-btn.compact-disconnect-btn {
-  margin-top: 6px;
   padding: 4px;
   font-size: 11px;
   line-height: 1;
@@ -448,6 +562,56 @@ function getCompactUserLabel(user: string): string {
 #disconnect-btn:hover {
   background: var(--color-danger);
   color: var(--color-on-danger);
+}
+
+.user-context-tooltip {
+  position: fixed;
+  width: min(260px, calc(100vw - 24px));
+  max-width: 260px;
+  z-index: 1002;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(16, 18, 26, 0.96);
+  border: 1px solid rgba(120, 138, 255, 0.24);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  color: var(--color-text-primary);
+  backdrop-filter: blur(10px);
+}
+
+.user-context-title {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 7px;
+}
+
+.user-context-label {
+  font-size: 13px;
+  line-height: 1.3;
+  margin-bottom: 10px;
+  max-height: 3.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-context-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 1px solid rgba(120, 138, 255, 0.4);
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+  padding: 8px 0;
+  border-radius: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.user-context-action:hover {
+  background: rgba(120, 138, 255, 0.12);
 }
 
 #show-dm-btn {

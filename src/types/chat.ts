@@ -1,9 +1,17 @@
+export interface ActiveMedia {
+  label: string;
+  url?: string;
+  mediaType?: 'audio' | 'video';
+}
+
 export interface UserPresence {
   username: string;
   dmAvailable: boolean;
   isTyping?: boolean;
   isAway?: boolean;
   isBot?: boolean;
+  mediaSharing?: boolean;
+  activeMedia?: ActiveMedia | null;
 }
 
 export interface ChatMessage {
@@ -28,6 +36,7 @@ export interface AudioConfig {
   spectrumBarCount?: number;
   spectrumFftSize?: number;
   dmEnabled: boolean;
+  mediaSharing: boolean;
   agentAmpEnabled: boolean;
   agentAmpDetached?: boolean;
   scanlines?: boolean;

@@ -1311,6 +1311,7 @@ watch([isPlaying, currentTrack, currentTime, duration], async () => {
   updateMediaSessionMetadata();
   updateMediaSessionPlaybackState();
   publishPlaybackState();
+  publishAgentAmpMediaState();
   await publishAgentAmpVideoState();
 });
 
@@ -1463,6 +1464,33 @@ function handleMediaKeyEvent(event: KeyboardEvent) {
     default:
       return;
   }
+}
+
+async function publishAgentAmpMediaState() {
+  const channel = ensureAgentAmpStatusChannel();
+  if (!channel) {
+    return;
+  }
+
+  const track = currentTrack.value;
+  if (!track || !isPlaying.value) {
+    channel.postMessage({ type: 'agentamp-media-state', activeMedia: null });
+    return;
+  }
+
+  const inferred = inferArtistTitle(track);
+  const label = inferred.artist && inferred.title
+    ? `${inferred.artist} - ${inferred.title}`
+    : track.name;
+  const actualMediaType = track.mediaType ?? getTrackMediaType(track.location);
+
+  channel.postMessage({
+    type: 'agentamp-media-state',
+    activeMedia: {
+      label,
+      mediaType: actualMediaType,
+    },
+  });
 }
 
 async function publishAgentAmpVideoState() {

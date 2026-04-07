@@ -1,5 +1,5 @@
 import { ref, reactive, computed, watch } from 'vue';
-import type { UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
+import type { ActiveMedia, UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
 import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 
@@ -35,6 +35,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   spectrumBarCount: 'agent_spectrum_bar_count',
   spectrumFftSize: 'agent_spectrum_fft_size',
   dmEnabled: 'agent_dm_enabled',
+  mediaSharing: 'agent_media_sharing',
   agentAmpEnabled: 'agent_agent_amp_enabled',
   agentAmpDetached: 'agent_agent_amp_detached',
   scanlines: 'agent_scanlines',
@@ -49,6 +50,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
 
 const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   dmEnabled: true,
+  mediaSharing: true,
   agentAmpEnabled: false,
   agentAmpDetached: false,
   scanlines: true,
@@ -91,6 +93,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
 
   normalized.customSlashCommands = sanitizeCustomSlashCommands((savedConfig as Partial<AudioConfig> | null)?.customSlashCommands);
 
+  if (typeof normalized.mediaSharing !== 'boolean') {
+    normalized.mediaSharing = DEFAULT_AUDIO_CONFIG.mediaSharing;
+  }
+
   if (typeof normalized.agentAmpEnabled !== 'boolean') {
     normalized.agentAmpEnabled = DEFAULT_AUDIO_CONFIG.agentAmpEnabled;
   }
@@ -131,6 +137,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount, nextConfig.spectrumBarCount ?? DEFAULT_AUDIO_CONFIG.spectrumBarCount),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize, nextConfig.spectrumFftSize ?? DEFAULT_AUDIO_CONFIG.spectrumFftSize),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing, nextConfig.mediaSharing),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached, nextConfig.agentAmpDetached ?? DEFAULT_AUDIO_CONFIG.agentAmpDetached),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.scanlines, nextConfig.scanlines ?? DEFAULT_AUDIO_CONFIG.scanlines),
@@ -153,6 +160,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     spectrumBarCount,
     spectrumFftSize,
     dmEnabled,
+    mediaSharing,
     agentAmpEnabled,
     agentAmpDetached,
     scanlines,
@@ -171,6 +179,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
@@ -192,6 +201,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof spectrumBarCount === 'number') saved.spectrumBarCount = spectrumBarCount;
   if (typeof spectrumFftSize === 'number') saved.spectrumFftSize = spectrumFftSize;
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
+  if (typeof mediaSharing === 'boolean') saved.mediaSharing = mediaSharing;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;
   }
@@ -415,13 +425,22 @@ export function useLobbyChat() {
     client.subscribe(`${getPresenceTopicPrefix(targetRoomId)}#`);
   }
 
+  const activeMedia = ref<ActiveMedia | null>(null);
+
   function buildPresencePayload(targetRoomId: string): UserPresence {
-    return {
+    const payload: UserPresence = {
       username: username.value,
       dmAvailable: config.value.dmEnabled && !isAway.value,
       isTyping: lobbyTyping[targetRoomId] || false,
       isAway: isAway.value,
+      mediaSharing: config.value.mediaSharing,
     };
+
+    if (config.value.mediaSharing && activeMedia.value) {
+      payload.activeMedia = activeMedia.value;
+    }
+
+    return payload;
   }
 
   function publishPresenceForLobby(targetRoomId: string) {
@@ -444,6 +463,13 @@ export function useLobbyChat() {
     joinedLobbies.value.forEach((lobbyId) => {
       publishPresenceForLobby(lobbyId);
     });
+  }
+
+  function setActiveMedia(next: ActiveMedia | null) {
+    activeMedia.value = next;
+    if (isConnected.value) {
+      publishPresence();
+    }
   }
 
   function startPresenceHeartbeat() {
@@ -1359,5 +1385,6 @@ export function useLobbyChat() {
     toggleAway,
     isTyping: computed(() => lobbyTyping[activeLobbyId.value] || false),
     isAway,
+    setActiveMedia,
   };
 }

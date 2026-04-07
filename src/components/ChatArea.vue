@@ -437,7 +437,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
-import type { ChatMessage, UserPresence } from '../types/chat';
+import type { ActiveMedia, ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
@@ -529,6 +529,7 @@ const emit = defineEmits<{
   switchLobby: [lobbyId: string];
   closeLobby: [lobbyId: string];
   agentAmpStop: [];
+  pinnedVideoChange: [media: ActiveMedia | null];
 }>();
 
 const { getUserColor } = useTheme();
@@ -695,6 +696,29 @@ const pinnedTwitchEmbed = ref<{ sourceKey: string; url: string; channel: string 
 const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
 const shouldAutoplayPinnedOnReady = ref(false);
 const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value || props.agentAmpPinnedVideo));
+
+watch([pinnedYouTubeEmbed, pinnedTwitchEmbed], () => {
+  if (pinnedYouTubeEmbed.value) {
+    emit('pinnedVideoChange', {
+      label: getYouTubeEmbedHeader(pinnedYouTubeEmbed.value.url),
+      url: pinnedYouTubeEmbed.value.url,
+      mediaType: 'video',
+    });
+    return;
+  }
+
+  if (pinnedTwitchEmbed.value) {
+    emit('pinnedVideoChange', {
+      label: getTwitchEmbedHeader(pinnedTwitchEmbed.value.url),
+      url: pinnedTwitchEmbed.value.url,
+      mediaType: 'video',
+    });
+    return;
+  }
+
+  emit('pinnedVideoChange', null);
+}, { immediate: true });
+
 const pinnedControlScale = computed(() => {
   const rawScale = pinnedVideoHeight.value / PINNED_VIDEO_DEFAULT_HEIGHT;
   return Math.max(0.78, Math.min(1.2, rawScale));
@@ -894,6 +918,36 @@ function pinEmbedBySource(sourceKey: string, url: string, videoId: string) {
 
   collapseEmbedInChatFeed(sourceKey);
 }
+
+function pinMediaUrl(url: string) {
+  const normalizedUrl = normalizeUrlToken(url);
+  let youtubeId = getYouTubeVideoId(normalizedUrl);
+
+  if (!youtubeId) {
+    const youtubeUrls = extractYouTubeUrls(normalizedUrl);
+    if (youtubeUrls.length > 0) {
+      youtubeId = getYouTubeVideoId(youtubeUrls[0]);
+    }
+  }
+
+  if (youtubeId) {
+    pinEmbedBySource(`remote:${normalizedUrl}`, normalizedUrl, youtubeId);
+    void initializeYouTubePlayers();
+    return;
+  }
+
+  const twitchChannel = getTwitchChannelName(normalizedUrl);
+  if (twitchChannel) {
+    pinnedTwitchEmbed.value = {
+      sourceKey: `remote:${normalizedUrl}`,
+      url: normalizedUrl,
+      channel: twitchChannel,
+    };
+    return;
+  }
+}
+
+defineExpose({ pinMediaUrl });
 
 function findSourceKeyForYouTubeUrl(url: string): string | null {
   const normalizedTarget = normalizeUrlToken(url);

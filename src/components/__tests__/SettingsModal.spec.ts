@@ -30,6 +30,7 @@ vi.mock('../../composables/useMessageAnimations', () => ({
 describe('SettingsModal', () => {
   const baseConfig = {
     dmEnabled: true,
+    mediaSharing: true,
     agentAmpEnabled: false,
     audioEnabled: true,
     volume: 0.5,

@@ -1,10 +1,11 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.7**
+🎉 **Release highlights for agent-lobby 0.3.8**
 
 - 🎧 **Media sharing presence** now shows when you are listening to music or watching a pinned video.
   - right-click ⚡ to see Artist – Title for music
   - right-click 🎞️ to see the pinned video details and pin that same video in your app
+  - pinned-video presence popups now show who else is watching the same video and use a “Watching with” watcher list
 - 👥 **Userlist status emojis** now display:
   - ⚡ for music listening
   - 🎞️ for pinned video watching

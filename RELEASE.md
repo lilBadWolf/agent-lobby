@@ -1,6 +1,6 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.6**
+🎉 **Release highlights for agent-lobby 0.3.7**
 
 - 🎧 **Media sharing presence** now shows when you are listening to music or watching a pinned video.
   - right-click ⚡ to see Artist – Title for music

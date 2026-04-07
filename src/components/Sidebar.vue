@@ -279,6 +279,12 @@ function pinUserMedia() {
     return;
   }
 
+  console.debug('[Sidebar] pinUserMedia', {
+    username: contextMenuTargetUsername.value,
+    url: contextMenuUrl.value,
+    activeMedia: contextMenuActiveMedia.value,
+  });
+
   emit('pinUserMedia', {
     url: contextMenuUrl.value,
     currentTime: contextMenuActiveMedia.value?.currentTime,

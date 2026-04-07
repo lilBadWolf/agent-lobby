@@ -1028,12 +1028,14 @@ function setPendingPinnedYouTubeTime(startTime: number | undefined | null) {
     return;
   }
 
-  restoredPinnedYouTubeTime = startTime ?? null;
+  const seekTime = Math.max(0, startTime ?? 0);
+  restoredPinnedYouTubeTime = seekTime;
+  console.debug('[ChatArea] pending pinned YouTube time', seekTime);
+
   const player = youtubePlayers.get(PINNED_YOUTUBE_KEY);
   if (player && getPlayerState(PINNED_YOUTUBE_KEY).ready) {
-    const seekTime = restoredPinnedYouTubeTime ?? 0;
-    player.seekTo(seekTime, true);
-    patchPlayerState(PINNED_YOUTUBE_KEY, { currentTime: seekTime });
+    seekYouTubePlayerTo(PINNED_YOUTUBE_KEY, seekTime);
+    restoredPinnedYouTubeTime = null;
   }
 }
 
@@ -1653,10 +1655,9 @@ async function initializeYouTubePlayers() {
             volume: Number(player.getVolume()) || 70,
           });
 
-          if (key === PINNED_YOUTUBE_KEY && restoredPinnedYouTubeTime !== null && duration > 0) {
-            const seekToTime = Math.max(0, Math.min(restoredPinnedYouTubeTime, duration));
-            player.seekTo(seekToTime, true);
-            patchPlayerState(key, { currentTime: seekToTime });
+          if (key === PINNED_YOUTUBE_KEY && restoredPinnedYouTubeTime !== null) {
+            const seekToTime = Math.max(0, restoredPinnedYouTubeTime);
+            seekYouTubePlayerTo(key, seekToTime);
             restoredPinnedYouTubeTime = null;
           }
 
@@ -1735,14 +1736,22 @@ function handleYouTubeEmbedToggle(key: string, event: Event) {
   patchPlayerState(key, { isPlaying: false });
 }
 
-function seekYouTubePlayer(key: string, event: Event) {
+function seekYouTubePlayerTo(key: string, seconds: number) {
   const player = youtubePlayers.get(key);
   if (!player) return;
 
+  const state = getPlayerState(key);
+  const target = Math.max(0, seconds);
+  const clampedTarget = state.duration > 0 ? Math.min(target, state.duration) : target;
+
+  player.seekTo(clampedTarget, true);
+  patchPlayerState(key, { currentTime: clampedTarget });
+}
+
+function seekYouTubePlayer(key: string, event: Event) {
   const target = event.target as HTMLInputElement;
-  const value = Number(target.value) || 0;
-  player.seekTo(value, true);
-  patchPlayerState(key, { currentTime: value });
+  const value = Math.max(0, Number(target.value) || 0);
+  seekYouTubePlayerTo(key, value);
 }
 
 function setYouTubeVolume(key: string, event: Event) {

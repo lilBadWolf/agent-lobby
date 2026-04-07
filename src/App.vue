@@ -755,6 +755,7 @@ function handlePinUserMedia(payload: { url: string; currentTime?: number }) {
     return;
   }
 
+  console.debug('[App] handlePinUserMedia', payload);
   chatAreaRef.value?.pinMediaUrl?.(payload);
 }
 

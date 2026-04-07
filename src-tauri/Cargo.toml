@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "devtools"] }
+tauri = { version = "2", features = ["protocol-asset", "devtools", "image-png", "image-ico"] }
 portpicker = "0.1"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"

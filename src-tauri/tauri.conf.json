@@ -34,6 +34,10 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "publisher": "The Company of Wolves",
+    "resources": [
+      "icons/agentamp.ico",
+      "icons/agentamp-256x256.png"
+    ],
     "linux": {
       "deb": {
         "depends": ["libgtk-3-0", "libwebkit2gtk-4.0-37"]

@@ -41,7 +41,7 @@
           class="user-bullet-btn"
           :class="{ 'user-bullet-clickable': user.mediaSharing && user.activeMedia?.label }"
           :aria-label="`Show presence menu for ${user.username}`"
-          @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
+          @click.stop="showUserContextMenu(user, $event)"
         >
           <span v-if="user.isBot" aria-hidden="true">🤖</span>
           <span v-else-if="user.isAway" aria-hidden="true">💤</span>
@@ -213,6 +213,15 @@ function pinUserMedia() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#sidebar, #sidebar * {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 #sidebar.compact {

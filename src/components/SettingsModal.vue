@@ -103,6 +103,7 @@
               <option value="glitch">GLITCH</option>
               <option value="flames">FLAMES</option>
               <option value="rust">RUST</option>
+              <option value="pacman">PACMAN</option>
             </select>
           </div>
           <div class="setting-row">

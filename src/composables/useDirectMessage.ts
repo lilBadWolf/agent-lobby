@@ -1432,12 +1432,12 @@ export function useDirectMessage(
         case 'matrix': return 1500 + len * 30;
         case 'glitch': return 1200 + len * 20;
         case 'flames': return 1800 + len * 40;
+        case 'pacman': return 2200 + len * 20;
         default: return 0;
       }
     };
 
     const duration = getAnimationDuration(effect, message.length);
-
     const sendChannel = resolveOpenDataChannel(toUser, chat.dataChannel);
 
     if (!sendChannel || sendChannel.readyState !== 'open') {

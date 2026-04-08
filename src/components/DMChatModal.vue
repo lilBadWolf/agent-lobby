@@ -156,6 +156,18 @@
                 :disabled="!getCurrentChat()?.isConnected"
                 @keydown.enter.prevent="handleMessageInputEnter"
               />
+              <div class="dm-effect-picker">
+                <select
+                  id="dm-effect-select"
+                  :value="props.dmChatEffect"
+                  @change="handleDmEffectChange"
+                  :disabled="!getCurrentChat()?.isConnected"
+                >
+                  <option v-for="option in dmEffectOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
               <button
                 class="send-btn"
                 :disabled="!getCurrentChat()?.isConnected"
@@ -219,6 +231,7 @@ const emit = defineEmits<{
   cancelRequest: [user: string];
   sendMessage: [user: string, message: string, effect: string];
   closeDm: [user: string];
+  'update:dmChatEffect': [effect: string];
   cancelPendingMessages: [user: string];
   typing: [user: string];
   stopTyping: [user: string];
@@ -232,6 +245,15 @@ const emit = defineEmits<{
   fileSaved: [user: string, fileId: string];
   removeFile: [user: string, fileId: string];
 }>();
+
+const dmEffectOptions = [
+  { value: 'none', label: 'NONE' },
+  { value: 'matrix', label: 'MATRIX' },
+  { value: 'glitch', label: 'GLITCH' },
+  { value: 'flames', label: 'FLAMES' },
+  { value: 'rust', label: 'RUST' },
+  { value: 'pacman', label: 'PACMAN' },
+] as const;
 
 const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('');
@@ -257,6 +279,11 @@ function ensureMessageId(message: { user: string; message: string; effect?: stri
   const generatedId = `${message.user}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   message.messageId = generatedId;
   return generatedId;
+}
+
+function handleDmEffectChange(event: Event) {
+  const nextEffect = (event.target as HTMLSelectElement).value
+  emit('update:dmChatEffect', nextEffect)
 }
 
 const typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>(); // Track debounce timeouts per user
@@ -974,6 +1001,15 @@ watch(
   min-height: 0;
 }
 
+.animation-text {
+  display: flex;
+  align-self: stretch;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1432,6 +1468,8 @@ watch(
   flex-shrink: 0;
   align-items: center;
   position: relative;
+  gap: 8px;
+  padding: 0 10px;
 }
 
 #dm-modal.presentation-window .input-bar {
@@ -1468,9 +1506,42 @@ watch(
   color: var(--color-accent);
   padding: 0 15px;
   flex: 1;
+  min-width: 0;
   font-family: inherit;
   font-size: 13px;
   outline: none;
+}
+
+.dm-effect-picker {
+  display: inline-flex;
+  align-items: center;
+  min-width: 88px;
+  height: 20px;
+  background: var(--color-chat-surface);
+  border: 1px solid var(--color-accent-muted);
+  border-radius: 10px;
+  padding: 0 4px;
+}
+
+.dm-effect-picker select {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  color: var(--color-chat-text);
+  border: none;
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.dm-effect-picker select option {
+  background: var(--color-chat-surface);
+  color: var(--color-chat-text);
 }
 
 .input-bar input::placeholder {

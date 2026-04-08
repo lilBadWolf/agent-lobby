@@ -59,6 +59,7 @@
       @reject-video="handleRejectVideo"
       @cancel-request="handleCancelRequest"
       @send-message="handleSendMessage"
+      @update:dmChatEffect="handleUpdateDmChatEffect"
       @typing="handleTyping"
       @stop-typing="handleStopTyping"
       @cancel-pending-messages="handleCancelPendingMessages"
@@ -561,6 +562,11 @@ function handleAcceptDM(user: string) {
 function handleRejectDM(user: string) {
   debugLog('handleRejectDM', { user });
   dmRuntime.value?.rejectDM(user);
+}
+
+function handleUpdateDmChatEffect(effect: string) {
+  debugLog('handleUpdateDmChatEffect', effect);
+  dmChatEffect.value = effect as DMWindowStatePayload['dmChatEffect'];
 }
 
 function handleAcceptAudio(user: string) {

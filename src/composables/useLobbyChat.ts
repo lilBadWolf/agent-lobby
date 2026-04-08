@@ -222,7 +222,14 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   }
   if (typeof soundpack === 'string') saved.soundpack = soundpack;
   if (typeof theme === 'string') saved.theme = theme;
-  if (dmChatEffect === 'none' || dmChatEffect === 'matrix' || dmChatEffect === 'glitch' || dmChatEffect === 'flames' || dmChatEffect === 'rust') {
+  if (
+    dmChatEffect === 'none' ||
+    dmChatEffect === 'matrix' ||
+    dmChatEffect === 'glitch' ||
+    dmChatEffect === 'flames' ||
+    dmChatEffect === 'rust' ||
+    dmChatEffect === 'pacman'
+  ) {
     saved.dmChatEffect = dmChatEffect;
   }
   if (typeof showJoinPartMessages === 'boolean') saved.showJoinPartMessages = showJoinPartMessages;

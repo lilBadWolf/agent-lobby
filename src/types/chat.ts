@@ -44,6 +44,7 @@ export interface AudioConfig {
   soundpack: string;
   theme: string;
   dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames' | 'rust';
+  showJoinPartMessages?: boolean;
   audioInputDeviceId: string;
   audioOutputDeviceId: string;
   videoInputDeviceId: string;

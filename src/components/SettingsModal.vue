@@ -69,6 +69,15 @@
               @change="handleChange"
             />
           </div>
+          <div class="setting-row">
+            <label>JOIN/PART MESSAGES</label>
+            <input
+              v-model="localConfig.showJoinPartMessages"
+              type="checkbox"
+              id="set-join-part-toggle"
+              @change="handleChange"
+            />
+          </div>
           <hr class="settings-divider" />
           <div class="setting-row">
             <label>DM ENABLED</label>

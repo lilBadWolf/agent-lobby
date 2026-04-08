@@ -42,6 +42,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   soundpack: 'agent_soundpack',
   theme: 'agent_theme',
   dmChatEffect: 'agent_dm_chat_effect',
+  showJoinPartMessages: 'agent_show_join_part_messages',
   audioInputDeviceId: 'agent_audio_input_device_id',
   audioOutputDeviceId: 'agent_audio_output_device_id',
   videoInputDeviceId: 'agent_video_input_device_id',
@@ -63,6 +64,7 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   soundpack: 'default',
   theme: 'retro-terminal',
   dmChatEffect: 'matrix',
+  showJoinPartMessages: true,
   audioInputDeviceId: '',
   audioOutputDeviceId: '',
   videoInputDeviceId: '',
@@ -125,6 +127,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.spectrumFftSize = DEFAULT_AUDIO_CONFIG.spectrumFftSize;
   }
 
+  if (typeof normalized.showJoinPartMessages !== 'boolean') {
+    normalized.showJoinPartMessages = DEFAULT_AUDIO_CONFIG.showJoinPartMessages;
+  }
+
   return normalized;
 }
 
@@ -144,6 +150,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages, nextConfig.showJoinPartMessages ?? DEFAULT_AUDIO_CONFIG.showJoinPartMessages),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId, nextConfig.audioInputDeviceId),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId, nextConfig.audioOutputDeviceId),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId, nextConfig.videoInputDeviceId),
@@ -167,6 +174,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     soundpack,
     theme,
     dmChatEffect,
+    showJoinPartMessages,
     audioInputDeviceId,
     audioOutputDeviceId,
     videoInputDeviceId,
@@ -186,6 +194,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.soundpack),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.theme),
     getPersistedValue<AudioConfig['dmChatEffect']>(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId),
@@ -216,6 +225,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (dmChatEffect === 'none' || dmChatEffect === 'matrix' || dmChatEffect === 'glitch' || dmChatEffect === 'flames' || dmChatEffect === 'rust') {
     saved.dmChatEffect = dmChatEffect;
   }
+  if (typeof showJoinPartMessages === 'boolean') saved.showJoinPartMessages = showJoinPartMessages;
   if (typeof audioInputDeviceId === 'string') saved.audioInputDeviceId = audioInputDeviceId;
   if (typeof audioOutputDeviceId === 'string') saved.audioOutputDeviceId = audioOutputDeviceId;
   if (typeof videoInputDeviceId === 'string') saved.videoInputDeviceId = videoInputDeviceId;
@@ -606,7 +616,9 @@ export function useLobbyChat() {
       if (roomUsers[user]) {
         if (withAlerts) {
           playAlert('part');
-          addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${partMsg}`, true);
+          if (config.value.showJoinPartMessages) {
+            addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${partMsg}`, true);
+          }
         }
         delete roomUsers[user];
         if (targetRoomId === activeLobbyId.value) {
@@ -619,7 +631,9 @@ export function useLobbyChat() {
     const parsed = JSON.parse(raw) as UserPresence;
     if (!roomUsers[user] && withAlerts) {
       playAlert('join');
-      addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${joinMsg}`, true);
+      if (config.value.showJoinPartMessages) {
+        addMessageToLobby(targetRoomId, 'SYSTEM', `${user}${joinMsg}`, true);
+      }
     }
 
     roomUsers[user] = parsed;

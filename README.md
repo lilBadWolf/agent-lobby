@@ -16,6 +16,9 @@
 > These downloads are unsigned. Signing them just doesn't feel right for the vibe of the app.
 > [RELEASES](https://github.com/lilBadWolf/agent-lobby/releases)
 
+> [!TIP]
+> New Agents: [Read the Field Guide](./AGENT.md)
+
 ## What You Can Do
 
 - Real-time lobby chat with live presence and typing indicators (MQTT)

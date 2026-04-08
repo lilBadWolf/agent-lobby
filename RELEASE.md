@@ -1,19 +1,11 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.3.8**
+🎉 **Release highlights for agent-lobby 0.4.0**
 
-- 🎧 **Media sharing presence** now shows when you are listening to music or watching a pinned video.
-  - right-click ⚡ to see Artist – Title for music
-  - right-click 🎞️ to see the pinned video details and pin that same video in your app
-  - pinned-video presence popups now show who else is watching the same video and use a “Watching with” watcher list
-- 👥 **Userlist status emojis** now display:
-  - ⚡ for music listening
-  - 🎞️ for pinned video watching
-  - 💤 for away
-  - • for online
-  - and a typing indicator for active chat input.
-- 🛠️ **Improved media session support** from agentAMP for more stable audio/video handling.
-- 💖 **Sidebar polish** and lobby navigation updates.
-- 🔧 **Version metadata sync**: bumped app version across `package.json`, `tauri.conf.json`, and `Cargo.toml`.
+- ✨ **DM effects system overhaul**: the direct-message visuals are now powered by a rewritten effects engine with better composition and runtime control.
+- 🌌 **Three.js particle-driven effects** are now part of the DM experience, delivering rich particle motion, trails, bursts, and dynamic scene movement.
+- 🔥 **New DM effects** include fresh visual styles for your chats, from inferno and codex to starmap particle swarms and codex-style overlays.
+- 👤 **DM UX polish** for show/hide join and part options and smoother effect transitions.
 
-> This patch updates package metadata, adds the latest lobby presence and media sharing polish, and ships the newest local main-branch changes as a clean patch release.
+
+> This release ships the new DM effects overhaul, adds three.js-powered particle visuals across direct messages, and brings a stronger generation of chat effects to the app.

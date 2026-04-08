@@ -13,7 +13,7 @@ describe('getAnimationDuration', () => {
   it('returns expected duration for known effects', () => {
     expect(getAnimationDuration('typewriter', 10)).toBe(1500);
     expect(getAnimationDuration('scan', 10)).toBe(1200);
-    expect(getAnimationDuration('matrix', 10)).toBe(1800);
+    expect(getAnimationDuration('codex', 10)).toBe(1800);
     expect(getAnimationDuration('glitch', 10)).toBe(1400);
     expect(getAnimationDuration('flames', 10)).toBe(2200);
   });
@@ -27,10 +27,10 @@ describe('getAnimationDuration', () => {
     const { playAnimation, isPlaying } = useMessageAnimations();
     const target = document.createElement('div');
 
-    const effects: Array<'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames'> = [
+    const effects: Array<'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames'> = [
       'typewriter',
       'scan',
-      'matrix',
+      'codex',
       'glitch',
       'flames',
     ];
@@ -57,3 +57,4 @@ describe('getAnimationDuration', () => {
     expect(target.innerHTML).toBe('');
   });
 });
+

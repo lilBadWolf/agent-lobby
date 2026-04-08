@@ -63,7 +63,7 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   spectrumFftSize: 2048,
   soundpack: 'default',
   theme: 'retro-terminal',
-  dmChatEffect: 'matrix',
+  dmChatEffect: 'codex',
   showJoinPartMessages: true,
   audioInputDeviceId: '',
   audioOutputDeviceId: '',
@@ -224,11 +224,16 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof theme === 'string') saved.theme = theme;
   if (
     dmChatEffect === 'none' ||
-    dmChatEffect === 'matrix' ||
+    dmChatEffect === 'codex' ||
     dmChatEffect === 'glitch' ||
     dmChatEffect === 'flames' ||
     dmChatEffect === 'rust' ||
-    dmChatEffect === 'pacman'
+    dmChatEffect === 'pacman' ||
+    dmChatEffect === 'mspacman' ||
+    dmChatEffect === 'starmap' ||
+    dmChatEffect === 'bubbles' ||
+    dmChatEffect === 'smoke' ||
+    dmChatEffect === 'inferno'
   ) {
     saved.dmChatEffect = dmChatEffect;
   }

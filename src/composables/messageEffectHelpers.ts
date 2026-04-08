@@ -1,4 +1,18 @@
-export type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames' | 'rust' | 'pacman';
+export const dmEffectOptions = [
+  { value: 'none', label: 'NONE' },
+  { value: 'bubbles', label: 'BUBBLES' },
+  { value: 'codex', label: 'CODEX' },
+  { value: 'flames', label: 'FLAMES' },
+  { value: 'glitch', label: 'GLITCH' },
+  { value: 'inferno', label: 'INFERNO' },
+  { value: 'mspacman', label: 'MS PACMAN' },
+  { value: 'pacman', label: 'PACMAN' },
+  { value: 'smoke', label: 'POWDER' },
+  { value: 'rust', label: 'RUST' },
+  { value: 'starmap', label: 'STARMAP' },
+] as const;
+
+export type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'mspacman' | 'starmap' | 'bubbles' | 'smoke' | 'inferno';
 
 interface WordAppendState {
   currentWordContainer: HTMLSpanElement | null;
@@ -16,7 +30,7 @@ export function ensureAnimationStyles() {
       50%, 99% { opacity: 0; }
     }
 
-    @keyframes matrix-fall {
+    @keyframes codex-fall {
       0% {
         opacity: 0;
         transform: translateY(-100px) scaleY(2);
@@ -33,7 +47,7 @@ export function ensureAnimationStyles() {
       }
     }
 
-    @keyframes matrix-settle {
+    @keyframes codex-settle {
       0% {
         text-shadow: 0 0 25px rgba(57, 255, 20, 1), 0 0 40px rgba(57, 255, 20, 0.6);
       }
@@ -184,16 +198,16 @@ export function ensureAnimationStyles() {
       animation: typewriter-blink 1s step-end infinite;
     }
 
-    .matrix-char {
+    .codex-char {
       display: inline-block;
-      animation: matrix-fall 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      animation: codex-fall 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
       color: var(--color-accent, #39ff14);
       font-weight: bold;
       letter-spacing: 2px;
     }
 
-    .matrix-char.settle {
-      animation: matrix-settle 0.4s ease-out forwards;
+    .codex-char.settle {
+      animation: codex-settle 0.4s ease-out forwards;
     }
 
     .glitch-char {
@@ -256,7 +270,7 @@ export function getAnimationDuration(effect: AnimationEffect, textLength: number
       return 1000 + baseLength * 50;
     case 'scan':
       return 1000 + baseLength * 20;
-    case 'matrix':
+    case 'codex':
       return 1500 + baseLength * 30;
     case 'glitch':
       return 1200 + baseLength * 20;
@@ -266,6 +280,16 @@ export function getAnimationDuration(effect: AnimationEffect, textLength: number
       return 3800 + baseLength * 45;
     case 'pacman':
       return 2200 + baseLength * 20;
+    case 'mspacman':
+      return 2400 + baseLength * 20;
+    case 'starmap':
+      return 2600 + baseLength * 28;
+    case 'bubbles':
+      return 2500 + baseLength * 30;
+    case 'smoke':
+      return 2600 + baseLength * 30;
+    case 'inferno':
+      return 2800 + baseLength * 35;
     default:
       return 0;
   }

@@ -43,12 +43,12 @@ export interface AudioConfig {
   scanlines?: boolean;
   soundpack: string;
   theme: string;
-  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames' | 'rust' | 'pacman';
   showJoinPartMessages?: boolean;
   audioInputDeviceId: string;
   audioOutputDeviceId: string;
   videoInputDeviceId: string;
   customSlashCommands?: SlashCommandAlias[];
+  dmChatEffect: 'none' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'mspacman' | 'starmap' | 'bubbles' | 'smoke' | 'inferno';
 }
 
 export interface NetworkConfig {

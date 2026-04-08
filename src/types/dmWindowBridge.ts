@@ -59,7 +59,7 @@ export interface DMWindowStatePayload {
   mqttServer: string;
   roomId: string;
   audioConfig: AudioConfig;
-  dmChatEffect: 'none' | 'matrix' | 'glitch' | 'flames' | 'rust' | 'pacman';
+  dmChatEffect: 'none' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'mspacman' | 'starmap' | 'bubbles' | 'smoke' | 'inferno';
   focusedDMUser: string | null;
   targetUser: string | null;
 }
@@ -75,7 +75,7 @@ export type DMWindowAction =
   | { type: 'acceptVideo'; user: string }
   | { type: 'rejectVideo'; user: string }
   | { type: 'cancelRequest'; user: string }
-  | { type: 'sendMessage'; user: string; message: string; effect: 'none' | 'matrix' | 'glitch' | 'flames' | 'rust' | 'pacman' }
+  | { type: 'sendMessage'; user: string; message: string; effect: 'none' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'bubbles' | 'smoke' | 'inferno' }
   | { type: 'typing'; user: string }
   | { type: 'stopTyping'; user: string }
   | { type: 'closeDm'; user: string }

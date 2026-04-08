@@ -178,7 +178,7 @@ describe('useDirectMessage', () => {
       } as any;
     }
 
-    dm.sendDMMessage('ALPHA', 'hello secure world', 'matrix');
+    dm.sendDMMessage('ALPHA', 'hello secure world', 'codex');
     expect(send).toHaveBeenCalled();
     expect(dm.activeChats.value.get('ALPHA')?.messages.length).toBe(1);
 
@@ -292,7 +292,7 @@ describe('useDirectMessage', () => {
         mediaSharing: true,
         soundpack: 'default',
         theme: 'retro-terminal',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
@@ -824,7 +824,7 @@ describe('useDirectMessage', () => {
         mediaSharing: true,
         soundpack: 'default',
         theme: 'retro-terminal',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
@@ -1109,7 +1109,7 @@ describe('useDirectMessage', () => {
         mediaSharing: true,
         soundpack: 'default',
         theme: 'retro-terminal',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
@@ -1167,7 +1167,7 @@ describe('useDirectMessage', () => {
         mediaSharing: true,
         soundpack: 'default',
         theme: 'retro-terminal',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
         audioInputDeviceId: '',
         audioOutputDeviceId: '',
         videoInputDeviceId: '',
@@ -1453,7 +1453,7 @@ describe('useDirectMessage', () => {
       mediaSharing: true,
       soundpack: 'default',
       theme: 'retro-terminal',
-      dmChatEffect: 'matrix',
+      dmChatEffect: 'codex',
       audioInputDeviceId: '',
       audioOutputDeviceId: '',
       videoInputDeviceId: '',
@@ -1565,7 +1565,7 @@ describe('useDirectMessage', () => {
       mediaSharing: true,
       soundpack: 'default',
       theme: 'retro-terminal',
-      dmChatEffect: 'matrix',
+      dmChatEffect: 'codex',
       audioInputDeviceId: '',
       audioOutputDeviceId: '',
       videoInputDeviceId: '',
@@ -1888,5 +1888,6 @@ describe('useDirectMessage', () => {
     remote.getTracks().forEach((track: any) => expect(track.stop).toHaveBeenCalled());
   });
 });
+
 
 

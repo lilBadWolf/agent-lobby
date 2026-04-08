@@ -6,20 +6,30 @@ import {
 } from './messageEffectHelpers';
 import TypewriterEffect from '../components/effects/TypewriterEffect.vue';
 import ScanEffect from '../components/effects/ScanEffect.vue';
-import MatrixEffect from '../components/dm-effects/MatrixEffect.vue';
+import CodexEffect from '../components/dm-effects/CodexEffect.vue';
 import GlitchEffect from '../components/dm-effects/GlitchEffect.vue';
 import FlamesEffect from '../components/dm-effects/FlamesEffect.vue';
 import RustEffect from '../components/dm-effects/RustEffect.vue';
 import PacmanEffect from '../components/dm-effects/PacmanEffect.vue';
+import MsPacmanEffect from '../components/dm-effects/MsPacmanEffect.vue';
+import StarmapEffect from '../components/dm-effects/StarmapEffect.vue';
+import BubbleEffect from '../components/dm-effects/BubbleEffect.vue';
+import PowderEffect from '../components/dm-effects/PowderEffect.vue';
+import InfernoEffect from '../components/dm-effects/InfernoEffect.vue';
 
 const effectComponentMap: Record<Exclude<AnimationEffect, 'none'>, any> = {
   typewriter: TypewriterEffect,
   scan: ScanEffect,
-  matrix: MatrixEffect,
+  codex: CodexEffect,
   glitch: GlitchEffect,
   flames: FlamesEffect,
   rust: RustEffect,
   pacman: PacmanEffect,
+  mspacman: MsPacmanEffect,
+  starmap: StarmapEffect,
+  bubbles: BubbleEffect,
+  smoke: PowderEffect,
+  inferno: InfernoEffect,
 };
 
 function mountEffectComponent(
@@ -40,7 +50,11 @@ function mountEffectComponent(
     const app = createApp(component, {
       text,
       onDone: () => {
-        app.unmount();
+        try {
+          app.unmount();
+        } catch {
+          // App may already be unmounted by parent removal.
+        }
         element.innerHTML = '';
         resolve();
       },

@@ -38,7 +38,7 @@ describe('SettingsModal', () => {
     autoUpdatePulseMinutes: 30,
     soundpack: 'default',
     theme: 'retro-terminal',
-    dmChatEffect: 'matrix' as const,
+    dmChatEffect: 'codex' as const,
     audioInputDeviceId: '',
     audioOutputDeviceId: '',
     videoInputDeviceId: '',
@@ -283,3 +283,4 @@ describe('SettingsModal', () => {
     expect(Array.isArray(removedPayload.customSlashCommands)).toBe(true);
   });
 });
+

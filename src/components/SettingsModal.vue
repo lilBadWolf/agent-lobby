@@ -98,12 +98,9 @@
               id="set-dm-effect"
               @change="handleChange"
             >
-              <option value="none">NONE</option>
-              <option value="matrix">MATRIX</option>
-              <option value="glitch">GLITCH</option>
-              <option value="flames">FLAMES</option>
-              <option value="rust">RUST</option>
-              <option value="pacman">PACMAN</option>
+              <option v-for="option in dmEffectOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
             </select>
           </div>
           <div class="setting-row">
@@ -382,6 +379,7 @@ import { computed, ref, watch, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
+import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
 
 const DEFAULT_THEME = 'retro-terminal';
@@ -653,7 +651,7 @@ async function previewEffect() {
   await nextTick(); // Wait for DOM to render
   if (previewElement.value) {
     previewElement.value.innerHTML = '';
-    const effectName = localConfig.value.dmChatEffect.toUpperCase();
+    const effectName = dmEffectOptions.find((option) => option.value === localConfig.value.dmChatEffect)?.label ?? localConfig.value.dmChatEffect.toUpperCase();
     await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
     setTimeout(() => {
       showEffectPreview.value = false;

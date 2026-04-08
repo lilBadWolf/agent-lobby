@@ -1427,13 +1427,24 @@ export function useDirectMessage(
     const getAnimationDuration = (eff: string, textLength: number): number => {
       const len = Math.max(1, textLength);
       switch (eff) {
-        case 'typewriter': return 1000 + len * 50;
-        case 'scan': return 1000 + len * 20;
-        case 'matrix': return 1500 + len * 30;
-        case 'glitch': return 1200 + len * 20;
-        case 'flames': return 1800 + len * 40;
-        case 'pacman': return 2200 + len * 20;
-        default: return 0;
+        case 'typewriter':
+          return 1000 + len * 50;
+        case 'scan':
+          return 1000 + len * 20;
+        case 'codex':
+          return 1500 + len * 30;
+        case 'glitch':
+          return 1200 + len * 20;
+        case 'flames':
+          return 1800 + len * 40;
+        case 'pacman':
+          return 2200 + len * 20;
+        case 'bubbles':
+          return 2500 + len * 30;
+        case 'smoke':
+          return 2600 + len * 30;
+        default:
+          return 0;
       }
     };
 

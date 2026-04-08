@@ -12,10 +12,10 @@ const container = ref<HTMLElement | null>(null);
 const timerIds = new Set<number>();
 const intervalIds = new Set<number>();
 
-const matrixCharset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%^&*()[]{}<>?/|\\';
+const codexCharset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%^&*()[]{}<>?/|\\';
 
-function randomMatrixChar() {
-  return matrixCharset.charAt(Math.floor(Math.random() * matrixCharset.length));
+function randomCodexChar() {
+  return codexCharset.charAt(Math.floor(Math.random() * codexCharset.length));
 }
 
 function clearTimers() {
@@ -30,11 +30,11 @@ function finishEffect() {
   emit('done');
 }
 
-function createMatrixChar(delay: number) {
+function createCodexChar(delay: number) {
   const span = document.createElement('span');
-  span.className = 'matrix-char';
+  span.className = 'codex-char';
   span.style.animationDelay = `${delay}ms`;
-  span.textContent = randomMatrixChar();
+  span.textContent = randomCodexChar();
   return span;
 }
 
@@ -78,12 +78,12 @@ function startEffect() {
         return;
       }
 
-      const span = createMatrixChar(delay);
+      const span = createCodexChar(delay);
       container.value?.appendChild(span);
 
       const updateInterval = window.setInterval(() => {
         if (!span.classList.contains('settle')) {
-          span.textContent = randomMatrixChar();
+          span.textContent = randomCodexChar();
         }
       }, 50);
       intervalIds.add(updateInterval);

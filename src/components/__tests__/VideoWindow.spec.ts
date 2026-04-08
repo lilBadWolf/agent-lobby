@@ -124,12 +124,12 @@ describe('VideoWindow', () => {
       },
     });
 
-    await wrapper.setProps({ dmMessages: [{ user: 'echo', message: 'render me', effect: 'matrix' }] });
+    await wrapper.setProps({ dmMessages: [{ user: 'echo', message: 'render me', effect: 'codex' }] });
     await nextTick();
     await nextTick();
 
     expect(playSpy).toHaveBeenCalled();
-    expect(playAnimationMock).toHaveBeenCalledWith('matrix', 'render me', expect.any(HTMLElement));
+    expect(playAnimationMock).toHaveBeenCalledWith('codex', 'render me', expect.any(HTMLElement));
   });
 
   it('renders plain fallback text for effect none and avoids animation replay for duplicate message', async () => {
@@ -238,7 +238,7 @@ describe('VideoWindow', () => {
       },
     });
 
-    await wrapper.setProps({ dmMessages: [{ user: 'ME', message: 'mine', effect: 'matrix' }] });
+    await wrapper.setProps({ dmMessages: [{ user: 'ME', message: 'mine', effect: 'codex' }] });
     await nextTick();
     await nextTick();
 
@@ -246,7 +246,7 @@ describe('VideoWindow', () => {
     await nextTick();
     await nextTick();
 
-    expect(playAnimationMock).not.toHaveBeenCalledWith('matrix', 'mine', expect.anything());
+    expect(playAnimationMock).not.toHaveBeenCalledWith('codex', 'mine', expect.anything());
     expect(playAnimationMock).not.toHaveBeenCalledWith('glitch', 'sys', expect.anything());
   });
 
@@ -279,4 +279,5 @@ describe('VideoWindow', () => {
     expect(remoteAudio.srcObject).toBeNull();
   });
 });
+
 

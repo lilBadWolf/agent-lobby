@@ -99,7 +99,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: {
@@ -124,7 +124,7 @@ describe('DMChatModal', () => {
         outgoingRequests: ['DELTA'],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -196,7 +196,7 @@ describe('DMChatModal', () => {
           { id: 2, message: 'video req', type: 'video-call', from: 'DELTA' },
         ],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -230,7 +230,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -267,7 +267,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -311,7 +311,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -343,7 +343,7 @@ describe('DMChatModal', () => {
       outgoingRequests: [],
       notices: [],
       username: 'ALPHA',
-      dmChatEffect: 'matrix',
+      dmChatEffect: 'codex',
     };
 
     const wrapper = mount(DMChatModal, {
@@ -405,7 +405,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -493,7 +493,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -547,7 +547,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: {
         stubs: { VideoWindow: true },
@@ -587,7 +587,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: { stubs: { VideoWindow: true } },
     });
@@ -609,7 +609,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: { stubs: { VideoWindow: true } },
     });
@@ -656,7 +656,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: { stubs: { VideoWindow: true } },
     });
@@ -706,7 +706,7 @@ describe('DMChatModal', () => {
         outgoingRequests: [],
         notices: [],
         username: 'ALPHA',
-        dmChatEffect: 'matrix',
+        dmChatEffect: 'codex',
       },
       global: { stubs: { VideoWindow: true } },
     });
@@ -724,3 +724,4 @@ describe('DMChatModal', () => {
     });
   });
 });
+

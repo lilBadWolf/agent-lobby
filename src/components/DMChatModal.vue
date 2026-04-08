@@ -189,6 +189,7 @@
 import { ref, computed, watch, nextTick } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../types/directMessage';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
+import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import VideoWindow from './VideoWindow.vue';
 
 type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
@@ -246,14 +247,6 @@ const emit = defineEmits<{
   removeFile: [user: string, fileId: string];
 }>();
 
-const dmEffectOptions = [
-  { value: 'none', label: 'NONE' },
-  { value: 'matrix', label: 'MATRIX' },
-  { value: 'glitch', label: 'GLITCH' },
-  { value: 'flames', label: 'FLAMES' },
-  { value: 'rust', label: 'RUST' },
-  { value: 'pacman', label: 'PACMAN' },
-] as const;
 
 const { playAnimation } = useMessageAnimations();
 const currentTab = ref<string>('');
@@ -874,7 +867,7 @@ async function processPendingMessage(): Promise<void> {
   animContainer.style.display = 'flex';
   animContainer.style.alignItems = 'center';
   animContainer.style.justifyContent = 'center';
-  animContainer.style.padding = '20px';
+  animContainer.style.padding = '0';
   animContainer.style.boxSizing = 'border-box';
 
   const textContainer = document.createElement('span');
@@ -895,7 +888,7 @@ async function processPendingMessage(): Promise<void> {
     messagesContainer.value.appendChild(animContainer);
   }
 
-  const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'matrix' | 'glitch' | 'flames' | 'rust';
+  const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames' | 'rust' | 'bubbles' | 'smoke' | 'inferno';
   try {
     await playAnimation(effect, nextMsg.message, textContainer);
   } catch (e) {

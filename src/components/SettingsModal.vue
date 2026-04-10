@@ -217,7 +217,7 @@
         </div>
         <div v-if="activeTab === 'media'" class="tab-panel media-panel">
           <div class="setting-row">
-            <label>AUDIO ENABLED</label>
+            <label>System Sounds</label>
             <input
               v-model="localConfig.audioEnabled"
               type="checkbox"

@@ -71,6 +71,7 @@ let animationFrame = 0
 let audioUnlocked = false
 let hasPlayedWaka = false
 let resizeObserver: ResizeObserver | null = null
+let startDelayTimer = 0
 
 const pacmanStyle = computed(() => ({
   left: `${pacmanPosition.left}px`,
@@ -132,13 +133,12 @@ function layout() {
   const scale = Math.min(maxWidth / Math.max(maxRowWidth, 1), maxHeight / Math.max(totalHeight || 1, 1), 1)
   containerRef.value.style.transform = `scale(${scale})`
 
-  const baseRowHeight = rowRects[0]?.height || 1
-  const pacmanSize = Math.min(120, Math.max(64, baseRowHeight * 1.1 * scale))
+  const pacmanSize = 56
   pacmanPosition.size = pacmanSize
-  pacmanPosition.left = stageRect.width + pacmanSize
-  const lastRowEl = rowEls[rowEls.length - 1]
-  const lastRowRect = lastRowEl ? lastRowEl.getBoundingClientRect() : null
-  pacmanPosition.top = lastRowRect ? lastRowRect.top - stageRect.top + lastRowRect.height / 2 : stageRect.height / 2
+  pacmanPosition.left = -pacmanSize - 20
+  const firstRowEl = rowEls[0]
+  const firstRowRect = firstRowEl ? firstRowEl.getBoundingClientRect() : null
+  pacmanPosition.top = firstRowRect ? firstRowRect.top - stageRect.top + firstRowRect.height / 2 : stageRect.height / 2
   return { stageRect, pacmanSize }
 }
 
@@ -176,7 +176,7 @@ interface LayoutData {
 function animatePasses(layoutData: LayoutData) {
   const stageRect = layoutData.stageRect
   const pacmanSize = layoutData.pacmanSize
-  const passes = getWrappedPasses().reverse()
+  const passes = getWrappedPasses()
   let passIndex = 0
 
   if (passes.length === 0) {
@@ -196,25 +196,25 @@ function animatePasses(layoutData: LayoutData) {
     const firstLetterRect = letterRects[0] ?? new DOMRect()
     const lineCenter = firstLetterRect.top - stageRect.top + firstLetterRect.height / 2
     pacmanPosition.top = lineCenter
-    pacmanPosition.left = stageRect.width + pacmanSize
+    pacmanPosition.left = -pacmanSize - 20
 
-    const startX = stageRect.width + pacmanSize
-    const endX = -pacmanSize - 20
-    const totalDistance = startX - endX
+    const startX = -pacmanSize - 20
+    const endX = stageRect.width + pacmanSize
+    const totalDistance = endX - startX
     const duration = 2200
     const startTime = performance.now()
 
     function frame(now: number) {
       const elapsed = now - startTime
       const progress = Math.min(elapsed / duration, 1)
-      const pacmanX = startX - totalDistance * progress
+      const pacmanX = startX + totalDistance * progress
       pacmanPosition.left = pacmanX
 
-      const pacmanFront = pacmanX + 18
+      const pacmanFront = pacmanX + pacmanSize - 18
       letterRects.forEach((rect, idx) => {
         const entry = pass.entries[idx]
         const line = pass.line
-        if (!line.letters[entry.index].eaten && pacmanFront < rect.right - stageRect.left - 12) {
+        if (!line.letters[entry.index].eaten && pacmanFront > rect.left - stageRect.left + 12) {
           line.letters[entry.index].eaten = true
         }
       })
@@ -239,9 +239,11 @@ function animatePasses(layoutData: LayoutData) {
 
 onMounted(() => {
   if (lines.length) {
-    const layoutData = layout()
-    playWaka()
-    animatePasses(layoutData)
+    startDelayTimer = window.setTimeout(() => {
+      const layoutData = layout()
+      playWaka()
+      animatePasses(layoutData)
+    }, 1000)
     document.addEventListener('pointerdown', unlockAudio, { once: true })
   } else {
     emit('done')
@@ -253,6 +255,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(startDelayTimer)
   window.removeEventListener('resize', layout)
   document.removeEventListener('pointerdown', unlockAudio)
   if (resizeObserver && stageRef.value) resizeObserver.unobserve(stageRef.value)
@@ -331,7 +334,7 @@ onBeforeUnmount(() => {
   left: calc(100% + 120px);
   width: var(--pacman-size, 120px);
   height: var(--pacman-size, 120px);
-  transform: translateY(-50%);
+  transform: translateY(-50%) scaleX(-1);
   animation: pacman-bob 0.8s ease-in-out infinite;
   z-index: 1;
 }
@@ -355,8 +358,8 @@ onBeforeUnmount(() => {
   height: 18px;
   border-radius: 50%;
   background: #111;
-  top: 10px;
-  right: 22px;
+  top: 6px;
+  right: 18px;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.8);
 }
 
@@ -373,10 +376,10 @@ onBeforeUnmount(() => {
 
 @keyframes pacman-bob {
   0%, 100% {
-    transform: translateY(-50%) translateX(0);
+    transform: translateY(-50%) translateX(0) scaleX(-1);
   }
   50% {
-    transform: translateY(-48%) translateX(0);
+    transform: translateY(-48%) translateX(0) scaleX(-1);
   }
 }
 

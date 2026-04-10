@@ -1,11 +1,9 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.0**
+🎉 **Release highlights for agent-lobby 0.4.1**
 
-- ✨ **DM effects system overhaul**: the direct-message visuals are now powered by a rewritten effects engine with better composition and runtime control.
-- 🌌 **Three.js particle-driven effects** are now part of the DM experience, delivering rich particle motion, trails, bursts, and dynamic scene movement.
-- 🔥 **New DM effects** include fresh visual styles for your chats, from inferno and codex to starmap particle swarms and codex-style overlays.
-- 👤 **DM UX polish** for show/hide join and part options and smoother effect transitions.
+- 🎨 **Theme polish**: improved theme support and a more expressive theme experience across the app.
+- 🌈 **Gradient Bars toggle**: new optional spectrogram styling in Settings makes the spectrum render with theme-aware threshold colors.
+- 🎛️ **AgentAmp visual refinement**: audio visualization now supports theme-colored spectrogram bars while still allowing standard accent-only mode.
 
-
-> This release ships the new DM effects overhaul, adds three.js-powered particle visuals across direct messages, and brings a stronger generation of chat effects to the app.
+> This release adds a smoother theme experience and a new gradient spectrum option so the music visualizer matches the app theme and becomes easier to scan at a glance.

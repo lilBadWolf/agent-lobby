@@ -247,6 +247,24 @@ describe('SettingsModal', () => {
     expect(lastPayload.agentAmpEnabled).toBe(true);
   });
 
+  it('shows spectrum sensitivity slider in AgentAmp settings and emits value changes', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        showModal: true,
+        config: baseConfig,
+        availableSoundpacks: ['default'],
+        availableThemes: ['retro-terminal'],
+      },
+    });
+
+    await wrapper.findAll('.tab-btn')[3].trigger('click');
+    expect(wrapper.find('#set-spectrum-sensitivity').exists()).toBe(true);
+
+    await wrapper.find('#set-spectrum-sensitivity').setValue('1.5');
+    const payload = wrapper.emitted('update')?.slice(-1)?.[0]?.[0] as any;
+    expect(payload.spectrumSensitivity).toBe(1.5);
+  });
+
   it('edits custom slash commands and guards reserved built-ins', async () => {
     const wrapper = mount(SettingsModal, {
       props: {

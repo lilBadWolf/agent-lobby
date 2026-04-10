@@ -15,6 +15,7 @@
         :detached="true"
         :spectrum-bar-count="spectrumBarCount"
         :spectrum-fft-size="spectrumFftSize"
+        :spectrum-sensitivity="spectrumSensitivity"
         @toggle-detached="handleToggleDetached"
       />
     </div>
@@ -35,8 +36,10 @@ const AGENTAMP_ACTION_CHANNEL = 'agent-lobby-agentamp-action';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const SPECTRUM_BAR_COUNT_STORAGE_KEY = 'agent_spectrum_bar_count';
 const SPECTRUM_FFT_SIZE_STORAGE_KEY = 'agent_spectrum_fft_size';
+const SPECTRUM_SENSITIVITY_STORAGE_KEY = 'agent_spectrum_sensitivity';
 const spectrumBarCount = ref(64);
 const spectrumFftSize = ref(2048);
+const spectrumSensitivity = ref(1);
 let resizeObserver: ResizeObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
 let lastDesiredContentInnerHeight = -1;
@@ -115,9 +118,10 @@ async function applyPersistedTheme() {
 }
 
 async function applyPersistedSpectrumSettings() {
-  const [savedBarCount, savedFftSize] = await Promise.all([
+  const [savedBarCount, savedFftSize, savedSensitivity] = await Promise.all([
     getPersistedValue<number>(SPECTRUM_BAR_COUNT_STORAGE_KEY),
     getPersistedValue<number>(SPECTRUM_FFT_SIZE_STORAGE_KEY),
+    getPersistedValue<number>(SPECTRUM_SENSITIVITY_STORAGE_KEY),
   ]);
 
   if ([32, 48, 64, 96, 128].includes(savedBarCount ?? -1)) {
@@ -126,6 +130,10 @@ async function applyPersistedSpectrumSettings() {
 
   if ([1024, 2048, 4096, 8192].includes(savedFftSize ?? -1)) {
     spectrumFftSize.value = savedFftSize as number;
+  }
+
+  if (typeof savedSensitivity === 'number' && savedSensitivity >= 0.5 && savedSensitivity <= 2) {
+    spectrumSensitivity.value = savedSensitivity;
   }
 }
 
@@ -146,6 +154,14 @@ function handleStorageUpdate(event: StorageEvent) {
     const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
     if ([1024, 2048, 4096, 8192].includes(nextValue)) {
       spectrumFftSize.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === SPECTRUM_SENSITIVITY_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if (nextValue >= 0.5 && nextValue <= 2) {
+      spectrumSensitivity.value = nextValue;
     }
     return;
   }

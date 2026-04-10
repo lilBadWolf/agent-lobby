@@ -36,6 +36,7 @@ export interface AudioConfig {
   autoUpdatePulseMinutes?: number;
   spectrumBarCount?: number;
   spectrumFftSize?: number;
+  spectrumSensitivity?: number;
   dmEnabled: boolean;
   mediaSharing: boolean;
   agentAmpEnabled: boolean;

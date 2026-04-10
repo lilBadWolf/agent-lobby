@@ -190,6 +190,20 @@
               <option :value="8192">8192 (HIGH RESOLUTION)</option>
             </select>
           </div>
+          <div class="setting-row">
+            <label>SPECTRUM SENSITIVITY</label>
+            <input
+              v-model.number="localConfig.spectrumSensitivity"
+              type="range"
+              id="set-spectrum-sensitivity"
+              min="0.5"
+              max="2"
+              step="0.1"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            />
+            <span class="range-value">{{ localConfig.spectrumSensitivity?.toFixed(1) ?? '1.0' }}</span>
+          </div>
         </div>
         <div v-if="activeTab === 'media'" class="tab-panel media-panel">
           <div class="setting-row">
@@ -456,6 +470,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     spectrumBarCount: config.spectrumBarCount ?? 64,
     spectrumFftSize: config.spectrumFftSize ?? 2048,
+    spectrumSensitivity: config.spectrumSensitivity ?? 1,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
     mediaSharing: config.mediaSharing ?? true,
     agentAmpDetached: config.agentAmpDetached ?? false,

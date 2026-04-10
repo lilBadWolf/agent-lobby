@@ -132,4 +132,7 @@
   --color-agentamp-label-next: #7de6ff;
   --color-agentamp-label-then: #ffd36f;
   --theme-user-colors: #ff006e, #ff0080, #ff1493, #00ffff, #00f5ff, #00e5ff, #b060ff, #d946ef, #a855f7, #7c3aed, #ffd700, #ffaa00, #ff6600, #ff0066, #ff3399;
+  --color-spectrum-threshold-low: #c4009d;
+  --color-spectrum-threshold-medium: #ff006e;
+  --color-spectrum-threshold-high: #ff8ab8;
 }

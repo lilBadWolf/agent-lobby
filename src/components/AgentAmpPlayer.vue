@@ -90,6 +90,7 @@
       :enabled="props.enabled"
       :bar-count="props.spectrumBarCount"
       :fft-size="props.spectrumFftSize"
+      :spectrum-sensitivity="props.spectrumSensitivity"
     />
     <div class="agentamp-controls">
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
@@ -557,6 +558,7 @@ const props = defineProps<{
   detached?: boolean;
   spectrumBarCount?: number;
   spectrumFftSize?: number;
+  spectrumSensitivity?: number;
 }>();
 
 function requestToggleDetached() {

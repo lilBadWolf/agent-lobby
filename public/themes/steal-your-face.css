@@ -1,0 +1,135 @@
+:root[data-theme='steal-your-face'] {
+  /* Core Brand Colors */
+  --color-accent: #2e59a7; /* Royal Dead Blue */
+  --color-bg-base: #0a0a0c; /* Deep Space Black */
+  --color-danger: #e62429; /* Bolt Red */
+  
+  /* UI Elements */
+  --color-accent-muted: rgba(46, 89, 167, 0.16);
+  --color-spectrum-threshold-low: #f4c430; /* Golden Amber */
+  --color-spectrum-threshold-medium: #2e59a7;
+  --color-spectrum-threshold-high: #e62429;
+  
+  /* Text & Contrast */
+  --color-on-accent: #ffffff;
+  --color-on-danger: #ffffff;
+  --color-text-primary: #f2f2f2;
+  --color-text-secondary: rgba(200, 200, 210, 0.7);
+  
+  /* Settings & Surfaces */
+  --color-settings-surface: #161a24;
+  --color-settings-overlay: rgba(5, 5, 10, 0.6);
+  --color-settings-divider: rgba(46, 89, 167, 0.3);
+  
+  /* AgentAmp (Music Player) - Psychedelic Gradient Style */
+  --color-agentamp-bg: linear-gradient(180deg, rgba(46, 89, 167, 0.2), #0a0a0c);
+  --color-agentamp-border: #2e59a7;
+  --color-agentamp-panel-bg: rgba(15, 15, 25, 0.95);
+  
+  /* Buttons - Steal Your Face Red-to-Blue Transition */
+  --color-agentamp-button-bg: linear-gradient(180deg, #e62429, #2e59a7);
+  --color-agentamp-button-border: rgba(255, 255, 255, 0.2);
+  --color-agentamp-button-text: #ffffff;
+  --color-agentamp-button-hover-bg: linear-gradient(180deg, #ff3b3f, #3a6bc4);
+  
+  /* Interactive Accents */
+  --color-agentamp-track-active-glow: rgba(230, 36, 41, 0.4);
+  --color-agentamp-label-next: #8dd57f; /* Terrapin Gold */
+  --color-agentamp-label-then: #f4c430;
+  /* --- Added missing tokens from retro-terminal --- */
+  --color-chat-bg: #14151a;
+  --color-chat-surface: rgba(46, 89, 167, 0.09);
+  --color-chat-surface-strong: rgba(46, 89, 167, 0.18);
+  --color-chat-overlay: rgba(46, 89, 167, 0.13);
+  --color-chat-text: #f2f2f2;
+  --color-chat-text-muted: rgba(200, 200, 210, 0.6);
+  --color-chat-border: rgba(46, 89, 167, 0.18);
+  --color-dmchatmodal-window-bg: radial-gradient(circle at top, rgba(46, 89, 167, 0.09), transparent 34%), linear-gradient(180deg, rgba(20, 20, 30, 0.98), #0a0a0c 100%);
+  --color-dmchatmodal-modal-shadow: 0 0 20px rgba(46, 89, 167, 0.18);
+  --color-dmchatmodal-modal-window-shadow: inset 0 1px 0 rgba(46, 89, 167, 0.12), inset 0 0 36px rgba(46, 89, 167, 0.08);
+  --color-dmchatmodal-modal-window-bg: linear-gradient(180deg, rgba(20, 20, 30, 0.98), #0a0a0c 24%), linear-gradient(135deg, rgba(46, 89, 167, 0.04), transparent 42%);
+  --color-dmchatmodal-tab-hover-bg: rgba(46, 89, 167, 0.05);
+  --color-dmchatmodal-tab-active-bg: rgba(46, 89, 167, 0.09);
+  --color-dmchatmodal-tab-active-window-bg: linear-gradient(180deg, rgba(46, 89, 167, 0.12), rgba(46, 89, 167, 0.04));
+  --color-dmchatmodal-tab-active-window-box-shadow: inset 0 1px 0 rgba(46, 89, 167, 0.13);
+  --color-dmchatmodal-tab-bar-window-border: rgba(46, 89, 167, 0.13);
+  --color-dmchatmodal-tab-bar-window-bg: linear-gradient(180deg, #f4c430 0%, #161a24 100%);
+  --color-dmchatmodal-notice-call-border: var(--color-accent);
+  --color-dmchatmodal-notice-call-bg: rgba(46, 89, 167, 0.08);
+  --color-dmchatmodal-notice-call-color: var(--color-accent);
+  --color-dmchatmodal-notice-info-border: var(--color-accent-muted);
+  --color-dmchatmodal-notice-info-bg: rgba(46, 89, 167, 0.08);
+  --color-dmchatmodal-notice-info-color: var(--color-accent);
+  --color-dmchatmodal-content-window-bg: radial-gradient(circle at top right, rgba(46, 89, 167, 0.05), transparent 32%), linear-gradient(180deg, rgba(46, 89, 167, 0.08), transparent 20%);
+  --color-dmchatmodal-files-section-bg: rgba(46, 89, 167, 0.02);
+  --color-dmchatmodal-files-section-border: var(--color-accent-muted);
+  --color-dmchatmodal-files-section-window-bg: linear-gradient(180deg, rgba(46, 89, 167, 0.04), rgba(46, 89, 167, 0.015));
+  --color-dmchatmodal-files-section-window-border: rgba(46, 89, 167, 0.14);
+  --color-dmchatmodal-request-item-bg: rgba(46, 89, 167, 0.05);
+  --color-dmchatmodal-file-item-bg: var(--color-chat-surface);
+  --color-dmchatmodal-drop-overlay-bg: rgba(46, 89, 167, 0.13);
+  --color-dmchatmodal-drag-over-bg: rgba(46, 89, 167, 0.09);
+  --color-dmchatmodal-danger-shadow: 0 0 10px rgba(230, 36, 41, 0.3);
+  --color-dmchatmodal-send-btn-hover-shadow: 0 0 10px rgba(46, 89, 167, 0.3);
+  --color-dmchatmodal-progress-bar-bg: rgba(46, 89, 167, 0.1);
+  --color-dmchatmodal-effect-text-shadow: 0 0 20px rgba(46, 89, 167, 0.7);
+  --color-dmwindow-bg: radial-gradient(circle at top, rgba(46, 89, 167, 0.08), transparent 28%), linear-gradient(180deg, #161a24 0%, #0a0a0c 100%);
+  --color-dmwindow-titlebar-bg: linear-gradient(180deg, rgba(46, 89, 167, 0.08), rgba(244, 196, 48, 0.12));
+  --color-dmwindow-titlebar-border: rgba(46, 89, 167, 0.16);
+  --color-dmwindow-titlebar-text-shadow: 0 0 10px rgba(46, 89, 167, 0.25);
+  --color-dmwindow-button-border: rgba(46, 89, 167, 0.18);
+  --color-dmwindow-button-hover-bg: rgba(46, 89, 167, 0.08);
+  --color-dmwindow-button-hover-border: rgba(46, 89, 167, 0.4);
+  --color-dmwindow-close-border: rgba(230, 36, 41, 0.18);
+  --color-dmwindow-close-hover-bg: rgba(230, 36, 41, 0.12);
+  --color-dmwindow-close-hover-border: rgba(230, 36, 41, 0.45);
+  --color-video-container-bg: #000;
+  --color-video-border: var(--color-accent);
+  --color-video-main-shadow: 0 0 30px rgba(46, 89, 167, 0.13), inset 0 0 30px rgba(46, 89, 167, 0.08);
+  --color-video-fallback-bg: radial-gradient(circle at 50% 45%, rgba(46, 89, 167, 0.12), #0a0a0c 60%), linear-gradient(180deg, rgba(20, 20, 30, 0.95), #161a24 98%);
+  --color-video-fallback-box-shadow: inset 0 0 40px rgba(46, 89, 167, 0.12), 0 0 40px rgba(46, 89, 167, 0.12);
+  --color-video-fallback-header-text-shadow: 0 0 10px rgba(46, 89, 167, 0.5);
+  --color-video-fallback-animation-text-shadow: 0 0 18px rgba(46, 89, 167, 0.7), 0 0 28px rgba(244, 196, 48, 0.4);
+  --color-video-local-bg: #000;
+  --color-video-local-shadow: 0 0 20px rgba(46, 89, 167, 0.2);
+  --color-video-button-bg: rgba(46, 89, 167, 0.08);
+  --color-video-button-hover-bg: rgba(46, 89, 167, 0.18);
+  --color-video-button-text-shadow: 0 0 6px rgba(46, 89, 167, 0.4);
+  --color-video-button-off-text-shadow: 0 0 6px rgba(230, 36, 41, 0.5);
+  --color-video-local-fallback-bg: rgba(20, 20, 30, 0.95);
+  --color-video-pip-border: var(--color-accent);
+  --color-video-pip-shadow: 0 0 10px rgba(46, 89, 167, 0.18);
+  --color-video-pip-flicker-shadow: 0 0 20px rgba(46, 89, 167, 0.22);
+  --color-video-audio-bg: #161a24;
+  --color-dm-request-card-bg: rgba(20, 20, 30, 0.94);
+  --color-dm-request-card-shadow: 0 0 16px rgba(46, 89, 167, 0.12);
+  --color-dm-request-info-shadow: 0 0 14px rgba(244, 196, 48, 0.12);
+  --color-dm-request-call-shadow: 0 0 14px rgba(46, 89, 167, 0.18);
+  --color-dm-request-accept-hover: rgba(46, 89, 167, 0.14);
+  --color-dm-request-reject-hover: rgba(230, 36, 41, 0.14);
+  --color-chat-link: #2e59a7;
+  --color-chat-link-hover: #f4c430;
+  --color-chat-warning: #f4c430;
+  --color-chat-warning-contrast: #0a0a0c;
+  --color-auth-surface: rgba(46, 89, 167, 0.08);
+  --color-auth-surface-glow: rgba(46, 89, 167, 0.18);
+  --color-auth-badge-bg: #0a0a0c;
+  --color-auth-glitch-primary: #e62429;
+  --color-auth-glitch-secondary: #2e59a7;
+  --color-auth-config-glow: rgba(46, 89, 167, 0.18);
+  --color-sidebar-bg: rgba(46, 89, 167, 0.07);
+  --color-sidebar-status-dot: #2e59a7;
+  --color-sidebar-status-dot-glow: #2e59a7;
+  --color-sidebar-status-dot-glow-soft: rgba(46, 89, 167, 0.25);
+  --color-sidebar-status-dot-glow-strong: rgba(46, 89, 167, 0.45);
+  --color-sidebar-dm-active: #f4c430;
+  --color-sidebar-dm-active-border: rgba(244, 196, 48, 0.55);
+  --color-sidebar-dm-active-glow: rgba(244, 196, 48, 0.35);
+  --color-sidebar-dm-pending: #e62429;
+  --color-sidebar-dm-pending-border: rgba(230, 36, 41, 0.55);
+  --color-sidebar-dm-pending-glow: rgba(230, 36, 41, 0.35);
+  --color-sidebar-dm-pending-glow-strong: rgba(230, 36, 41, 0.65);
+  --color-sidebar-dm-denied-border: rgba(230, 36, 41, 0.65);
+  --color-sidebar-dm-denied-glow: rgba(230, 36, 41, 0.42);
+  --theme-user-colors: #2e59a7, #f4c430, #e62429, #8dd57f, #d86f0d, #971697, #ffffff, #3a6bc4;
+}

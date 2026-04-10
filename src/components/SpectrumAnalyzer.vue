@@ -6,13 +6,17 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useTheme } from '../composables/useTheme';
 
 const props = defineProps<{
   audioEl: HTMLAudioElement | null;
   enabled: boolean;
   barCount?: number;
   fftSize?: number;
+  spectrumSensitivity?: number;
 }>();
+
+const { getThemeTokenValue } = useTheme();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 let audioContext: AudioContext | null = null;
@@ -23,6 +27,7 @@ let frameId: number | null = null;
 
 const DEFAULT_BAR_COUNT = 64;
 const DEFAULT_FFT_SIZE = 2048;
+const DEFAULT_SPECTRUM_SENSITIVITY = 1;
 const ALLOWED_BAR_COUNTS = new Set([32, 48, 64, 96, 128]);
 const ALLOWED_FFT_SIZES = new Set([1024, 2048, 4096, 8192]);
 
@@ -42,6 +47,23 @@ function resolveFftSize(rawValue: number | undefined): number {
   return ALLOWED_FFT_SIZES.has(rawValue) ? rawValue : DEFAULT_FFT_SIZE;
 }
 
+function resolveSpectrumSensitivity(rawValue: number | undefined): number {
+  if (typeof rawValue !== 'number') {
+    return DEFAULT_SPECTRUM_SENSITIVITY;
+  }
+
+  return rawValue >= 0.5 && rawValue <= 2 ? rawValue : DEFAULT_SPECTRUM_SENSITIVITY;
+}
+
+function applySpectrumSensitivity(bars: number[]): number[] {
+  const sensitivity = resolveSpectrumSensitivity(props.spectrumSensitivity);
+  if (sensitivity === DEFAULT_SPECTRUM_SENSITIVITY) {
+    return bars;
+  }
+
+  return bars.map((bar) => Math.min(1, Math.max(0, bar * sensitivity)));
+}
+
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
@@ -58,17 +80,36 @@ function ensureCanvasSize() {
   canvas.height = Math.max(1, Math.floor(rect.height * ratio));
 }
 
-function getThemeColors(): { start: string; end: string } {
-  const canvas = canvasRef.value;
-  if (!canvas) {
-    return { start: 'rgba(132, 255, 187, 0.9)', end: 'rgba(109, 198, 255, 0.9)' };
+function getThemeColors(): {
+  accentMuted: string;
+  thresholdLow: string;
+  thresholdMedium: string;
+  thresholdHigh: string;
+} {
+  return {
+    accentMuted: getThemeTokenValue('--color-chat-text-muted', 'rgba(109, 198, 255, 0.9)'),
+    thresholdLow: getThemeTokenValue('--color-spectrum-threshold-low', 'rgba(132, 255, 187, 0.9)'),
+    thresholdMedium: getThemeTokenValue('--color-spectrum-threshold-medium', 'rgba(255, 209, 102, 0.9)'),
+    thresholdHigh: getThemeTokenValue('--color-spectrum-threshold-high', 'rgba(255, 107, 107, 0.9)'),
+  };
+}
+
+function getBarColor(value: number) {
+  const colors = getThemeColors();
+
+  if (value >= 0.60) {
+    return colors.thresholdHigh;
   }
 
-  const styles = window.getComputedStyle(canvas);
-  const startColor = styles.getPropertyValue('--spectrum-color-start').trim() || 'rgba(132, 255, 187, 0.9)';
-  const endColor = styles.getPropertyValue('--spectrum-color-end').trim() || 'rgba(109, 198, 255, 0.9)';
+  if (value >= 0.30) {
+    return colors.thresholdMedium;
+  }
 
-  return { start: startColor, end: endColor };
+  if (value >= 0.15) {
+    return colors.thresholdLow;
+  }
+
+  return colors.accentMuted;
 }
 
 function drawSpectrum(bars: number[]) {
@@ -87,17 +128,13 @@ function drawSpectrum(bars: number[]) {
   context.clearRect(0, 0, width, height);
 
   const barWidth = width / bars.length;
-  const colors = getThemeColors();
-  const gradient = context.createLinearGradient(0, 0, width, 0);
-  gradient.addColorStop(0, colors.start);
-  gradient.addColorStop(1, colors.end);
-  context.fillStyle = gradient;
 
   for (let index = 0; index < bars.length; index += 1) {
     const value = Math.max(0, Math.min(1, bars[index]));
     const barHeight = value * height;
     const x = index * barWidth;
     const y = height - barHeight;
+    context.fillStyle = getBarColor(value);
     context.fillRect(x, y, Math.max(1, barWidth * 0.8), barHeight);
   }
 }
@@ -155,7 +192,7 @@ function computeLocalSpectrum(samples: Float32Array): number[] {
     bars.push(Math.min(1, Math.sqrt(average) * 8));
   }
 
-  return bars;
+  return applySpectrumSensitivity(bars);
 }
 
 async function computeSpectrum(samples: Float32Array): Promise<number[]> {
@@ -169,7 +206,7 @@ async function computeSpectrum(samples: Float32Array): Promise<number[]> {
     const { invoke } = await import('@tauri-apps/api/core');
     const sampleArray = Array.from(samples);
     const spectrum = await invoke<number[]>('compute_spectrum', { samples: sampleArray });
-    return reduceSpectrumToBarCount(spectrum, barCount);
+    return applySpectrumSensitivity(reduceSpectrumToBarCount(spectrum, barCount));
   } catch {
     return computeLocalSpectrum(samples);
   }
@@ -276,9 +313,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
   z-index: 0;
   flex: 0 0 auto;
-  /* Theme colors for spectrum bars - dynamically set from theme */
-  --spectrum-color-start: var(--color-accent, rgba(132, 255, 187, 0.9));
-  --spectrum-color-end: var(--color-accent-muted, rgba(109, 198, 255, 0.9));
 }
 
 .spectrum-analyzer canvas {

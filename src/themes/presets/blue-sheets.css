@@ -13,6 +13,9 @@
   --color-chat-overlay: rgba(237, 244, 255, 0.92);
   --color-chat-text: #162536;
   --color-chat-text-muted: rgba(0, 102, 204, 0.8);
+  --color-spectrum-threshold-low: #3a6fa6;
+  --color-spectrum-threshold-medium: #0099ff;
+  --color-spectrum-threshold-high: #00d4ff;
   --color-chat-border: rgba(0, 102, 204, 0.28);
   --color-dmchatmodal-window-bg: radial-gradient(circle at top, rgba(0, 102, 204, 0.09), transparent 34%), linear-gradient(180deg, rgba(4, 6, 12, 0.98), rgba(0, 0, 0, 1));
   --color-dmchatmodal-modal-shadow: 0 0 20px rgba(0, 102, 204, 0.3);

@@ -214,3 +214,39 @@ Agent Lobby is intentionally lightweight on server requirements:
 - **One STUN service** for WebRTC ICE
 
 This is the complete server surface for the app. If your MANET will provide these two services, Agent Lobby can run without any additional backend.
+
+### Bot Creators / Maintainers
+
+- Presence is published by the client via the lobby code's `publishPresenceForLobby()` path, which JSON-serializes the `buildPresencePayload()` object.
+- Bots are treated like normal participants: a bot client should connect to the same MQTT broker, publish to `{{lobbyId}}_lobby/presence/{{BOT_NAME}}`, and may include `isBot: true` in its presence payload for special UI handling.
+- Bots can participate like regular users by subscribing to the lobby chat topic and publishing chat messages on the same topic.
+- Bot clients should watch lobby chat for direct mentions like `@botname` or command prefixes such as `!trigger` to know when to respond.
+- Bots should be surfaced specially in the lobby UI: they are moved to the top of the user list and shown with a robot emoji.
+- Bots can also update `isTyping` in their presence payload to indicate they are working on a request.
+- Bots can publish `activeMedia` and set `mediaSharing: true` to make it appear as though they are listening to audio or watching pinned video.
+- Bot presence should indicate DM eligibility; bots should default to `dmAvailable: false` unless the bot is full WebRTC capable and can accept private DM sessions.
+
+A complete presence payload looks like:
+
+```ts
+{
+  username: 'BOT_NAME',
+  isBot: true,
+  dmAvailable: false,
+  isTyping: false,
+  isAway: false,
+  mediaSharing: false,
+  activeMedia: null
+}
+```
+
+A complete `activeMedia` object looks like:
+
+```ts
+{
+  label: 'AERIAL SCAN FEED',
+  url: 'https://example.com/stream.mp3',
+  mediaType: 'audio',
+  currentTime: 42,
+}
+```

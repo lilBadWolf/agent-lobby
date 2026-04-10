@@ -14,6 +14,7 @@ const props = defineProps<{
   barCount?: number;
   fftSize?: number;
   spectrumSensitivity?: number;
+  gradientBars?: boolean;
 }>();
 
 const { getThemeTokenValue } = useTheme();
@@ -96,6 +97,11 @@ function getThemeColors(): {
 
 function getBarColor(value: number) {
   const colors = getThemeColors();
+  const accent = getThemeTokenValue('--color-accent', 'rgba(109, 198, 255, 0.9)');
+
+  if (!props.gradientBars) {
+    return accent;
+  }
 
   if (value >= 0.60) {
     return colors.thresholdHigh;

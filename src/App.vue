@@ -117,6 +117,7 @@
         :spectrum-bar-count="config.spectrumBarCount"
         :spectrum-fft-size="config.spectrumFftSize"
         :spectrum-sensitivity="config.spectrumSensitivity"
+        :spectrum-gradient-bars="config.spectrumGradientBars"
         @toggle-detached="handleAgentAmpDetachRequest"
       />
     </div>

@@ -247,6 +247,23 @@ describe('SettingsModal', () => {
     expect(lastPayload.agentAmpEnabled).toBe(true);
   });
 
+  it('updates gradient bars checkbox in AgentAmp settings and emits value changes', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: {
+        showModal: true,
+        config: { ...baseConfig, agentAmpEnabled: true },
+        availableSoundpacks: ['default'],
+        availableThemes: ['retro-terminal'],
+      },
+    });
+
+    await wrapper.findAll('.tab-btn')[1].trigger('click');
+    await wrapper.find('#set-spectrum-gradient-bars').setValue(true);
+
+    const payload = wrapper.emitted('update')?.slice(-1)?.[0]?.[0] as any;
+    expect(payload.spectrumGradientBars).toBe(true);
+  });
+
   it('shows spectrum sensitivity slider in AgentAmp settings and emits value changes', async () => {
     const wrapper = mount(SettingsModal, {
       props: {

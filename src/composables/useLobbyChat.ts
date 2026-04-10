@@ -35,6 +35,7 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   spectrumBarCount: 'agent_spectrum_bar_count',
   spectrumFftSize: 'agent_spectrum_fft_size',
   spectrumSensitivity: 'agent_spectrum_sensitivity',
+  spectrumGradientBars: 'agent_spectrum_gradient_bars',
   dmEnabled: 'agent_dm_enabled',
   mediaSharing: 'agent_media_sharing',
   agentAmpEnabled: 'agent_agent_amp_enabled',
@@ -63,6 +64,7 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   spectrumBarCount: 64,
   spectrumFftSize: 2048,
   spectrumSensitivity: 1,
+  spectrumGradientBars: false,
   soundpack: 'default',
   theme: 'retro-terminal',
   dmChatEffect: 'codex',
@@ -133,6 +135,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.spectrumSensitivity = DEFAULT_AUDIO_CONFIG.spectrumSensitivity;
   }
 
+  if (typeof normalized.spectrumGradientBars !== 'boolean') {
+    normalized.spectrumGradientBars = DEFAULT_AUDIO_CONFIG.spectrumGradientBars;
+  }
+
   if (typeof normalized.showJoinPartMessages !== 'boolean') {
     normalized.showJoinPartMessages = DEFAULT_AUDIO_CONFIG.showJoinPartMessages;
   }
@@ -149,6 +155,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount, nextConfig.spectrumBarCount ?? DEFAULT_AUDIO_CONFIG.spectrumBarCount),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize, nextConfig.spectrumFftSize ?? DEFAULT_AUDIO_CONFIG.spectrumFftSize),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity, nextConfig.spectrumSensitivity ?? DEFAULT_AUDIO_CONFIG.spectrumSensitivity),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars, nextConfig.spectrumGradientBars ?? DEFAULT_AUDIO_CONFIG.spectrumGradientBars),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing, nextConfig.mediaSharing),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
@@ -173,6 +180,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     autoUpdatePulseMinutes,
     spectrumBarCount,
     spectrumFftSize,
+    spectrumSensitivity,
+    spectrumGradientBars,
     dmEnabled,
     mediaSharing,
     agentAmpEnabled,
@@ -194,6 +203,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
@@ -231,6 +241,7 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   }
   if (typeof soundpack === 'string') saved.soundpack = soundpack;
   if (typeof theme === 'string') saved.theme = theme;
+  if (typeof spectrumGradientBars === 'boolean') saved.spectrumGradientBars = spectrumGradientBars;
   if (
     dmChatEffect === 'none' ||
     dmChatEffect === 'codex' ||

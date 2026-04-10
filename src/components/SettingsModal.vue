@@ -191,6 +191,16 @@
             </select>
           </div>
           <div class="setting-row">
+            <label>GRADIENT BARS</label>
+            <input
+              v-model="localConfig.spectrumGradientBars"
+              type="checkbox"
+              id="set-spectrum-gradient-bars"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
             <label>SPECTRUM SENSITIVITY</label>
             <input
               v-model.number="localConfig.spectrumSensitivity"
@@ -471,6 +481,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     spectrumBarCount: config.spectrumBarCount ?? 64,
     spectrumFftSize: config.spectrumFftSize ?? 2048,
     spectrumSensitivity: config.spectrumSensitivity ?? 1,
+    spectrumGradientBars: config.spectrumGradientBars ?? false,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
     mediaSharing: config.mediaSharing ?? true,
     agentAmpDetached: config.agentAmpDetached ?? false,

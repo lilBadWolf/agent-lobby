@@ -291,7 +291,7 @@
 </style>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, shallowRef, computed, watch, watchEffect, onMounted, onBeforeUnmount } from 'vue';
 import packageJson from '../package.json';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -338,6 +338,8 @@ const {
   disconnect,
   updateSettings,
   tryPlayAmbience,
+  playAlert,
+  stopAlert,
   setNetworkConfig,
   setSoundpack,
   clearMessages,
@@ -505,6 +507,50 @@ const dmBubbleStates = computed<Record<string, 'active' | 'pending' | 'denied'>>
 
   return states;
 });
+
+watchEffect(() => {
+  const hasRequestSound = config.value.audioEnabled &&
+    (dmPendingRequests.value.length > 0 || dmOutgoingRequests.value.length > 0);
+
+  if (hasRequestSound) {
+    playAlert('ringback');
+  } else {
+    stopAlert('ringback');
+  }
+});
+
+watch(
+  () => dmNotices.value.map((notice) => notice.id).join('|'),
+  (nextIds, previousIds) => {
+    if (!config.value.audioEnabled) return;
+
+    const prevSet = new Set(previousIds ? previousIds.split('|').filter(Boolean) : []);
+    const addedNotice = dmNotices.value.find((notice) => !prevSet.has(String(notice.id)));
+
+    if (addedNotice && /denied|declined|rejected/i.test(addedNotice.message)) {
+      playAlert('rejected');
+    }
+  }
+);
+
+watch(
+  () => dmDeniedRequests.value.join('|'),
+  (next, previous) => {
+    if (!config.value.audioEnabled) {
+      return;
+    }
+
+    const nextDenied = next ? new Set(next.split('|')) : new Set<string>();
+    const prevDenied = previous ? new Set(previous.split('|')) : new Set<string>();
+
+    for (const user of nextDenied) {
+      if (!prevDenied.has(user)) {
+        playAlert('rejected');
+        break;
+      }
+    }
+  }
+);
 
 watch(
   () => connectedDMUsers.value.join('|'),
@@ -1096,7 +1142,11 @@ function toggleSidebarPane() {
 }
 
 function toggleNetworkConfig() {
-  showNetworkConfig.value = !showNetworkConfig.value;
+  const nextOpen = !showNetworkConfig.value;
+  showNetworkConfig.value = nextOpen;
+  if (nextOpen && config.value.audioEnabled) {
+    playAlert('secret');
+  }
 }
 
 function handleShowDMWindow() {

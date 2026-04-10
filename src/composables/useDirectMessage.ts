@@ -999,6 +999,7 @@ export function useDirectMessage(
       if (transfer) {
         transfer.status = 'rejected';
         setOrUpdateChat(otherUser, chat);
+        pushNotice(`${otherUser} declined the file transfer.`, 'info', otherUser);
       }
       pendingOutgoingFiles.delete(data.id);
       return true;

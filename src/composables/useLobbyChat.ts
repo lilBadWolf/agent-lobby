@@ -907,8 +907,12 @@ export function useLobbyChat() {
       join: new Audio(getSoundUrl('join-sound.mp3')),
       part: new Audio(getSoundUrl('part-sound.mp3')),
       message: new Audio(getSoundUrl('message-sound.mp3')),
-      shutdown: new Audio(getSoundUrl('shutdown-sound.mp3'))
+      shutdown: new Audio(getSoundUrl('shutdown-sound.mp3')),
+      secret: new Audio(getSoundUrl('secret.mp3')),
+      rejected: new Audio(getSoundUrl('rejected.mp3')),
+      ringback: new Audio(getSoundUrl('ringback-tone.mp3')),
     };
+    ((audio.value.alerts as any).ringback as HTMLAudioElement).loop = true;
     applyAudioSettings();
   }
 
@@ -938,11 +942,34 @@ export function useLobbyChat() {
     publishPresence();
   }
 
-  function playAlert(type: string) {
+  function playAlert(type: string, repeatCount = 1) {
     if (config.value.audioEnabled && audio.value.alerts && (audio.value.alerts as any)[type]) {
-      const alert = (audio.value.alerts as any)[type];
+      const alert = (audio.value.alerts as any)[type] as HTMLAudioElement;
+      alert.loop = false;
+      const totalRepeats = type === 'rejected' ? 3 : repeatCount;
+      (alert as any).__alertRepeatCount = totalRepeats - 1;
+      alert.onended = () => {
+        const remaining = (alert as any).__alertRepeatCount ?? 0;
+        if (remaining > 0) {
+          (alert as any).__alertRepeatCount = remaining - 1;
+          alert.currentTime = 0;
+          alert.play().catch(() => {});
+        } else {
+          alert.onended = null;
+        }
+      };
       alert.currentTime = 0;
       alert.play().catch(() => {});
+    }
+  }
+
+  function stopAlert(type: string) {
+    if (audio.value.alerts && (audio.value.alerts as any)[type]) {
+      const alert = (audio.value.alerts as any)[type] as HTMLAudioElement;
+      alert.pause();
+      alert.currentTime = 0;
+      alert.onended = null;
+      delete (alert as any).__alertRepeatCount;
     }
   }
 
@@ -1434,6 +1461,7 @@ export function useLobbyChat() {
     updateSettings,
     tryPlayAmbience,
     playAlert,
+    stopAlert,
     setNetworkConfig,
     setSoundpack,
     clearMessages,

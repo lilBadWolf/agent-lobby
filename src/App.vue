@@ -528,7 +528,7 @@ watchEffect(() => {
 
 watch(
   () => dmNotices.value.map((notice) => notice.id).join('|'),
-  (nextIds, previousIds) => {
+  (_nextIds, previousIds) => {
     if (!config.value.audioEnabled) return;
 
     const prevSet = new Set(previousIds ? previousIds.split('|').filter(Boolean) : []);

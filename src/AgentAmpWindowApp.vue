@@ -17,6 +17,9 @@
         :spectrum-fft-size="spectrumFftSize"
         :spectrum-sensitivity="spectrumSensitivity"
         :spectrum-gradient-bars="spectrumGradientBars"
+        :threshold-low="spectrumThresholdLow"
+        :threshold-medium="spectrumThresholdMedium"
+        :threshold-high="spectrumThresholdHigh"
         @toggle-detached="handleToggleDetached"
       />
     </div>
@@ -39,10 +42,16 @@ const SPECTRUM_BAR_COUNT_STORAGE_KEY = 'agent_spectrum_bar_count';
 const SPECTRUM_FFT_SIZE_STORAGE_KEY = 'agent_spectrum_fft_size';
 const SPECTRUM_SENSITIVITY_STORAGE_KEY = 'agent_spectrum_sensitivity';
 const SPECTRUM_GRADIENT_BARS_STORAGE_KEY = 'agent_spectrum_gradient_bars';
+const SPECTRUM_THRESHOLD_LOW_STORAGE_KEY = 'agent_spectrum_threshold_low';
+const SPECTRUM_THRESHOLD_MEDIUM_STORAGE_KEY = 'agent_spectrum_threshold_medium';
+const SPECTRUM_THRESHOLD_HIGH_STORAGE_KEY = 'agent_spectrum_threshold_high';
 const spectrumBarCount = ref(64);
 const spectrumFftSize = ref(2048);
 const spectrumSensitivity = ref(1);
 const spectrumGradientBars = ref(false);
+const spectrumThresholdLow = ref(0.15);
+const spectrumThresholdMedium = ref(0.3);
+const spectrumThresholdHigh = ref(0.6);
 let resizeObserver: ResizeObserver | null = null;
 let mutationObserver: MutationObserver | null = null;
 let lastDesiredContentInnerHeight = -1;
@@ -121,11 +130,14 @@ async function applyPersistedTheme() {
 }
 
 async function applyPersistedSpectrumSettings() {
-  const [savedBarCount, savedFftSize, savedSensitivity, savedGradientBars] = await Promise.all([
+  const [savedBarCount, savedFftSize, savedSensitivity, savedGradientBars, savedThresholdLow, savedThresholdMedium, savedThresholdHigh] = await Promise.all([
     getPersistedValue<number>(SPECTRUM_BAR_COUNT_STORAGE_KEY),
     getPersistedValue<number>(SPECTRUM_FFT_SIZE_STORAGE_KEY),
     getPersistedValue<number>(SPECTRUM_SENSITIVITY_STORAGE_KEY),
     getPersistedValue<boolean>(SPECTRUM_GRADIENT_BARS_STORAGE_KEY),
+    getPersistedValue<number>(SPECTRUM_THRESHOLD_LOW_STORAGE_KEY),
+    getPersistedValue<number>(SPECTRUM_THRESHOLD_MEDIUM_STORAGE_KEY),
+    getPersistedValue<number>(SPECTRUM_THRESHOLD_HIGH_STORAGE_KEY),
   ]);
 
   if ([32, 48, 64, 96, 128].includes(savedBarCount ?? -1)) {
@@ -142,6 +154,18 @@ async function applyPersistedSpectrumSettings() {
 
   if (typeof savedGradientBars === 'boolean') {
     spectrumGradientBars.value = savedGradientBars;
+  }
+
+  if (typeof savedThresholdLow === 'number' && savedThresholdLow >= 0 && savedThresholdLow <= 1) {
+    spectrumThresholdLow.value = savedThresholdLow;
+  }
+
+  if (typeof savedThresholdMedium === 'number' && savedThresholdMedium >= 0 && savedThresholdMedium <= 1) {
+    spectrumThresholdMedium.value = savedThresholdMedium;
+  }
+
+  if (typeof savedThresholdHigh === 'number' && savedThresholdHigh >= 0 && savedThresholdHigh <= 1) {
+    spectrumThresholdHigh.value = savedThresholdHigh;
   }
 }
 
@@ -178,6 +202,30 @@ function handleStorageUpdate(event: StorageEvent) {
     const nextValue = event.newValue ? JSON.parse(event.newValue) : null;
     if (typeof nextValue === 'boolean') {
       spectrumGradientBars.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === SPECTRUM_THRESHOLD_LOW_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if (nextValue >= 0 && nextValue <= 1) {
+      spectrumThresholdLow.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === SPECTRUM_THRESHOLD_MEDIUM_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if (nextValue >= 0 && nextValue <= 1) {
+      spectrumThresholdMedium.value = nextValue;
+    }
+    return;
+  }
+
+  if (event.key === SPECTRUM_THRESHOLD_HIGH_STORAGE_KEY) {
+    const nextValue = event.newValue ? Number(JSON.parse(event.newValue)) : NaN;
+    if (nextValue >= 0 && nextValue <= 1) {
+      spectrumThresholdHigh.value = nextValue;
     }
     return;
   }

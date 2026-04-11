@@ -36,6 +36,9 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   spectrumFftSize: 'agent_spectrum_fft_size',
   spectrumSensitivity: 'agent_spectrum_sensitivity',
   spectrumGradientBars: 'agent_spectrum_gradient_bars',
+  spectrumThresholdLow: 'agent_spectrum_threshold_low',
+  spectrumThresholdMedium: 'agent_spectrum_threshold_medium',
+  spectrumThresholdHigh: 'agent_spectrum_threshold_high',
   dmEnabled: 'agent_dm_enabled',
   mediaSharing: 'agent_media_sharing',
   agentAmpEnabled: 'agent_agent_amp_enabled',
@@ -65,6 +68,9 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   spectrumFftSize: 2048,
   spectrumSensitivity: 1,
   spectrumGradientBars: false,
+  spectrumThresholdLow: 0.15,
+  spectrumThresholdMedium: 0.3,
+  spectrumThresholdHigh: 0.6,
   soundpack: 'default',
   theme: 'retro-terminal',
   dmChatEffect: 'codex',
@@ -139,6 +145,34 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.spectrumGradientBars = DEFAULT_AUDIO_CONFIG.spectrumGradientBars;
   }
 
+  if (typeof normalized.spectrumThresholdLow !== 'number' || normalized.spectrumThresholdLow < 0 || normalized.spectrumThresholdLow > 1) {
+    normalized.spectrumThresholdLow = DEFAULT_AUDIO_CONFIG.spectrumThresholdLow;
+  }
+
+  if (typeof normalized.spectrumThresholdMedium !== 'number' || normalized.spectrumThresholdMedium < 0 || normalized.spectrumThresholdMedium > 1) {
+    normalized.spectrumThresholdMedium = DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium;
+  }
+
+  if (typeof normalized.spectrumThresholdHigh !== 'number' || normalized.spectrumThresholdHigh < 0 || normalized.spectrumThresholdHigh > 1) {
+    normalized.spectrumThresholdHigh = DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh;
+  }
+
+  const spectrumThresholdLow = normalized.spectrumThresholdLow ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdLow ?? 0.15;
+  const spectrumThresholdMedium = normalized.spectrumThresholdMedium ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium ?? 0.3;
+  const spectrumThresholdHigh = normalized.spectrumThresholdHigh ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh ?? 0.6;
+
+  if (spectrumThresholdLow >= spectrumThresholdMedium) {
+    normalized.spectrumThresholdLow = Math.max(0, Math.min(spectrumThresholdLow, spectrumThresholdMedium - 0.05));
+  }
+
+  if (spectrumThresholdMedium >= spectrumThresholdHigh) {
+    normalized.spectrumThresholdMedium = Math.max(spectrumThresholdLow + 0.05, Math.min(spectrumThresholdMedium, spectrumThresholdHigh - 0.05));
+  }
+
+  if (spectrumThresholdHigh <= spectrumThresholdMedium) {
+    normalized.spectrumThresholdHigh = Math.max(spectrumThresholdMedium + 0.05, spectrumThresholdHigh);
+  }
+
   if (typeof normalized.showJoinPartMessages !== 'boolean') {
     normalized.showJoinPartMessages = DEFAULT_AUDIO_CONFIG.showJoinPartMessages;
   }
@@ -156,6 +190,9 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize, nextConfig.spectrumFftSize ?? DEFAULT_AUDIO_CONFIG.spectrumFftSize),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity, nextConfig.spectrumSensitivity ?? DEFAULT_AUDIO_CONFIG.spectrumSensitivity),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars, nextConfig.spectrumGradientBars ?? DEFAULT_AUDIO_CONFIG.spectrumGradientBars),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdLow, nextConfig.spectrumThresholdLow ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdLow),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdMedium, nextConfig.spectrumThresholdMedium ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdHigh, nextConfig.spectrumThresholdHigh ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing, nextConfig.mediaSharing),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
@@ -182,6 +219,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     spectrumFftSize,
     spectrumSensitivity,
     spectrumGradientBars,
+    spectrumThresholdLow,
+    spectrumThresholdMedium,
+    spectrumThresholdHigh,
     dmEnabled,
     mediaSharing,
     agentAmpEnabled,
@@ -204,6 +244,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize),
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdLow),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdMedium),
+    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdHigh),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
@@ -228,6 +271,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof spectrumBarCount === 'number') saved.spectrumBarCount = spectrumBarCount;
   if (typeof spectrumFftSize === 'number') saved.spectrumFftSize = spectrumFftSize;
   if (typeof spectrumSensitivity === 'number') saved.spectrumSensitivity = spectrumSensitivity;
+  if (typeof spectrumThresholdLow === 'number') saved.spectrumThresholdLow = spectrumThresholdLow;
+  if (typeof spectrumThresholdMedium === 'number') saved.spectrumThresholdMedium = spectrumThresholdMedium;
+  if (typeof spectrumThresholdHigh === 'number') saved.spectrumThresholdHigh = spectrumThresholdHigh;
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
   if (typeof mediaSharing === 'boolean') saved.mediaSharing = mediaSharing;
   if (typeof agentAmpEnabled === 'boolean') {
@@ -883,8 +929,37 @@ export function useLobbyChat() {
     setAway(false, 'manual');
   }
 
+  function stopCurrentAudio(): void {
+    const stopElement = (element: HTMLAudioElement | undefined | null) => {
+      if (!element) return;
+      try {
+        element.pause();
+        element.currentTime = 0;
+        element.onended = null;
+      } catch {
+        // Ignore playback cleanup failures.
+      }
+    };
+
+    const previousNumberStation = audio.value.numberStation as HTMLAudioElement | undefined;
+    const previousWombatStation = audio.value.wombatStation as HTMLAudioElement | undefined;
+    stopElement(previousNumberStation);
+    stopElement(previousWombatStation);
+
+    const previousAlerts = audio.value.alerts as Record<string, HTMLAudioElement> | undefined;
+    if (previousAlerts) {
+      Object.values(previousAlerts).forEach((alert) => stopElement(alert));
+    }
+
+    audio.value = {};
+  }
+
   function initAudio() {
     const soundpack = config.value.soundpack;
+    const previousNumberStation = audio.value.numberStation as HTMLAudioElement | undefined;
+    const shouldRestartNumberStation = previousNumberStation ? !previousNumberStation.paused : false;
+
+    stopCurrentAudio();
 
     const getSoundUrl = (fileName: string): string => {
       const customBasePath = customSoundpackPathByName.value[soundpack];
@@ -914,6 +989,10 @@ export function useLobbyChat() {
     };
     ((audio.value.alerts as any).ringback as HTMLAudioElement).loop = true;
     applyAudioSettings();
+
+    if (shouldRestartNumberStation && config.value.audioEnabled) {
+      (audio.value.numberStation as HTMLAudioElement).play().catch(() => {});
+    }
   }
 
   function applyAudioSettings() {

@@ -118,6 +118,9 @@
         :spectrum-fft-size="config.spectrumFftSize"
         :spectrum-sensitivity="config.spectrumSensitivity"
         :spectrum-gradient-bars="config.spectrumGradientBars"
+        :threshold-low="config.spectrumThresholdLow"
+        :threshold-medium="config.spectrumThresholdMedium"
+        :threshold-high="config.spectrumThresholdHigh"
         @toggle-detached="handleAgentAmpDetachRequest"
       />
     </div>
@@ -1209,6 +1212,9 @@ function handleSettingsUpdate(newConfig: AudioConfig) {
     autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
     spectrumBarCount: newConfig.spectrumBarCount ?? 64,
     spectrumFftSize: newConfig.spectrumFftSize ?? 2048,
+    spectrumThresholdLow: newConfig.spectrumThresholdLow ?? config.value.spectrumThresholdLow ?? 0.15,
+    spectrumThresholdMedium: newConfig.spectrumThresholdMedium ?? config.value.spectrumThresholdMedium ?? 0.3,
+    spectrumThresholdHigh: newConfig.spectrumThresholdHigh ?? config.value.spectrumThresholdHigh ?? 0.6,
     agentAmpDetached: newConfig.agentAmpDetached ?? false,
     customSlashCommands: newConfig.customSlashCommands ?? [],
   };

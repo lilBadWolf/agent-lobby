@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 class MockAudio {
   static instances: MockAudio[] = [];
+  paused = true;
   volume = 1;
   currentTime = 0;
   loop = false;
@@ -250,6 +251,18 @@ describe('useLobbyChat', () => {
     expect(chat.config.value.soundpack).toBe('alt');
     expect(MockAudio.instances.length).toBeGreaterThan(before);
     expect(localStorage.getItem('agent_settings')).toContain('"soundpack":"alt"');
+  });
+
+  it('stops active audio before loading new soundpack assets', () => {
+    const chat = useLobbyChat();
+    const oldNumberStation = MockAudio.instances[0];
+    oldNumberStation.paused = false;
+
+    chat.setSoundpack('alt');
+
+    expect(oldNumberStation.pause).toHaveBeenCalled();
+    expect(oldNumberStation.currentTime).toBe(0);
+    expect(chat.config.value.soundpack).toBe('alt');
   });
 
   it('loads saved network config and settings on initialization', () => {

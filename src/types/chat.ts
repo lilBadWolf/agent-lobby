@@ -38,6 +38,9 @@ export interface AudioConfig {
   spectrumFftSize?: number;
   spectrumSensitivity?: number;
   spectrumGradientBars?: boolean;
+  spectrumThresholdLow?: number;
+  spectrumThresholdMedium?: number;
+  spectrumThresholdHigh?: number;
   dmEnabled: boolean;
   mediaSharing: boolean;
   agentAmpEnabled: boolean;

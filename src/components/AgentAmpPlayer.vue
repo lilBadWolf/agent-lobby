@@ -92,6 +92,9 @@
       :fft-size="props.spectrumFftSize"
       :spectrum-sensitivity="props.spectrumSensitivity"
       :gradient-bars="props.spectrumGradientBars"
+      :threshold-low="props.thresholdLow"
+      :threshold-medium="props.thresholdMedium"
+      :threshold-high="props.thresholdHigh"
     />
     <div class="agentamp-controls">
       <button class="agentamp-btn transport-btn" type="button" :disabled="!hasTracks" data-tooltip="PREVIOUS" @click="playPrevious">&lt;&lt;</button>
@@ -561,6 +564,9 @@ const props = defineProps<{
   spectrumFftSize?: number;
   spectrumSensitivity?: number;
   spectrumGradientBars?: boolean;
+  thresholdLow?: number;
+  thresholdMedium?: number;
+  thresholdHigh?: number;
 }>();
 
 function requestToggleDetached() {

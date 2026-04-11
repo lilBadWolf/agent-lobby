@@ -15,6 +15,9 @@ const props = defineProps<{
   fftSize?: number;
   spectrumSensitivity?: number;
   gradientBars?: boolean;
+  thresholdLow?: number;
+  thresholdMedium?: number;
+  thresholdHigh?: number;
 }>();
 
 const { getThemeTokenValue } = useTheme();
@@ -54,6 +57,14 @@ function resolveSpectrumSensitivity(rawValue: number | undefined): number {
   }
 
   return rawValue >= 0.5 && rawValue <= 2 ? rawValue : DEFAULT_SPECTRUM_SENSITIVITY;
+}
+
+function resolveSpectrumThreshold(rawValue: number | undefined, fallback: number): number {
+  if (typeof rawValue !== 'number' || Number.isNaN(rawValue)) {
+    return fallback;
+  }
+
+  return Math.min(1, Math.max(0, rawValue));
 }
 
 function applySpectrumSensitivity(bars: number[]): number[] {
@@ -103,15 +114,19 @@ function getBarColor(value: number) {
     return accent;
   }
 
-  if (value >= 0.60) {
+  const lowThreshold = resolveSpectrumThreshold(props.thresholdLow, 0.15);
+  const mediumThreshold = resolveSpectrumThreshold(props.thresholdMedium, 0.30);
+  const highThreshold = resolveSpectrumThreshold(props.thresholdHigh, 0.60);
+
+  if (value >= highThreshold) {
     return colors.thresholdHigh;
   }
 
-  if (value >= 0.30) {
+  if (value >= mediumThreshold) {
     return colors.thresholdMedium;
   }
 
-  if (value >= 0.15) {
+  if (value >= lowThreshold) {
     return colors.thresholdLow;
   }
 
@@ -290,7 +305,17 @@ async function createAnalyzer() {
   frameId = requestAnimationFrame(updateFrame);
 }
 
-watch([() => props.audioEl, () => props.enabled, () => props.barCount, () => props.fftSize], async ([audioEl, enabled]) => {
+watch([
+  () => props.audioEl,
+  () => props.enabled,
+  () => props.barCount,
+  () => props.fftSize,
+  () => props.spectrumSensitivity,
+  () => props.gradientBars,
+  () => props.thresholdLow,
+  () => props.thresholdMedium,
+  () => props.thresholdHigh,
+], async ([audioEl, enabled]) => {
   if (enabled && audioEl) {
     await createAnalyzer();
   } else {

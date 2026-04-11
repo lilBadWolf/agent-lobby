@@ -214,6 +214,48 @@
             />
             <span class="range-value">{{ localConfig.spectrumSensitivity?.toFixed(1) ?? '1.0' }}</span>
           </div>
+          <div class="setting-row">
+            <label>LOW THRESHOLD</label>
+            <input
+              v-model.number="localConfig.spectrumThresholdLow"
+              type="range"
+              id="set-spectrum-threshold-low"
+              min="0"
+              max="1"
+              step="0.05"
+              :disabled="!localConfig.agentAmpEnabled"
+              @input="handleChange"
+            />
+            <span class="range-value">{{ localConfig.spectrumThresholdLow?.toFixed(2) ?? '0.15' }}</span>
+          </div>
+          <div class="setting-row">
+            <label>MEDIUM THRESHOLD</label>
+            <input
+              v-model.number="localConfig.spectrumThresholdMedium"
+              type="range"
+              id="set-spectrum-threshold-medium"
+              min="0"
+              max="1"
+              step="0.05"
+              :disabled="!localConfig.agentAmpEnabled"
+              @input="handleChange"
+            />
+            <span class="range-value">{{ localConfig.spectrumThresholdMedium?.toFixed(2) ?? '0.30' }}</span>
+          </div>
+          <div class="setting-row">
+            <label>HIGH THRESHOLD</label>
+            <input
+              v-model.number="localConfig.spectrumThresholdHigh"
+              type="range"
+              id="set-spectrum-threshold-high"
+              min="0"
+              max="1"
+              step="0.05"
+              :disabled="!localConfig.agentAmpEnabled"
+              @input="handleChange"
+            />
+            <span class="range-value">{{ localConfig.spectrumThresholdHigh?.toFixed(2) ?? '0.60' }}</span>
+          </div>
         </div>
         <div v-if="activeTab === 'media'" class="tab-panel media-panel">
           <div class="setting-row">
@@ -482,6 +524,9 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     spectrumFftSize: config.spectrumFftSize ?? 2048,
     spectrumSensitivity: config.spectrumSensitivity ?? 1,
     spectrumGradientBars: config.spectrumGradientBars ?? false,
+    spectrumThresholdLow: config.spectrumThresholdLow ?? 0.15,
+    spectrumThresholdMedium: config.spectrumThresholdMedium ?? 0.3,
+    spectrumThresholdHigh: config.spectrumThresholdHigh ?? 0.6,
     agentAmpEnabled: config.agentAmpEnabled ?? false,
     mediaSharing: config.mediaSharing ?? true,
     agentAmpDetached: config.agentAmpDetached ?? false,

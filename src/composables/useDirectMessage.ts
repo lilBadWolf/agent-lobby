@@ -33,6 +33,8 @@ export function useDirectMessage(
   const pendingRequests = ref<DMRequest[]>([]);
   const pendingAudioCalls = ref<AudioCallRequest[]>([]);
   const pendingVideoCalls = ref<VideoCallRequest[]>([]);
+  const outgoingAudioCalls = ref<AudioCallRequest[]>([]);
+  const outgoingVideoCalls = ref<VideoCallRequest[]>([]);
   const activeChats = ref<Map<string, DMChat>>(new Map());
   const outgoingRequests = ref<string[]>([]);
   const deniedRequests = ref<string[]>([]);
@@ -321,6 +323,7 @@ export function useDirectMessage(
         return;
       }
       pendingAudioCalls.value = pendingAudioCalls.value.filter(r => r.from !== fromUser);
+      outgoingAudioCalls.value = outgoingAudioCalls.value.filter(r => r.from !== fromUser);
       clearCallRequestNotice(fromUser, 'audio-call');
       pushNotice(`${fromUser} declined your audio call request.`, 'call-status', fromUser);
     } else if (data.type === 'video-request') {
@@ -366,16 +369,22 @@ export function useDirectMessage(
 
         pushNotice(`${fromUser} is requesting a video call`, 'video-call', fromUser, undefined, 0);
       }
+    } else if (data.type === 'video-reject') {
+      if (isPresenceRuntime) {
+        return;
+      }
+      pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+      outgoingVideoCalls.value = outgoingVideoCalls.value.filter(r => r.from !== fromUser);
+      clearCallRequestNotice(fromUser, 'video-call');
+      endCall(fromUser, false);
+      pushNotice(`${fromUser} declined your video call request.`, 'call-status', fromUser);
     } else if (data.type === 'accept-video') {
       if (isPresenceRuntime) {
         return;
       }
-      dmLog(`received accept-video from ${fromUser}`, {
-        hasAnswer: Boolean(data.answer),
-      });
       pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
+      outgoingVideoCalls.value = outgoingVideoCalls.value.filter(r => r.from !== fromUser);
       clearCallRequestNotice(fromUser, 'video-call');
-
       // Acceptor accepted our video call and may include an SDP answer.
       const rtcConn = rtcConnections.get(fromUser);
       if (rtcConn && data.answer) {
@@ -391,16 +400,7 @@ export function useDirectMessage(
           console.error('Failed to set remote description for accept-video:', e);
         }
       }
-
       pushNotice(`${fromUser} accepted your video call`, 'call-status', fromUser);
-    } else if (data.type === 'video-reject') {
-      if (isPresenceRuntime) {
-        return;
-      }
-      pendingVideoCalls.value = pendingVideoCalls.value.filter(r => r.from !== fromUser);
-      clearCallRequestNotice(fromUser, 'video-call');
-      endCall(fromUser, false);
-      pushNotice(`${fromUser} declined your video call request.`, 'call-status', fromUser);
     } else if (data.type === 'end-call') {
       if (isPresenceRuntime) {
         return;
@@ -1723,6 +1723,8 @@ export function useDirectMessage(
         console.error('Failed to create audio offer:', e);
       }
 
+      outgoingAudioCalls.value = [...outgoingAudioCalls.value, { from: targetUser, timestamp: Date.now() }];
+
       // Start call timer for initiator
       startCallTimer(targetUser);
 
@@ -1983,6 +1985,8 @@ export function useDirectMessage(
         dmLog(`published video-request offer to ${targetUser}`);
       }
 
+      outgoingVideoCalls.value = [...outgoingVideoCalls.value, { from: targetUser, timestamp: Date.now() }];
+
       // Start call timer for initiator
       startCallTimer(targetUser);
 
@@ -2175,6 +2179,8 @@ export function useDirectMessage(
     pendingRequests: computed(() => pendingRequests.value),
     pendingAudioCalls: computed(() => pendingAudioCalls.value),
     pendingVideoCalls: computed(() => pendingVideoCalls.value),
+    outgoingAudioCalls: computed(() => outgoingAudioCalls.value),
+    outgoingVideoCalls: computed(() => outgoingVideoCalls.value),
     activeChats: computed(() => activeChats.value),
     outgoingRequests: computed(() => outgoingRequests.value),
     deniedRequests: computed(() => deniedRequests.value),

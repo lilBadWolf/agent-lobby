@@ -484,6 +484,8 @@ const dmPendingRequests = computed(() => dm.value?.pendingRequests.value || []);
 const dmPendingAudioCalls = computed(() => dm.value?.pendingAudioCalls.value || []);
 const dmPendingVideoCalls = computed(() => dm.value?.pendingVideoCalls.value || []);
 const dmOutgoingRequests = computed(() => dm.value?.outgoingRequests.value || []);
+const dmOutgoingAudioCalls = computed(() => dm.value?.outgoingAudioCalls.value || []);
+const dmOutgoingVideoCalls = computed(() => dm.value?.outgoingVideoCalls.value || []);
 const dmDeniedRequests = computed(() => dm.value?.deniedRequests.value || []);
 const dmNotices = computed(() => dm.value?.notices.value || []);
 const connectedDMUsers = computed(() =>
@@ -510,7 +512,12 @@ const dmBubbleStates = computed<Record<string, 'active' | 'pending' | 'denied'>>
 
 watchEffect(() => {
   const hasRequestSound = config.value.audioEnabled &&
-    (dmPendingRequests.value.length > 0 || dmOutgoingRequests.value.length > 0);
+    (dmPendingRequests.value.length > 0 ||
+     dmOutgoingRequests.value.length > 0 ||
+     dmPendingAudioCalls.value.length > 0 ||
+     dmOutgoingAudioCalls.value.length > 0 ||
+     dmPendingVideoCalls.value.length > 0 ||
+     dmOutgoingVideoCalls.value.length > 0);
 
   if (hasRequestSound) {
     playAlert('ringback');

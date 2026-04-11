@@ -942,22 +942,11 @@ export function useLobbyChat() {
     publishPresence();
   }
 
-  function playAlert(type: string, repeatCount = 1) {
+  function playAlert(type: string) {
     if (config.value.audioEnabled && audio.value.alerts && (audio.value.alerts as any)[type]) {
       const alert = (audio.value.alerts as any)[type] as HTMLAudioElement;
-      alert.loop = false;
-      const totalRepeats = type === 'rejected' ? 3 : repeatCount;
-      (alert as any).__alertRepeatCount = totalRepeats - 1;
-      alert.onended = () => {
-        const remaining = (alert as any).__alertRepeatCount ?? 0;
-        if (remaining > 0) {
-          (alert as any).__alertRepeatCount = remaining - 1;
-          alert.currentTime = 0;
-          alert.play().catch(() => {});
-        } else {
-          alert.onended = null;
-        }
-      };
+      alert.loop = type === 'ringback';
+      alert.onended = null;
       alert.currentTime = 0;
       alert.play().catch(() => {});
     }
@@ -1305,8 +1294,8 @@ export function useLobbyChat() {
     try {
       const soundModules = import.meta.glob('/public/sounds/*/');
       const packs = Object.keys(soundModules)
-        .map(path => path.replace('/public/sounds/', '').replace('/', ''))
-        .filter(pack => pack.length > 0);
+        .map((path) => path.replace('/public/sounds/', '').replace(/\/$/, ''))
+        .filter((pack) => /^[^/]+$/.test(pack));
 
       if (packs.length > 0) {
         builtinPacks.push(...packs);

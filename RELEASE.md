@@ -1,9 +1,12 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.1**
+🎉 **Release highlights for agent-lobby 0.4.2**
 
-- 🎨 **Theme polish**: improved theme support and a more expressive theme experience across the app.
-- 🌈 **Gradient Bars toggle**: new optional spectrogram styling in Settings makes the spectrum render with theme-aware threshold colors.
-- 🎛️ **AgentAmp visual refinement**: audio visualization now supports theme-colored spectrogram bars while still allowing standard accent-only mode.
+- 🔊 **Soundpack discovery improved**: the soundpack system now only lists proper soundpack folders and ignores stray single audio files placed directly in the root `public/sounds` folder.
+- 🎧 **New sound assets added to the soundpack system**:
+  - `ringback-tone.mp3` — loops while a DM request, audio call request, or video call request is pending.
+  - `rejected.mp3` — plays when an outgoing DM request, file transfer, or audio/video call request is declined.
+  - `secret.mp3` — plays when the network settings modal is opened via the pi button.
+- 🧹 **Soundpack system cleanup**: local soundpack discovery is now more robust and will not surface invalid root-sound entries as soundpacks.
 
-> This release adds a smoother theme experience and a new gradient spectrum option so the music visualizer matches the app theme and becomes easier to scan at a glance.
+> This release strengthens the soundpack system and adds clearer, event-driven audio feedback for DMs, call requests, declined requests, and the network settings action.

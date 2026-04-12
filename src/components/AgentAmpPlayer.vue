@@ -4,7 +4,7 @@
       ref="fileInputEl"
       class="agentamp-file-input"
       type="file"
-      accept=".mp3,.m4a,.mp4,.webm,.mov,audio/mpeg,audio/mp4,video/mp4,video/webm,video/quicktime"
+      accept=".mp3,.m4a,.flac,.mp4,.webm,.mov,audio/mpeg,audio/mp4,audio/flac,video/mp4,video/webm,video/quicktime"
       multiple
       @change="handleFileSelection"
     />
@@ -255,7 +255,7 @@
           </button>
         </div>
       </li>
-      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3, M4A, MP4, WEBM, OR MOV FILES TO BUILD A PLAYLIST.</li>
+      <li v-if="!playlist.length" class="agentamp-empty">LOAD MP3, M4A, FLAC, MP4, WEBM, OR MOV FILES TO BUILD A PLAYLIST.</li>
     </ul>
 
     <div v-if="editingMetadataIndex !== null" class="agentamp-modal-backdrop" @click.self="closeMetadataEditor">
@@ -1626,11 +1626,11 @@ async function getTauriPath() {
 function extractNameFromPath(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   const filename = segments[segments.length - 1] ?? path;
-  return filename.replace(/\.(mp3|m4a|mp4|webm|mov)$/i, '');
+  return filename.replace(/\.(mp3|m4a|flac|mp4|webm|mov)$/i, '');
 }
 
 function isSupportedAudioPath(path: string): boolean {
-  return /\.(mp3|m4a)$/i.test(path);
+  return /\.(mp3|m4a|flac)$/i.test(path);
 }
 
 function isVideoPath(path: string): boolean {
@@ -1673,6 +1673,10 @@ function getTrackBlobMimeType(track: PlaylistTrack): string {
 
   if (lowerPath.endsWith('.mp4')) {
     return mediaType === 'video' ? 'video/mp4' : 'audio/mp4';
+  }
+
+  if (lowerPath.endsWith('.flac')) {
+    return 'audio/flac';
   }
 
   return mediaType === 'video' ? 'video/mp4' : 'audio/mpeg';
@@ -1752,8 +1756,9 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     arrayBuffer = await response.arrayBuffer();
     bytes = new Uint8Array(arrayBuffer);
     const isM4a = isM4aTrack(track);
+    const isFlac = isFlacTrack(track);
     const metadata = !isVideoTrack
-      ? (isM4a ? parseMp4Metadata(bytes) : parseMp3Metadata(bytes))
+      ? (isM4a ? parseMp4Metadata(bytes) : isFlac ? parseFlacMetadata(bytes) : parseMp3Metadata(bytes))
       : null;
 
     if (metadata) {
@@ -2102,6 +2107,117 @@ function parseMp4Metadata(data: Uint8Array): { artist?: string; title?: string; 
   return result;
 }
 
+function parseFlacMetadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
+  if (data.length < 4 || String.fromCharCode(...data.slice(0, 4)) !== 'fLaC') {
+    return null;
+  }
+
+  let offset = 4;
+  while (offset + 4 <= data.length) {
+    const headerByte = data[offset];
+    const blockType = headerByte & 0x7f;
+    const blockLength = (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+    const blockStart = offset + 4;
+    if (blockStart + blockLength > data.length) {
+      break;
+    }
+
+    if (blockType === 4) {
+      try {
+        const view = new DataView(data.buffer, data.byteOffset + blockStart, blockLength);
+        let cursor = 0;
+        const vendorLength = view.getUint32(cursor, true);
+        cursor += 4;
+        if (cursor + vendorLength > blockLength) {
+          break;
+        }
+        cursor += vendorLength;
+
+        const commentCount = view.getUint32(cursor, true);
+        cursor += 4;
+        const result: { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } = {};
+
+        for (let i = 0; i < commentCount; i++) {
+          if (cursor + 4 > blockLength) {
+            break;
+          }
+
+          const valueLength = view.getUint32(cursor, true);
+          cursor += 4;
+          if (cursor + valueLength > blockLength) {
+            break;
+          }
+
+          const commentBytes = new Uint8Array(data.buffer, data.byteOffset + blockStart + cursor, valueLength);
+          const comment = new TextDecoder('utf-8').decode(commentBytes).replace(/\u0000.*$/, '').trim();
+          cursor += valueLength;
+
+          const separatorIndex = comment.indexOf('=');
+          if (separatorIndex < 0) {
+            continue;
+          }
+
+          const key = comment.slice(0, separatorIndex).toLowerCase();
+          const value = comment.slice(separatorIndex + 1).trim();
+          if (!value) {
+            continue;
+          }
+
+          switch (key) {
+            case 'artist':
+            case 'albumartist':
+              if (!result.artist) {
+                result.artist = value;
+              }
+              break;
+            case 'title':
+              if (!result.title) {
+                result.title = value;
+              }
+              break;
+            case 'album':
+              if (!result.album) {
+                result.album = value;
+              }
+              break;
+            case 'date':
+            case 'year':
+              if (!result.year) {
+                result.year = value;
+              }
+              break;
+            case 'genre':
+              if (!result.genre) {
+                result.genre = value;
+              }
+              break;
+            case 'tracknumber':
+            case 'track':
+              if (!result.trackNumber) {
+                result.trackNumber = value;
+              }
+              break;
+            default:
+              break;
+          }
+        }
+
+        if (Object.keys(result).length === 0) {
+          return null;
+        }
+
+        return result;
+      } catch {
+        return null;
+      }
+    }
+
+    offset = blockStart + blockLength;
+  }
+
+  return null;
+}
+
 function parseMp3Metadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
   const parsed = parseId3v2(data);
   if (parsed && (parsed.artist || parsed.title || parsed.album || parsed.year || parsed.genre || parsed.trackNumber)) {
@@ -2123,11 +2239,21 @@ function isPlaylistPath(path: string): boolean {
 
 function getTrackMimeType(track: PlaylistTrack): string | null {
   if (track.source === 'path') {
-    const match = track.location.match(/\.(mp3|m4a)(?:[?#].*)?$/i);
+    const match = track.location.match(/\.(mp3|m4a|flac)(?:[?#].*)?$/i);
     if (!match) {
       return null;
     }
-    return match[1].toLowerCase() === 'm4a' ? 'audio/mp4' : 'audio/mpeg';
+
+    const extension = match[1].toLowerCase();
+    if (extension === 'm4a') {
+      return 'audio/mp4';
+    }
+
+    if (extension === 'flac') {
+      return 'audio/flac';
+    }
+
+    return 'audio/mpeg';
   }
 
   if (track.source === 'dataUrl' && track.location.startsWith('data:')) {
@@ -2141,6 +2267,11 @@ function getTrackMimeType(track: PlaylistTrack): string | null {
 function isM4aTrack(track: PlaylistTrack): boolean {
   const mimeType = getTrackMimeType(track);
   return mimeType === 'audio/mp4' || mimeType === 'audio/x-m4a' || track.location.toLowerCase().endsWith('.m4a');
+}
+
+function isFlacTrack(track: PlaylistTrack): boolean {
+  const mimeType = getTrackMimeType(track);
+  return mimeType === 'audio/flac' || track.location.toLowerCase().endsWith('.flac');
 }
 
 function isAbsolutePath(path: string): boolean {
@@ -2166,7 +2297,7 @@ function parsePlaylistEntries(content: string): string[] {
     entries.push(line);
   }
 
-  return entries.filter((entry) => /\.(mp3|m4a)(\?|$)/i.test(entry));
+  return entries.filter((entry) => /\.(mp3|m4a|flac)(\?|$)/i.test(entry));
 }
 
 async function resolvePlaylistEntryPath(entry: string, playlistPath: string): Promise<string | null> {
@@ -2295,8 +2426,8 @@ async function openFilePicker() {
     const selection = await dialogOpen({
       multiple: true,
       filters: [
-        { name: 'Audio and Video Files', extensions: ['mp3', 'm4a', 'mp4', 'webm', 'mov'] },
-        { name: 'Audio Files', extensions: ['mp3', 'm4a'] },
+        { name: 'Audio and Video Files', extensions: ['mp3', 'm4a', 'flac', 'mp4', 'webm', 'mov'] },
+        { name: 'Audio Files', extensions: ['mp3', 'm4a', 'flac'] },
         { name: 'Video Files', extensions: ['mp4', 'webm', 'mov'] },
         { name: 'Playlists', extensions: ['m3u', 'm3u8', 'pls'] },
       ],
@@ -2331,6 +2462,7 @@ async function handleFileSelection(event: Event) {
       file.type === 'audio/mpeg' ||
       file.type === 'audio/mp4' ||
       file.type === 'audio/x-m4a' ||
+      file.type === 'audio/flac' ||
       file.type === 'video/mp4' ||
       file.type === 'video/webm' ||
       file.type === 'video/quicktime'
@@ -2342,6 +2474,7 @@ async function handleFileSelection(event: Event) {
     return (
       lowerName.endsWith('.mp3') ||
       lowerName.endsWith('.m4a') ||
+      lowerName.endsWith('.flac') ||
       lowerName.endsWith('.mp4') ||
       lowerName.endsWith('.webm') ||
       lowerName.endsWith('.mov')
@@ -2356,7 +2489,7 @@ async function handleFileSelection(event: Event) {
   const nextTracks = await Promise.all(
     files.map(async (file, index) => ({
       id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name.replace(/\.(mp3|m4a|mp4|webm|mov)$/i, ''),
+      name: file.name.replace(/\.(mp3|m4a|flac|mp4|webm|mov)$/i, ''),
       source: 'dataUrl' as const,
       location: await readFileAsDataUrl(file),
       order: playlist.value.length + index,

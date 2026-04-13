@@ -22,14 +22,15 @@
           />
         </div>
       </div>
-      <button class="save-btn" @click="handleSave">SAVE CONFIG</button>
+      <button class="save-btn" :disabled="!canSave" @click="handleSave">SAVE CONFIG</button>
+      <button class="restore-btn" @click="handleRestore">RESTORE DEFAULTS</button>
       <button class="close-btn" @click="handleClose">CLOSE</button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { NetworkConfig } from '../types/chat';
 
 const props = defineProps<{
@@ -39,6 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   update: [config: NetworkConfig];
+  restore: [];
   close: [];
 }>();
 
@@ -55,14 +57,35 @@ function handleClose() {
   emit('close');
 }
 
+const canSave = computed(
+  () => isValidMqttServer(localConfig.value.mqttServer) && isValidLobbyId(localConfig.value.defaultLobby)
+);
+
+function isValidMqttServer(url: string): boolean {
+  const trimmed = url.trim();
+  return trimmed.length > 0 && /^(ws|wss):\/\//i.test(trimmed) && !/\s/.test(trimmed);
+}
+
+function isValidLobbyId(raw: string): boolean {
+  const trimmed = raw.trim();
+  return trimmed.length > 0 && /^[A-Za-z0-9_]+$/.test(trimmed);
+}
+
 function handleSave() {
-  if (localConfig.value.mqttServer.trim() && localConfig.value.defaultLobby.trim()) {
-    emit('update', {
-      mqttServer: localConfig.value.mqttServer.trim(),
-      defaultLobby: localConfig.value.defaultLobby.trim()
-    });
-    handleClose();
+  if (!canSave.value) {
+    window.alert('Please enter a valid MQTT server URL and a default lobby name using only letters, numbers, or underscores.');
+    return;
   }
+
+  emit('update', {
+    mqttServer: localConfig.value.mqttServer.trim(),
+    defaultLobby: localConfig.value.defaultLobby.trim(),
+  });
+  handleClose();
+}
+
+function handleRestore() {
+  emit('restore');
 }
 </script>
 
@@ -129,7 +152,8 @@ input[type='text']::placeholder {
 }
 
 .save-btn,
-.close-btn {
+.close-btn,
+.restore-btn {
   width: 100%;
   padding: 12px;
   background: transparent;
@@ -145,8 +169,16 @@ input[type='text']::placeholder {
   margin-top: 10px;
 }
 
+.save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
+}
+
 .save-btn:hover,
-.close-btn:hover {
+.close-btn:hover,
+.restore-btn:hover {
   background: var(--color-accent);
   color: #000;
   box-shadow: 0 0 15px var(--color-accent);

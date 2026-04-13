@@ -1,6 +1,6 @@
 use audiotags::Tag;
 use rustfft::{FftPlanner, num_complex::Complex};
-use tauri::{Manager, UserAttentionType};
+use tauri::{Emitter, Manager, UserAttentionType};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,6 +34,23 @@ struct CustomAssetEntry {
 struct CustomAssetsResult {
     themes: Vec<CustomAssetEntry>,
     soundpacks: Vec<CustomAssetEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfFile {
+    #[serde(alias = "mqtt_server")]
+    mqtt_server: Option<String>,
+    #[serde(alias = "default_lobby")]
+    default_lobby: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfPayload {
+    mqtt_server: String,
+    default_lobby: String,
+    file_path: String,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -276,6 +293,102 @@ fn setup_custom_folders(app: tauri::AppHandle) -> Result<(), String> {
     ensure_custom_asset_folders(&app_data_dir)
 }
 
+fn parse_agentconf_path(args: &[String]) -> Option<String> {
+    args.iter()
+        .find(|arg| arg.to_lowercase().ends_with(".agentconf"))
+        .cloned()
+}
+
+fn is_valid_mqtt_server(url: &str) -> bool {
+    let raw = url.trim();
+    if raw.is_empty() {
+        return false;
+    }
+
+    let lower = raw.to_lowercase();
+    if !(lower.starts_with("wss://") || lower.starts_with("ws://")) {
+        return false;
+    }
+
+    if raw.contains(' ') {
+        return false;
+    }
+
+    true
+}
+
+fn normalize_agentconf_lobby_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let normalized = trimmed
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect::<String>();
+
+    if normalized.is_empty() {
+        return None;
+    }
+
+    Some(normalized)
+}
+
+fn read_agentconf_file(file_path: &str) -> Result<AgentConfPayload, String> {
+    let path_buf = PathBuf::from(file_path);
+    if !path_buf.exists() {
+        return Err(format!("Agent config file does not exist: {}", file_path));
+    }
+
+    let content = fs::read_to_string(&path_buf)
+        .map_err(|error| format!("Failed to read agentconf file: {}", error))?;
+
+    let config: AgentConfFile = serde_json::from_str(&content)
+        .map_err(|error| format!("Failed to parse agentconf JSON: {}", error))?;
+
+    let mqtt_server = config.mqtt_server.ok_or_else(|| {
+        "agentconf file missing required field 'mqttServer' or 'mqtt_server'".to_string()
+    })?;
+    if !is_valid_mqtt_server(&mqtt_server) {
+        return Err("agentconf file contains an invalid mqttServer value; expected ws:// or wss:// URL without spaces".to_string());
+    }
+
+    let default_lobby_raw = config.default_lobby.ok_or_else(|| {
+        "agentconf file missing required field 'defaultLobby' or 'default_lobby'".to_string()
+    })?;
+    let default_lobby = normalize_agentconf_lobby_id(&default_lobby_raw).ok_or_else(|| {
+        "agentconf file contains an invalid defaultLobby value; expected letters, numbers, or underscores".to_string()
+    })?;
+
+    Ok(AgentConfPayload {
+        mqtt_server: mqtt_server.trim().to_string(),
+        default_lobby,
+        file_path: file_path.to_string(),
+    })
+}
+
+fn emit_agentconf_event(window: &tauri::WebviewWindow, event_name: &str, payload: impl serde::Serialize + Clone) {
+    let _ = window.emit(event_name, payload);
+}
+
+fn emit_agentconf_opened(window: &tauri::WebviewWindow, payload: AgentConfPayload) {
+    emit_agentconf_event(window, "agentconf-file-opened", payload);
+}
+
+fn emit_agentconf_error(window: &tauri::WebviewWindow, message: String) {
+    emit_agentconf_event(window, "agentconf-file-error", message);
+}
+
+fn handle_agentconf_arguments(args: &[String]) -> Result<AgentConfPayload, String> {
+    let file_path = parse_agentconf_path(args).ok_or_else(|| {
+        "No .agentconf file path found in app arguments.".to_string()
+    })?;
+
+    read_agentconf_file(&file_path)
+}
+
 #[tauri::command]
 fn discover_custom_assets(app: tauri::AppHandle) -> Result<CustomAssetsResult, String> {
     let app_data_dir = app
@@ -488,6 +601,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                match handle_agentconf_arguments(&args) {
+                    Ok(payload) => emit_agentconf_opened(&window, payload),
+                    Err(error) => emit_agentconf_error(&window, error),
+                }
+            }
+        }))
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
@@ -540,13 +661,18 @@ pub fn run() {
                 WebviewUrl::External(url)
             };
 
-            WebviewWindowBuilder::new(app, "main", url)
+            let main_window = WebviewWindowBuilder::new(app, "main", url)
                 // Required on Windows for HTML5 drag/drop events (dragover/drop) inside the webview.
                 .disable_drag_drop_handler()
                 .title("AGENT // LOBBY")
                 .decorations(false)
                 .inner_size(800.0, 600.0)
                 .build()?;
+
+            match handle_agentconf_arguments(&std::env::args().collect::<Vec<_>>()) {
+                Ok(payload) => emit_agentconf_opened(&main_window, payload),
+                Err(error) => emit_agentconf_error(&main_window, error),
+            }
 
             Ok(())
         })

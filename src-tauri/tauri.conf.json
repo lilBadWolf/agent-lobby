@@ -38,6 +38,15 @@
       "icons/agentamp.ico",
       "icons/agentamp-256x256.png"
     ],
+    "fileAssociations": [
+      {
+        "name": "Agent Lobby Configuration",
+        "description": "Agent Lobby settings file",
+        "ext": ["agentconf"],
+        "mimeType": "application/x-agentconf",
+        "role": "Editor"
+      }
+    ],
     "linux": {
       "deb": {
         "depends": ["libgtk-3-0", "libwebkit2gtk-4.0-37"]

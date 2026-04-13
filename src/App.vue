@@ -48,6 +48,7 @@
       :show-modal="showNetworkConfig"
       :network-config="networkConfig"
       @update="(newConfig) => setNetworkConfig(newConfig)"
+      @restore="restoreNetworkConfigDefaults"
       @close="toggleNetworkConfig"
     />
 
@@ -344,6 +345,7 @@ const {
   playAlert,
   stopAlert,
   setNetworkConfig,
+  restoreNetworkConfigDefaults,
   setSoundpack,
   clearMessages,
   addSystemMessage,
@@ -361,6 +363,88 @@ const {
   isInstallingUpdate,
 } = useAutoUpdaterState();
 const appVersion = packageJson.version;
+
+interface AgentConfPayload {
+  mqttServer: string;
+  defaultLobby: string;
+  filePath?: string;
+}
+
+function isValidMqttServer(url: string): boolean {
+  const trimmed = url.trim();
+  return trimmed.length > 0 && /^(ws|wss):\/\//i.test(trimmed) && !/\s/.test(trimmed);
+}
+
+function isValidLobbyId(raw: string): boolean {
+  const trimmed = raw.trim();
+  return trimmed.length > 0 && /^[A-Za-z0-9_]+$/.test(trimmed);
+}
+
+async function applyAgentConfPayload(payload: AgentConfPayload) {
+  const nextConfig = {
+    mqttServer: payload.mqttServer?.trim() ?? '',
+    defaultLobby: payload.defaultLobby?.trim() ?? '',
+  };
+
+  if (!nextConfig.mqttServer || !nextConfig.defaultLobby) {
+    window.alert('The selected .agentconf file is missing mqttServer or defaultLobby.');
+    return;
+  }
+
+  if (!isValidMqttServer(nextConfig.mqttServer)) {
+    window.alert('The selected .agentconf file contains an invalid mqttServer. Expected ws:// or wss:// URL without spaces.');
+    return;
+  }
+
+  if (!isValidLobbyId(nextConfig.defaultLobby)) {
+    window.alert('The selected .agentconf file contains an invalid defaultLobby. Use only letters, numbers, and underscores.');
+    return;
+  }
+
+  const description = payload.filePath
+    ? `The settings file ${payload.filePath} was opened.`
+    : 'A configuration file was opened.';
+
+  if (isConnected.value) {
+    if (hasTauriWindow) {
+      try {
+        await getCurrentWindow().setFocus();
+      } catch {
+        // ignore focus failures
+      }
+    }
+
+    const confirmed = window.confirm(
+      `${description}\n\nApplying these settings will disconnect the current session and close all direct message windows. Continue?`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await closeAllDMWindows();
+    disconnect();
+  }
+
+  setNetworkConfig(nextConfig);
+}
+
+function handleAgentConfError(message: string) {
+  window.alert(`Unable to load .agentconf file: ${message}`);
+}
+
+async function initializeAgentConfFileListener() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
+  const { listen } = await import('@tauri-apps/api/event');
+  await listen<AgentConfPayload>('agentconf-file-opened', (event) => {
+    void applyAgentConfPayload(event.payload);
+  });
+  await listen<string>('agentconf-file-error', (event) => {
+    handleAgentConfError(event.payload);
+  });
+}
 const DM_WINDOW_LABEL = 'dm-window';
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
@@ -863,6 +947,7 @@ onMounted(async () => {
   initializeAgentAmpActionBridge();
   initializeWebDMBridge();
   await initializeDMWindowActionListener();
+  await initializeAgentConfFileListener();
 
   if (!hasTauriWindow) {
     return;

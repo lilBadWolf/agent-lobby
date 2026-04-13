@@ -1,7 +1,7 @@
 import { ref, reactive, computed, watch } from 'vue';
 import type { ActiveMedia, UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
-import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
+import { getPersistedValue, removePersistedValue, setPersistedValue } from './usePlatformStorage';
 
 interface CustomAssetEntry {
   name: string;
@@ -1315,6 +1315,17 @@ export function useLobbyChat() {
     startPresencePreview();
   }
 
+  function restoreNetworkConfigDefaults() {
+    networkConfig.value = {
+      mqttServer: DEFAULT_MQTT_SERVER,
+      defaultLobby: DEFAULT_LOBBY,
+    };
+    roomId.value = DEFAULT_LOBBY;
+    activeLobbyId.value = DEFAULT_LOBBY;
+    void removePersistedValue('agent_network_config');
+    startPresencePreview();
+  }
+
   async function loadSettings() {
     try {
       const saved = await loadPersistedAudioConfig();
@@ -1531,6 +1542,7 @@ export function useLobbyChat() {
     playAlert,
     stopAlert,
     setNetworkConfig,
+    restoreNetworkConfigDefaults,
     setSoundpack,
     clearMessages,
     addSystemMessage,

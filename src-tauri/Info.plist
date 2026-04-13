@@ -8,5 +8,20 @@
   <string>Allow microphone for voice chat.</string>
   <key>NSPhotoLibraryUsageDescription</key>
   <string>Allow photo/library access for selecting files.</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Agent Lobby Configuration</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>agentconf</string>
+      </array>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>icon</string>
+    </dict>
+  </array>
 </dict>
 </plist>

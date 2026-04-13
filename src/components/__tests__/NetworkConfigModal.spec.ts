@@ -8,8 +8,8 @@ describe('NetworkConfigModal', () => {
       props: {
         showModal: true,
         networkConfig: {
-          mqttServer: 'wss://broker.emqx.io:8084/mqtt',
-          defaultLobby: 'spy_terminal',
+          mqttServer: 'wss://mqtt.thecompanyofwolves.com:8084/mqtt',
+          defaultLobby: 'agent_lobby',
         },
       },
     });
@@ -29,8 +29,8 @@ describe('NetworkConfigModal', () => {
       props: {
         showModal: true,
         networkConfig: {
-          mqttServer: 'wss://broker.emqx.io:8084/mqtt',
-          defaultLobby: 'spy_terminal',
+          mqttServer: 'wss://mqtt.thecompanyofwolves.com',
+          defaultLobby: 'agent_lobby',
         },
       },
     });

@@ -9,7 +9,7 @@
             id="mqtt-server"
             v-model="localConfig.mqttServer"
             type="text"
-            placeholder="wss://broker.emqx.io:8084/mqtt"
+            placeholder="wss://mqtt.thecompanyofwolves.com:8084/mqtt"
           />
         </div>
         <div class="config-row">
@@ -18,7 +18,7 @@
             id="default-lobby"
             v-model="localConfig.defaultLobby"
             type="text"
-            placeholder="spy_terminal"
+            placeholder="agent_lobby"
           />
         </div>
       </div>

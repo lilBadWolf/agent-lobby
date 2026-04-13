@@ -367,8 +367,8 @@ export function useLobbyChat() {
   const PRESENCE_PREVIEW_MAX_RETRIES = 5;
   const LOBBY_JOIN_PRESENCE_PROBE_MS = 1200;
 
-  const DEFAULT_MQTT_SERVER = 'wss://broker.emqx.io:8084/mqtt';
-  const DEFAULT_LOBBY = 'spy_terminal';
+  const DEFAULT_MQTT_SERVER = 'wss://mqtt.thecompanyofwolves.com:8084/mqtt';
+  const DEFAULT_LOBBY = 'agent_lobby';
   const sysMsg = 'NETWORK LINK STABLE. ENCRYPTION ACTIVE.';
   const partMsg = "'s SIGNAL TERMINATED";
   const joinMsg = ' IS RECEIVING';

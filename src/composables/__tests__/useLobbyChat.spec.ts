@@ -126,7 +126,7 @@ describe('useLobbyChat', () => {
     previewClient.emit('connect');
     previewClient.emit(
       'message',
-      'spy_terminal_lobby/presence/ALPHA',
+      'agent_lobby_lobby/presence/ALPHA',
       {
         toString: () => JSON.stringify({
           username: 'ALPHA',
@@ -227,7 +227,7 @@ describe('useLobbyChat', () => {
 
     const previewClient = clients[0];
     previewClient.emit('connect');
-    previewClient.emit('message', 'spy_terminal_lobby/presence/BAD', {
+    previewClient.emit('message', 'agent_lobby_lobby/presence/BAD', {
       toString: () => '{not-json',
     });
 

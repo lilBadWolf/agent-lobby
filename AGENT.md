@@ -15,7 +15,7 @@ A real-time communication tool. It connects you to a shared lobby chat and lets 
 The lobby is not a peer-to-peer mesh. It is a hub-and-spoke model:
 
 - Your app connects to an MQTT broker over secure WebSockets (`wss://`).
-- The default broker is `wss://broker.emqx.io:8084/mqtt`.
+- The default broker is `wss://mqtt.thecompanyofwolves.com:8084/mqtt`.
 - Lobby messages, presence updates, typing state, and DM signaling all flow through MQTT topics.
 - This means lobby chat is encrypted in transit over TLS to the broker, but the broker can still see the message topics and payloads.
 

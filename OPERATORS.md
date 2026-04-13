@@ -40,7 +40,7 @@ Why MQTT:
 
 The app defaults to:
 
-- `wss://broker.emqx.io:8084/mqtt`
+- `wss://mqtt.thecompanyofwolves.com:8084/mqtt`
 
 This is only a convenience default. For operational security and MANET deployment, host your own broker.
 
@@ -150,7 +150,7 @@ The app exposes network configuration in the auth flow. Operators should know th
 Example configuration for a private deployment:
 
 - `mqttServer`: `wss://mqtt.manet.local:8084/mqtt`
-- `defaultLobby`: `spy_terminal`
+- `defaultLobby`: `agent_lobby`
 
 ### Network config visibility
 

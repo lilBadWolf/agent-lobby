@@ -192,6 +192,9 @@
         <button class="agentamp-playlist-header-cell agentamp-playlist-header-order" type="button" @click="togglePlaylistSort('order')">
           #{{ getSortIndicator('order') }}
         </button>
+        <button class="agentamp-playlist-header-cell agentamp-playlist-header-track-number" type="button" @click="togglePlaylistSort('trackNumber')">
+          Track #{{ getSortIndicator('trackNumber') }}
+        </button>
         <button class="agentamp-playlist-header-cell agentamp-playlist-header-artist" type="button" @click="togglePlaylistSort('artist')">
           Artist{{ getSortIndicator('artist') }}
         </button>
@@ -220,6 +223,7 @@
         @mouseleave="hideTrackTooltip(item.originalIndex)"
       >
         <span class="agentamp-track-order">{{ item.track.order + 1 }}</span>
+        <span class="agentamp-track-number">{{ item.track.trackNumber || '—' }}</span>
         <button
           :key="getTrackMetadataRenderKey(item.track)"
           class="agentamp-track-btn"
@@ -282,16 +286,17 @@
             <input v-model="metadataEditorForm.title" type="text" />
           </label>
           <label>
-            ALBUM
-            <input v-model="metadataEditorForm.album" type="text" />
-          </label>
-          <label>
             YEAR
             <input v-model="metadataEditorForm.year" type="text" />
           </label>
-          <label>
-            GENRE
-            <div class="agentamp-genre-input-wrap">
+          <template v-if="!isEditingVideoTrack">
+            <label>
+              ALBUM
+              <input v-model="metadataEditorForm.album" type="text" />
+            </label>
+            <label>
+              GENRE
+              <div class="agentamp-genre-input-wrap">
               <input
                 class="agentamp-genre-input"
                 v-model="metadataEditorForm.genre"
@@ -317,6 +322,11 @@
               </div>
             </div>
           </label>
+          <label v-if="!isEditingVideoTrack">
+            TRACK #
+            <input v-model="metadataEditorForm.trackNumber" type="text" />
+          </label>
+          </template>
           <div class="agentamp-modal-actions">
             <button type="button" class="agentamp-btn" @click="closeMetadataEditor">CANCEL</button>
             <button type="submit" class="agentamp-btn" :disabled="metadataEditorSaving">{{ metadataEditorSaving ? 'SAVING...' : 'SAVE' }}</button>
@@ -377,10 +387,37 @@ type PlaylistTrack = {
   mediaType?: 'audio' | 'video';
 };
 
+type MediaLibraryLookupResult = {
+  id: string;
+  path: string;
+  name: string;
+  folderPath: string;
+  mediaType: 'audio' | 'video';
+  artist?: string;
+  title?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  trackNumber?: string;
+};
+
+type MediaLibraryAddTrackPayload = {
+  path: string;
+  mediaType: 'audio' | 'video';
+  artist?: string;
+  title?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  trackNumber?: string;
+};
+
 type PlaylistDisplayItem = {
   track: PlaylistTrack;
   originalIndex: number;
 };
+
+const libraryPromptedPaths = new Set<string>();
 
 type MetadataEditFields = {
   artist: string;
@@ -608,7 +645,7 @@ const metadataEditorForm = ref<MetadataEditFields>({
 });
 const metadataEditorSaving = ref(false);
 const metadataEditorError = ref<string | null>(null);
-const playlistSortField = ref<'order' | 'artist' | 'title' | 'genre' | 'duration' | null>(null);
+const playlistSortField = ref<'order' | 'trackNumber' | 'artist' | 'title' | 'genre' | 'duration' | null>(null);
 const playlistSortDirection = ref<'asc' | 'desc'>('asc');
 const dragFromIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
@@ -650,7 +687,17 @@ const editingMetadataFileName = computed(() => {
     return '';
   }
 
-  return extractNameFromPath(track.location);
+  const segments = track.location.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? track.location;
+});
+
+const isEditingVideoTrack = computed(() => {
+  if (editingMetadataIndex.value === null) {
+    return false;
+  }
+
+  const track = playlist.value[editingMetadataIndex.value];
+  return Boolean(track && (track.mediaType === 'video' || (track.mediaType === undefined && isVideoPath(track.location))));
 });
 
 const genreFilter = computed(() => metadataEditorForm.value.genre.trim().toLowerCase());
@@ -1019,17 +1066,17 @@ function isMetadataEditable(track: PlaylistTrack): boolean {
     return false;
   }
 
-  if (track.mediaType === 'video' || (track.mediaType === undefined && isVideoPath(track.location))) {
-    return false;
-  }
-
   return true;
 }
 
-function openMetadataEditor(index: number) {
+async function openMetadataEditor(index: number) {
   const track = playlist.value[index];
   if (!track) {
     return;
+  }
+
+  if (track.source === 'path' && (!track.artist?.trim() || !track.title?.trim() || !track.year?.trim())) {
+    await loadTrackMetadata(track);
   }
 
   editingMetadataIndex.value = index;
@@ -1037,7 +1084,7 @@ function openMetadataEditor(index: number) {
     artist: track.artist ?? '',
     title: track.title ?? '',
     album: track.album ?? '',
-    year: track.year ?? '',
+    year: normalizeYearValue(track.year) ?? '',
     genre: track.genre ?? '',
     trackNumber: track.trackNumber ?? '',
   };
@@ -1052,6 +1099,20 @@ function closeMetadataEditor() {
 function normalizeMetadataValue(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length ? trimmed : undefined;
+}
+
+function normalizeYearValue(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return undefined;
+  }
+
+  const matched = trimmed.match(/^(\d{4})/);
+  return matched ? matched[1] : trimmed;
 }
 
 async function saveTrackMetadata() {
@@ -1150,7 +1211,7 @@ function refreshPlaylistOrder() {
   });
 }
 
-function getSortIndicator(field: 'order' | 'artist' | 'title' | 'genre' | 'duration'): string {
+function getSortIndicator(field: 'order' | 'trackNumber' | 'artist' | 'title' | 'genre' | 'duration'): string {
   if (playlistSortField.value !== field) {
     return '';
   }
@@ -1158,10 +1219,24 @@ function getSortIndicator(field: 'order' | 'artist' | 'title' | 'genre' | 'durat
   return playlistSortDirection.value === 'asc' ? ' ▲' : ' ▼';
 }
 
-function getPlaylistSortValue(track: PlaylistTrack, field: 'order' | 'artist' | 'title' | 'genre' | 'duration'): string | number {
+function getPlaylistSortValue(track: PlaylistTrack, field: 'order' | 'trackNumber' | 'artist' | 'title' | 'genre' | 'duration'): string | number {
   if (field === 'artist' || field === 'title') {
     const inferred = inferArtistTitle(track);
     return (field === 'artist' ? inferred.artist : inferred.title) ?? '';
+  }
+
+  if (field === 'trackNumber') {
+    const trackNumber = track.trackNumber?.trim();
+    if (!trackNumber) {
+      return 0;
+    }
+
+    const numeric = parseInt(trackNumber.split('/')[0], 10);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+
+    return trackNumber.toLowerCase();
   }
 
   if (field === 'genre') {
@@ -1175,7 +1250,7 @@ function getPlaylistSortValue(track: PlaylistTrack, field: 'order' | 'artist' | 
   return track.order;
 }
 
-function applyPlaylistSort(field: 'order' | 'artist' | 'title' | 'genre' | 'duration') {
+function applyPlaylistSort(field: 'order' | 'trackNumber' | 'artist' | 'title' | 'genre' | 'duration') {
   const currentTrackId = currentTrack.value?.id;
   playlist.value.sort((a, b) => {
     const aValue = getPlaylistSortValue(a, field);
@@ -1204,7 +1279,7 @@ function applyPlaylistSort(field: 'order' | 'artist' | 'title' | 'genre' | 'dura
   }
 }
 
-function togglePlaylistSort(field: 'order' | 'artist' | 'title' | 'genre' | 'duration') {
+function togglePlaylistSort(field: 'order' | 'trackNumber' | 'artist' | 'title' | 'genre' | 'duration') {
   if (playlistSortField.value !== field) {
     playlistSortField.value = field;
     playlistSortDirection.value = 'asc';
@@ -1656,8 +1731,7 @@ const TRACK_METADATA_RANGE_TAIL = 128;
 
 async function fetchTrackRangeBytes(sourceUrl: string, rangeHeader: string): Promise<Uint8Array | null> {
   try {
-    const headers = new Headers({ 'cache-control': 'no-cache' });
-    headers.set('Range', rangeHeader);
+    const headers = new Headers({ 'Range': rangeHeader });
 
     const response = await fetch(sourceUrl, { cache: 'no-store', headers });
     if (!response.ok) {
@@ -1821,11 +1895,32 @@ async function addTracksFromLibraryEntries(entries: MediaLibraryAddPayload[]) {
   await persistPlayerState();
 }
 
+async function lookupMediaLibraryTrack(path: string): Promise<MediaLibraryLookupResult | null> {
+  try {
+    const normalizedPath = normalizeTrackFsPath(path);
+    return await invoke<MediaLibraryLookupResult | null>('lookup_media_library_track', { path: normalizedPath });
+  } catch (error) {
+    console.warn('Failed to query media library for metadata:', error);
+    return null;
+  }
+}
+
+async function addMediaLibraryTrack(payload: MediaLibraryAddTrackPayload): Promise<boolean> {
+  try {
+    await invoke('add_media_library_track', payload);
+    return true;
+  } catch (error) {
+    console.warn('Failed to save track to media library:', error);
+    return false;
+  }
+}
+
 async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
   if (
     typeof track.duration === 'number' && track.duration > 0 &&
     typeof track.artist === 'string' && track.artist.trim() &&
-    typeof track.title === 'string' && track.title.trim()
+    typeof track.title === 'string' && track.title.trim() &&
+    typeof track.year === 'string' && track.year.trim()
   ) {
     return;
   }
@@ -1846,58 +1941,121 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
     return;
   }
 
+  const normalizedSourcePath = normalizeTrackFsPath(track.location);
+  const libraryEntry = track.source === 'path'
+    ? await lookupMediaLibraryTrack(normalizedSourcePath)
+    : null;
+
+  let promptToAddToLibrary = false;
+  if (track.source === 'path' && !libraryEntry && !libraryPromptedPaths.has(normalizedSourcePath)) {
+    const displayName = track.title?.trim() || track.name || extractNameFromPath(track.location);
+    const confirmed = window.confirm(
+      `This file is not in your media library. Add “${displayName}” to the library so future metadata lookup is faster?`
+    );
+    promptToAddToLibrary = confirmed;
+    if (!confirmed) {
+      libraryPromptedPaths.add(normalizedSourcePath);
+    }
+  }
+
+  if (libraryEntry) {
+    const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
+
+    if (!reactiveTrack.artist && libraryEntry.artist) {
+      reactiveTrack.artist = libraryEntry.artist;
+    }
+    if (!reactiveTrack.title && libraryEntry.title) {
+      reactiveTrack.title = libraryEntry.title;
+    }
+    if (!reactiveTrack.album && libraryEntry.album) {
+      reactiveTrack.album = libraryEntry.album;
+    }
+    if (!reactiveTrack.year && libraryEntry.year) {
+      reactiveTrack.year = normalizeYearValue(libraryEntry.year) ?? libraryEntry.year;
+    }
+    if (!reactiveTrack.genre && libraryEntry.genre) {
+      reactiveTrack.genre = libraryEntry.genre;
+    }
+    if (!reactiveTrack.trackNumber && libraryEntry.trackNumber) {
+      reactiveTrack.trackNumber = libraryEntry.trackNumber;
+    }
+    if (!reactiveTrack.mediaType) {
+      reactiveTrack.mediaType = libraryEntry.mediaType;
+    }
+    if (!reactiveTrack.title && libraryEntry.name) {
+      reactiveTrack.name = libraryEntry.name;
+    }
+  }
+
   let metadataSourceUrl: string | null = null;
   let bytes: Uint8Array | null = null;
 
   try {
-    if (!isVideoTrack) {
-      const isM4a = isM4aTrack(track);
-      const isFlac = isFlacTrack(track);
-      let metadata = null as ({ artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null);
+    const isM4a = isM4aTrack(track);
+    const isFlac = isFlacTrack(track);
+    const isMp4Video = isVideoTrack && /\.(mp4|mov|m4v)$/i.test(track.location);
+    let metadata = null as ({ artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null);
 
-      bytes = await fetchTrackRangeBytes(sourceUrl, `bytes=0-${TRACK_METADATA_RANGE_HEAD - 1}`);
-      if (bytes) {
-        metadata = isM4a ? parseMp4Metadata(bytes) : isFlac ? parseFlacMetadata(bytes) : parseId3v2(bytes);
-      }
-
-      if (!metadata && !isM4a && !isFlac) {
-        const tailBytes = await fetchTrackRangeBytes(sourceUrl, `bytes=-${TRACK_METADATA_RANGE_TAIL}`);
-        if (tailBytes) {
-          metadata = parseId3v1(tailBytes);
-        }
-      }
-
-      if (metadata) {
-        const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
-
-        console.log(
-          `[AgentAmp] metadata found for ${track.name}: artist=${metadata.artist ?? 'missing'}, title=${metadata.title ?? 'missing'}, album=${metadata.album ?? 'missing'}, year=${metadata.year ?? 'missing'}, genre=${metadata.genre ?? 'missing'}, trackNumber=${metadata.trackNumber ?? 'missing'}`
-        );
-
-        if (metadata.artist) {
-          reactiveTrack.artist = metadata.artist;
-        }
-        if (metadata.title) {
-          reactiveTrack.title = metadata.title;
-        }
-        if (metadata.album) {
-          reactiveTrack.album = metadata.album;
-        }
-        if (metadata.year) {
-          reactiveTrack.year = metadata.year;
-        }
-        if (metadata.genre) {
-          reactiveTrack.genre = metadata.genre;
-        }
-        if (metadata.trackNumber) {
-          reactiveTrack.trackNumber = metadata.trackNumber;
-        }
+    bytes = await fetchTrackRangeBytes(sourceUrl, `bytes=0-${TRACK_METADATA_RANGE_HEAD - 1}`);
+    if (bytes) {
+      if (isMp4Video || isM4a) {
+        metadata = parseMp4Metadata(bytes);
+      } else if (isFlac) {
+        metadata = parseFlacMetadata(bytes);
       } else {
-        console.log(`[AgentAmp] no metadata found for ${track.name}`);
+        metadata = parseId3v2(bytes);
       }
+    }
+
+    if (!metadata && !isMp4Video && !isM4a && !isFlac) {
+      const tailBytes = await fetchTrackRangeBytes(sourceUrl, `bytes=-${TRACK_METADATA_RANGE_TAIL}`);
+      if (tailBytes) {
+        metadata = parseId3v1(tailBytes);
+      }
+    }
+
+    if (metadata) {
+      const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
+      console.log(
+        `[AgentAmp] metadata found for ${track.name}: artist=${metadata.artist ?? 'missing'}, title=${metadata.title ?? 'missing'}, album=${metadata.album ?? 'missing'}, year=${metadata.year ?? 'missing'}, genre=${metadata.genre ?? 'missing'}, trackNumber=${metadata.trackNumber ?? 'missing'}`
+      );
+
+      if (metadata.artist) {
+        reactiveTrack.artist = metadata.artist;
+      }
+      if (metadata.title) {
+        reactiveTrack.title = metadata.title;
+      }
+      if (metadata.album) {
+        reactiveTrack.album = metadata.album;
+      }
+      if (metadata.year) {
+        reactiveTrack.year = normalizeYearValue(metadata.year) ?? metadata.year;
+      }
+      if (metadata.genre) {
+        reactiveTrack.genre = metadata.genre;
+      }
+      if (metadata.trackNumber) {
+        reactiveTrack.trackNumber = metadata.trackNumber;
+      }
+    } else {
+      console.log(`[AgentAmp] no metadata found for ${track.name}`);
     }
   } catch (error) {
     console.log(`[AgentAmp] failed to read metadata for ${track.name}`, error);
+  }
+
+  if (promptToAddToLibrary) {
+    await addMediaLibraryTrack({
+      path: normalizedSourcePath,
+      mediaType: track.mediaType ?? (isVideoTrack ? 'video' : 'audio'),
+      artist: track.artist?.trim() || undefined,
+      title: track.title?.trim() || undefined,
+      album: track.album?.trim() || undefined,
+      year: track.year?.trim() || undefined,
+      genre: track.genre?.trim() || undefined,
+      trackNumber: track.trackNumber?.trim() || undefined,
+    });
   }
 
   if (track.duration && track.duration > 0) {
@@ -2145,6 +2303,8 @@ function parseMp4Metadata(data: Uint8Array): { artist?: string; title?: string; 
 
   const atomStack: Array<{ offset: number; type: string; size: number }> = [];
   let offset = 0;
+  let subtitle: string | undefined;
+  let albumArtist: string | undefined;
   const result: { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } = {};
 
   while (offset + 8 <= data.length) {
@@ -2196,17 +2356,30 @@ function parseMp4Metadata(data: Uint8Array): { artist?: string; title?: string; 
         if (value) {
           result.trackNumber = value;
         }
+      } else if (
+        atomType === '©sub' ||
+        atomType === '©sbt' ||
+        atomType === 'subt' ||
+        atomType === '©des'
+      ) {
+        const value = readStringAtomPayload(offset + 8);
+        if (value) {
+          subtitle = value;
+        }
       }
     }
 
     offset += header.size;
   }
 
-  if (Object.keys(result).length === 0) {
+  if (Object.keys(result).length === 0 && !subtitle) {
     return null;
   }
 
-  return result;
+  return {
+    ...result,
+    artist: result.artist || subtitle || albumArtist,
+  };
 }
 
 function parseFlacMetadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
@@ -4026,7 +4199,7 @@ onBeforeUnmount(() => {
 .agentamp-track-row,
 .agentamp-playlist-header {
   display: grid;
-  grid-template-columns: 32px minmax(0,1.2fr) minmax(0,2.4fr) minmax(0,0.6fr) auto auto;
+  grid-template-columns: 32px 44px minmax(0,1.2fr) minmax(0,2.4fr) minmax(0,0.6fr) auto auto;
   align-items: center;
   gap: 6px;
 }
@@ -4072,6 +4245,15 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   min-width: 0;
   grid-column: 1 / 2;
+}
+
+.agentamp-track-number {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  padding: 7px 8px;
+  white-space: nowrap;
+  min-width: 0;
+  grid-column: 2 / 3;
 }
 
 .agentamp-playlist-header-cell:hover {
@@ -4124,7 +4306,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  grid-column: 2 / span 2;
+  grid-column: 3 / span 2;
 }
 
 .agentamp-track-artist,
@@ -4152,13 +4334,13 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   min-width: 0;
   max-width: 80px;
-  grid-column: 4;
+  grid-column: 5;
   justify-self: center;
   text-align: center;
 }
 
 .agentamp-track-duration {
-  grid-column: 5;
+  grid-column: 6;
   color: var(--color-text-secondary);
   font-size: 11px;
   margin: 0 6px;
@@ -4186,6 +4368,7 @@ onBeforeUnmount(() => {
   height: 22px;
   cursor: pointer;
   margin-right: 6px;
+  grid-column: 7;
 }
 
 .agentamp-remove-btn:hover {

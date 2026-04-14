@@ -497,6 +497,7 @@ const inFlightDMWindowLabels = new Set<string>();
 let dmWebChannel: BroadcastChannel | null = null;
 let agentAmpPopupWindow: Window | null = null;
 let agentAmpPopupWatchIntervalId: number | null = null;
+let mediaLibraryAutoScanIntervalId: number | null = null;
 let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
@@ -1246,6 +1247,7 @@ onBeforeUnmount(() => {
   }
   dmPopupWatchIntervals.clear();
   dmPopupWindows.clear();
+  clearMediaLibraryAutoScanInterval();
   openDMWindowUsers.value = new Set();
   dmWebChannel?.close();
   dmWebChannel = null;
@@ -1584,6 +1586,7 @@ function handleSettingsUpdate(newConfig: AudioConfig) {
     ...newConfig,
     autoAwayMinutes: newConfig.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
+    autoScanMediaLibraryMinutes: newConfig.autoScanMediaLibraryMinutes ?? 0,
     spectrumBarCount: newConfig.spectrumBarCount ?? 64,
     spectrumFftSize: newConfig.spectrumFftSize ?? 2048,
     spectrumThresholdLow: newConfig.spectrumThresholdLow ?? config.value.spectrumThresholdLow ?? 0.15,
@@ -1601,6 +1604,53 @@ function handleSettingsUpdate(newConfig: AudioConfig) {
   }
 
   updateSettings();
+}
+
+watch(
+  () => config.value.autoScanMediaLibraryMinutes ?? 0,
+  (minutes) => {
+    scheduleMediaLibraryAutoScan(minutes);
+  },
+  { immediate: true }
+);
+
+function clearMediaLibraryAutoScanInterval() {
+  if (mediaLibraryAutoScanIntervalId !== null) {
+    window.clearInterval(mediaLibraryAutoScanIntervalId);
+    mediaLibraryAutoScanIntervalId = null;
+  }
+}
+
+async function scanMediaLibraryFolders() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
+  try {
+    const state = await invoke<{ folders: Array<{ path: string }> }>('load_media_library_state');
+    if (!state?.folders?.length) {
+      return;
+    }
+
+    for (const folder of state.folders) {
+      if (folder?.path) {
+        await invoke('scan_media_library_folder', { folderPath: folder.path });
+      }
+    }
+  } catch (error) {
+    console.error('Media library auto-scan failed:', error);
+  }
+}
+
+function scheduleMediaLibraryAutoScan(minutes: number) {
+  clearMediaLibraryAutoScanInterval();
+  if (!hasTauriWindow || !minutes || minutes <= 0) {
+    return;
+  }
+
+  mediaLibraryAutoScanIntervalId = window.setInterval(() => {
+    void scanMediaLibraryFolders();
+  }, minutes * 60000);
 }
 
 function handleChatSend(rawMessage: string) {

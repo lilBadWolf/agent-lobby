@@ -34,6 +34,7 @@ export interface AudioConfig {
   volume: number;
   autoAwayMinutes?: number;
   autoUpdatePulseMinutes?: number;
+  autoScanMediaLibraryMinutes?: number;
   spectrumBarCount?: number;
   spectrumFftSize?: number;
   spectrumSensitivity?: number;

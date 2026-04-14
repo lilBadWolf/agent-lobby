@@ -108,21 +108,23 @@
             <input v-model="metadataEditorForm.title" type="text" />
           </label>
           <label>
-            ALBUM
-            <input v-model="metadataEditorForm.album" type="text" />
-          </label>
-          <label>
             YEAR
             <input v-model="metadataEditorForm.year" type="text" />
           </label>
-          <label>
-            GENRE
-            <input v-model="metadataEditorForm.genre" type="text" />
-          </label>
-          <label>
-            TRACK #
-            <input v-model="metadataEditorForm.trackNumber" type="text" />
-          </label>
+          <template v-if="!isEditingLibraryVideoTrack">
+            <label>
+              ALBUM
+              <input v-model="metadataEditorForm.album" type="text" />
+            </label>
+            <label>
+              GENRE
+              <input v-model="metadataEditorForm.genre" type="text" />
+            </label>
+            <label>
+              TRACK #
+              <input v-model="metadataEditorForm.trackNumber" type="text" />
+            </label>
+          </template>
           <div class="media-library-modal-actions">
             <button type="button" class="agentamp-btn compact" @click="closeMetadataEditor">CANCEL</button>
             <button type="submit" class="agentamp-btn compact" :disabled="metadataEditorSaving">
@@ -137,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useTheme } from './composables/useTheme';
 
@@ -177,7 +179,16 @@ interface MetadataEditFields {
   trackNumber: string;
 }
 
-type MediaLibraryColumnKey = 'name' | 'artist' | 'album' | 'genre' | 'mediaType';
+interface MediaLibraryMetadataResult {
+  artist?: string;
+  title?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  trackNumber?: string;
+}
+
+type MediaLibraryColumnKey = 'name' | 'artist' | 'album' | 'genre' | 'year' | 'mediaType';
 
 const isTauriRuntime = () => typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
 const hasTauriWindow = isTauriRuntime();
@@ -187,6 +198,10 @@ const tracks = ref<MediaLibraryTrack[]>([]);
 const selectedTrackIds = ref(new Set<string>());
 const searchQuery = ref('');
 const scanInProgress = ref(false);
+const pendingScans = ref(0);
+const libraryStatusMessage = ref('');
+let scanProgressUnlisten: (() => void) | null = null;
+let scanCompleteUnlisten: (() => void) | null = null;
 const editingMetadataTrack = ref<MediaLibraryTrack | null>(null);
 const metadataEditorForm = ref<MetadataEditFields>({
   artist: '',
@@ -198,7 +213,11 @@ const metadataEditorForm = ref<MetadataEditFields>({
 });
 const metadataEditorSaving = ref(false);
 const metadataEditorError = ref<string | null>(null);
-const sortField = ref<'name' | 'artist' | 'genre' | 'album' | 'mediaType' | null>('name');
+const isEditingLibraryVideoTrack = computed(() => {
+  const track = editingMetadataTrack.value;
+  return Boolean(track && (track.mediaType === 'video' || /\.(mp4|webm|mov)$/i.test(track.path)));
+});
+const sortField = ref<'name' | 'artist' | 'genre' | 'album' | 'year' | 'mediaType' | null>('name');
 const sortDirection = ref<'asc' | 'desc'>('asc');
 
 const { applyTheme } = useTheme();
@@ -229,9 +248,9 @@ const filteredTracks = computed(() => {
 });
 
 const sortedTracks = computed(() => {
-  const rows = [...filteredTracks.value];
+  const rows = filteredTracks.value.map((track, index) => ({ track, index }));
   if (!sortField.value) {
-    return rows;
+    return rows.map((entry) => entry.track);
   }
 
   return rows.sort((a, b) => {
@@ -248,22 +267,39 @@ const sortedTracks = computed(() => {
       if (sortField.value === 'album') {
         return (track.album || '').toLowerCase();
       }
+      if (sortField.value === 'year') {
+        return (track.year || '').toLowerCase();
+      }
       if (sortField.value === 'mediaType') {
         return (track.mediaType || '').toLowerCase();
       }
       return '';
     };
 
-    const left = getValue(a);
-    const right = getValue(b);
+    const fallbackValue = (track: MediaLibraryTrack) => {
+      return (track.title || track.name || track.path || track.id || '').toLowerCase();
+    };
+
+    const left = getValue(a.track);
+    const right = getValue(b.track);
     if (left < right) {
       return sortDirection.value === 'asc' ? -1 : 1;
     }
     if (left > right) {
       return sortDirection.value === 'asc' ? 1 : -1;
     }
-    return 0;
-  });
+
+    const leftFallback = fallbackValue(a.track);
+    const rightFallback = fallbackValue(b.track);
+    if (leftFallback < rightFallback) {
+      return sortDirection.value === 'asc' ? -1 : 1;
+    }
+    if (leftFallback > rightFallback) {
+      return sortDirection.value === 'asc' ? 1 : -1;
+    }
+
+    return a.index - b.index;
+  }).map((entry) => entry.track);
 });
 
 const allVisibleSelected = computed(() => {
@@ -282,6 +318,7 @@ const columns = ref([
   { key: 'artist', label: 'Artist', sortable: true },
   { key: 'album', label: 'Album', sortable: true },
   { key: 'genre', label: 'Genre', sortable: true },
+  { key: 'year', label: 'Year', sortable: true },
   { key: 'mediaType', label: 'Type', sortable: true },
 ]);
 
@@ -301,17 +338,14 @@ function getCellValue(track: MediaLibraryTrack, key: string) {
   if (key === 'name') {
     return track.title || track.name || '—';
   }
+  if (key === 'year') {
+    return normalizeYearValue(track.year) ?? track.year ?? '—';
+  }
   return track[key as keyof MediaLibraryTrack] ?? '—';
 }
 
 function isMetadataEditable(track: MediaLibraryTrack): boolean {
-  if (!track.path || !track.path.trim().length) {
-    return false;
-  }
-  if (track.mediaType === 'video') {
-    return false;
-  }
-  return true;
+  return Boolean(track.path && track.path.trim().length);
 }
 
 function editingMetadataFileName(): string {
@@ -319,24 +353,64 @@ function editingMetadataFileName(): string {
   if (!track) {
     return 'TRACK METADATA';
   }
-  return track.name ? track.name.split(/[\\/]/).pop() ?? track.name : track.path.split(/[\\/]/).pop() ?? 'TRACK METADATA';
+
+  const path = track.path?.trim() || track.name?.trim();
+  if (!path) {
+    return 'TRACK METADATA';
+  }
+
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? path;
 }
 
-function openMetadataEditor(track: MediaLibraryTrack) {
+async function openMetadataEditor(track: MediaLibraryTrack) {
   if (!isMetadataEditable(track)) {
     return;
   }
+
+  await loadLibraryTrackMetadata(track);
 
   editingMetadataTrack.value = track;
   metadataEditorForm.value = {
     artist: track.artist ?? '',
     title: track.title ?? '',
     album: track.album ?? '',
-    year: track.year ?? '',
+    year: normalizeYearValue(track.year) ?? '',
     genre: track.genre ?? '',
     trackNumber: track.trackNumber ?? '',
   };
   metadataEditorError.value = null;
+}
+
+async function loadLibraryTrackMetadata(track: MediaLibraryTrack) {
+  try {
+    const normalizedPath = normalizeTrackFsPath(track.path);
+    const metadata = await invoke<MediaLibraryMetadataResult | null>('read_agentamp_metadata', { path: normalizedPath });
+    if (!metadata) {
+      return;
+    }
+
+    if (!track.artist?.trim() && metadata.artist) {
+      track.artist = metadata.artist;
+    }
+      if (metadata.title) {
+      track.title = metadata.title;
+    }
+    if (metadata.album) {
+      track.album = metadata.album;
+    }
+    if (metadata.year) {
+      track.year = normalizeYearValue(metadata.year) ?? metadata.year;
+    }
+    if (metadata.genre) {
+      track.genre = metadata.genre;
+    }
+    if (metadata.trackNumber) {
+      track.trackNumber = metadata.trackNumber;
+    }
+  } catch (error) {
+    console.warn('Failed to load library track metadata:', error);
+  }
 }
 
 function closeMetadataEditor() {
@@ -347,6 +421,20 @@ function closeMetadataEditor() {
 function normalizeMetadataValue(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed.length ? trimmed : undefined;
+}
+
+function normalizeYearValue(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.length) {
+    return undefined;
+  }
+
+  const matched = trimmed.match(/^(\d{4})/);
+  return matched ? matched[1] : trimmed;
 }
 
 async function writeTrackMetadataToFile(track: MediaLibraryTrack, metadata: MetadataEditFields): Promise<void> {
@@ -475,7 +563,7 @@ function stopColumnResize() {
   window.removeEventListener('mouseup', stopColumnResize);
 }
 
-function toggleSort(field: 'name' | 'artist' | 'genre' | 'album' | 'mediaType') {
+function toggleSort(field: 'name' | 'artist' | 'genre' | 'album' | 'year' | 'mediaType') {
   if (sortField.value === field) {
     sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
     return;
@@ -485,7 +573,7 @@ function toggleSort(field: 'name' | 'artist' | 'genre' | 'album' | 'mediaType') 
   sortDirection.value = 'asc';
 }
 
-function getSortIndicator(field: 'name' | 'artist' | 'genre' | 'album' | 'mediaType') {
+function getSortIndicator(field: 'name' | 'artist' | 'genre' | 'album' | 'year' | 'mediaType') {
   if (sortField.value !== field) {
     return '';
   }
@@ -510,18 +598,16 @@ async function scanAllFolders() {
     return;
   }
 
+  pendingScans.value = folders.value.length;
   scanInProgress.value = true;
-  try {
-    for (const folder of folders.value) {
-      try {
-        await invoke('scan_media_library_folder', { folderPath: folder.path });
-      } catch (error) {
-        console.error('Failed to rescan folder:', folder.path, error);
-      }
+  libraryStatusMessage.value = `Rescanning ${folders.value.length} folder(s)...`;
+
+  for (const folder of folders.value) {
+    try {
+      await invoke('scan_media_library_folder', { folderPath: folder.path });
+    } catch (error) {
+      console.error('Failed to rescan folder:', folder.path, error);
     }
-  } finally {
-    scanInProgress.value = false;
-    await loadLibraryState();
   }
 }
 
@@ -642,6 +728,26 @@ async function toggleMaximize() {
 }
 
 onMounted(async () => {
+  if (hasTauriWindow) {
+    const eventModule = await import('@tauri-apps/api/event').catch(() => null);
+    if (eventModule?.listen) {
+      scanProgressUnlisten = await eventModule.listen('media-library-scan-progress', (event) => {
+        const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number; currentPath: string };
+        libraryStatusMessage.value = `Scanning ${payload.currentPath} (${payload.matchedFiles} tracks found)`;
+      });
+
+      scanCompleteUnlisten = await eventModule.listen('media-library-scan-complete', async (event) => {
+        const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number };
+        pendingScans.value = Math.max(0, pendingScans.value - 1);
+        libraryStatusMessage.value = `Finished scanning ${payload.folderPath}: ${payload.matchedFiles} tracks found.`;
+        await loadLibraryState();
+        if (pendingScans.value === 0) {
+          scanInProgress.value = false;
+        }
+      });
+    }
+  }
+
   await loadLibraryState();
 
   if (hasTauriWindow) {
@@ -654,6 +760,13 @@ onMounted(async () => {
       }
     }
   }
+});
+
+onBeforeUnmount(() => {
+  scanProgressUnlisten?.();
+  scanProgressUnlisten = null;
+  scanCompleteUnlisten?.();
+  scanCompleteUnlisten = null;
 });
 </script>
 

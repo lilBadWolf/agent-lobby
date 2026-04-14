@@ -187,6 +187,30 @@ struct LibraryTrackPayload {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct NewMediaLibraryTrackPayload {
+    path: String,
+    artist: Option<String>,
+    title: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    track_number: Option<String>,
+    media_type: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataReadResult {
+    artist: Option<String>,
+    title: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    track_number: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MediaLibraryState {
     folders: Vec<MediaLibraryFolderEntry>,
     tracks: Vec<MediaLibraryTrackEntry>,
@@ -214,6 +238,10 @@ fn load_media_library_state_internal(app: &tauri::AppHandle) -> Result<MediaLibr
         .map_err(|error| format!("Failed to read media library state: {}", error))?;
     serde_json::from_str(&contents)
         .map_err(|error| format!("Failed to parse media library state: {}", error))
+}
+
+fn normalize_library_path(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 fn save_media_library_state_internal(app: &tauri::AppHandle, state: &MediaLibraryState) -> Result<(), String> {
@@ -303,7 +331,7 @@ fn scan_media_library_folder(app: tauri::AppHandle, folder_path: String) -> Resu
                     .unwrap_or_default()
                     .to_string();
 
-                let (artist, title, album, year, genre, track_number) = if matches!(ext.to_ascii_lowercase().as_str(), "mp3" | "m4a" | "flac") {
+                let (artist, title, album, year, genre, track_number) = if matches!(ext.to_ascii_lowercase().as_str(), "mp3" | "m4a" | "flac" | "mp4" | "mov") {
                     metadata_from_audio(path)
                 } else {
                     (None, None, None, None, None, None)
@@ -400,6 +428,59 @@ fn scan_media_library_folder(app: tauri::AppHandle, folder_path: String) -> Resu
 fn library_add_tracks_to_playlist(app: tauri::AppHandle, tracks: Vec<LibraryTrackPayload>) -> Result<bool, String> {
     app.emit("media-library-add-to-playlist", tracks)
         .map_err(|error: tauri::Error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn lookup_media_library_track(app: tauri::AppHandle, path: String) -> Result<Option<MediaLibraryTrackEntry>, String> {
+    let normalized_path = normalize_library_path(&path);
+    let state = load_media_library_state_internal(&app)?;
+    Ok(state
+        .tracks
+        .into_iter()
+        .find(|track| normalize_library_path(&track.path) == normalized_path))
+}
+
+#[tauri::command]
+fn add_media_library_track(app: tauri::AppHandle, payload: NewMediaLibraryTrackPayload) -> Result<bool, String> {
+    let mut library_state = load_media_library_state_internal(&app)?;
+    let normalized_path = normalize_library_path(&payload.path);
+    let folder_path = PathBuf::from(&payload.path)
+        .parent()
+        .map(|parent| normalize_library_path(&parent.to_string_lossy()))
+        .unwrap_or_default();
+
+    let new_track = MediaLibraryTrackEntry {
+        id: normalized_path.clone(),
+        path: normalized_path.clone(),
+        name: payload.title.clone().unwrap_or_else(|| {
+            PathBuf::from(&normalized_path)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_string()
+        }),
+        folder_path,
+        media_type: payload.media_type.unwrap_or_else(|| "audio".to_string()),
+        artist: payload.artist,
+        title: payload.title,
+        album: payload.album,
+        year: payload.year,
+        genre: payload.genre,
+        track_number: payload.track_number,
+        duration: None,
+    };
+
+    let mut track_map = library_state
+        .tracks
+        .into_iter()
+        .map(|track| (track.path.clone(), track))
+        .collect::<std::collections::HashMap<_, _>>();
+    track_map.insert(new_track.path.clone(), new_track);
+    library_state.tracks = track_map.into_values().collect();
+
+    save_media_library_state_internal(&app, &library_state)
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
@@ -599,6 +680,12 @@ fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), Stri
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let raw_target = parts.nth(1).unwrap_or("");
+    if method == "OPTIONS" {
+        let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, OPTIONS\r\nAccess-Control-Allow-Headers: Range, Cache-Control, Content-Type\r\nAccess-Control-Max-Age: 86400\r\nConnection: close\r\n\r\n";
+        stream.write_all(response.as_bytes()).ok();
+        return Ok(());
+    }
+
     if method != "GET" {
         let response = "HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n";
         stream.write_all(response.as_bytes()).ok();
@@ -678,7 +765,7 @@ fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), Stri
     let content_type = guess_mime_type(&file_path);
 
     let mut response_headers = format!(
-        "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n",
+        "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Range, Cache-Control, Content-Type\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length\r\nConnection: close\r\n",
         status_line,
         content_type,
         content_length,
@@ -1065,7 +1152,7 @@ fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<
         .unwrap_or("")
         .to_lowercase();
 
-    if extension == "m4a" || extension == "mp4" {
+    if extension == "m4a" || extension == "mp4" || extension == "mov" || extension == "m4v" {
         let mut tag = Tag::new()
             .read_from_path(&normalized)
             .map_err(|error| format!("Failed to read M4A metadata: {}", error))?;
@@ -1108,6 +1195,37 @@ fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<
         fs::write(&path_buf, &output)
             .map_err(|error| format!("Failed to write MP3 metadata: {}", error))
     }
+}
+
+#[tauri::command]
+fn read_agentamp_metadata(path: String) -> Result<MetadataReadResult, String> {
+    let normalized = normalize_metadata_path(&path);
+    let path_buf = PathBuf::from(&normalized);
+
+    if !path_buf.exists() {
+        return Err(format!("File does not exist: {}", normalized));
+    }
+
+    let extension = path_buf
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let (artist, title, album, year, genre, track_number) = if matches!(extension.as_str(), "mp3" | "m4a" | "flac" | "mp4" | "mov" | "m4v") {
+        metadata_from_audio(&path_buf)
+    } else {
+        (None, None, None, None, None, None)
+    };
+
+    Ok(MetadataReadResult {
+        artist,
+        title,
+        album,
+        year,
+        genre,
+        track_number,
+    })
 }
 
 #[tauri::command]
@@ -1216,7 +1334,10 @@ pub fn run() {
             load_media_library_state,
             scan_media_library_folder,
             library_add_tracks_to_playlist,
+            lookup_media_library_track,
+            add_media_library_track,
             remove_media_library_folder,
+            read_agentamp_metadata,
             get_local_video_proxy_base_url
         ])
         .run(tauri::generate_context!())

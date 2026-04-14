@@ -179,6 +179,20 @@
               </div>
             </div>
           </div>
+          <div class="setting-row">
+            <label>AUTO-SCAN</label>
+            <select
+              v-model.number="localConfig.autoScanMediaLibraryMinutes"
+              id="set-media-library-autoscan"
+              :disabled="!localConfig.agentAmpEnabled"
+              @change="handleChange"
+            >
+              <option :value="0">OFF</option>
+              <option :value="10">10M</option>
+              <option :value="30">30M</option>
+              <option :value="60">1HR</option>
+            </select>
+          </div>
           <div v-if="libraryStatusMessage" class="media-library-status">
             {{ libraryStatusMessage }}
           </div>
@@ -554,6 +568,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     mediaSharing: config.mediaSharing ?? true,
     agentAmpDetached: config.agentAmpDetached ?? false,
     scanlines: config.scanlines ?? true,
+    autoScanMediaLibraryMinutes: config.autoScanMediaLibraryMinutes ?? 0,
     customSlashCommands: sanitizeCustomSlashCommands(config.customSlashCommands),
   };
 }

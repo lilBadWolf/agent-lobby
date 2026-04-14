@@ -31,7 +31,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "appimage", "nsis", "dmg"],
+    "targets": ["deb", "appimage", "nsis", "dmg", "app"],
     "createUpdaterArtifacts": true,
     "publisher": "The Company of Wolves",
     "resources": [

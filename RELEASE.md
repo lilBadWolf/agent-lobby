@@ -1,5 +1,14 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.6**
+
+- 🎵 **Playlist Track # column** now makes same-album sorting easier and more reliable.
+- 📅 **Year metadata is now normalized** in both playlist and media library editors, trimming dates like `2025-04-25` to `2025`.
+- 🧠 **Media library metadata loading fixed** so existing file `Year` tags populate the editor correctly.
+- 🔁 **Media library sorting is more stable** across rescans, preserving row order when values are equal.
+
+> This patch improves metadata editing accuracy and playlist/library sorting stability.
+
 🎉 **Release highlights for agent-lobby 0.4.5**
 
 - 📚 **New Media Library popout** for agentAMP: scan local folders, search by title/artist/album/genre, and add tracks directly to your playlist.

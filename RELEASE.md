@@ -1,10 +1,10 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.3**
+🎉 **Release highlights for agent-lobby 0.4.4**
 
-- 📄 **Added `.agentconf` file association support** for Agent Lobby settings files.
-- 🎵 **FLAC audio support** is now available for compatible sound assets.
-- 🧩 **Native file association and platform integration polish** improved overall desktop behavior.
-- 🧹 **Minor stability fixes** and code cleanup across the app.
+- 📌 **Pinned Twitch and YouTube streaming windows** now stay attached as pop-out views for easier multitasking.
+- 📺 **Improved YouTube pop-out handling** keeps playback responsive while preserving chat and multi-window layouts.
+- 📁 **Large file and batch file loading enhancements** now handle long imports more reliably, with far better progress feedback and fewer freezes.
+- 🧩 **Desktop UX polish** for pinned media windows and file queue management.
 
-> This release improves desktop integration and audio format support while polishing native file association behavior.
+> This release sharpens content workflow with pinned pop-out media, stronger large/batch file load support, and smoother desktop window behavior.

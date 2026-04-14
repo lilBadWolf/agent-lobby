@@ -998,7 +998,7 @@ async function closePinnedVideoWindow() {
   cleanupPinnedVideoPopupHeartbeat();
 }
 
-function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | null {
+function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | 'direct' {
   if (/\b(?:youtube\.com|youtu\.be)\b/i.test(url)) {
     return 'youtube';
   }
@@ -1007,14 +1007,53 @@ function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | null {
     return 'twitch';
   }
 
-  return null;
+  return 'direct';
 }
 
-function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch', url: string, title: string | undefined, currentTime?: number) {
+function isLocalFileSource(url: string): boolean {
+  const trimmed = url.trim();
+  return /^file:/i.test(trimmed)
+    || /^[a-zA-Z]:[\\/]/.test(trimmed)
+    || /^\\\\/.test(trimmed)
+    || /^\/\//.test(trimmed)
+    || /^\/[^/]/.test(trimmed);
+}
+
+function normalizeLocalFilePathForProxy(raw: string): string {
+  let normalized = raw.trim();
+  if (/^file:\/\/localhost\//i.test(normalized)) {
+    normalized = normalized.replace(/^file:\/\/localhost\//i, '');
+  } else if (/^file:\/\//i.test(normalized)) {
+    normalized = normalized.replace(/^file:\/\//i, '');
+  }
+  return normalized.replace(/\\/g, '/');
+}
+
+async function getLocalPinnedVideoProxyUrl(url: string): Promise<string> {
+  const proxyBaseUrl = await invoke<string>('get_local_video_proxy_base_url');
+  const normalizedPath = normalizeLocalFilePathForProxy(url);
+  return `${proxyBaseUrl}/local-video?path=${encodeURIComponent(normalizedPath)}`;
+}
+
+async function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch' | 'direct', url: string, title: string | undefined, currentTime?: number) {
   const popupUrl = new URL(window.location.href);
   popupUrl.searchParams.set('view', 'pinned-video');
   popupUrl.searchParams.set('sourceType', sourceType);
-  popupUrl.searchParams.set('url', url);
+
+  if (sourceType === 'direct') {
+    let directUrl = url;
+    if (hasTauriWindow && isLocalFileSource(url)) {
+      try {
+        directUrl = await getLocalPinnedVideoProxyUrl(url);
+      } catch {
+        directUrl = url;
+      }
+    }
+    popupUrl.searchParams.set('url', directUrl);
+  } else {
+    popupUrl.searchParams.set('url', url);
+  }
+
   if (title) {
     popupUrl.searchParams.set('title', title);
   }
@@ -1025,15 +1064,20 @@ function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch', url: string, t
 }
 
 async function openPinnedVideoWindow() {
-  const pinned = currentChatPinnedMedia.value;
+  const pinned = currentChatPinnedMedia.value ?? (agentAmpPinnedVideo.value
+    ? {
+        url: agentAmpPinnedVideo.value.src,
+        label: agentAmpPinnedVideo.value.title,
+        currentTime: agentAmpPinnedVideo.value.currentTime,
+        mediaType: 'video' as const,
+      }
+    : null);
+
   if (!pinned || pinned.mediaType !== 'video' || !pinned.url) {
     return;
   }
 
   const sourceType = getPinnedVideoSourceType(pinned.url);
-  if (!sourceType) {
-    return;
-  }
 
   const focused = await focusPinnedVideoWindow();
   if (focused) {
@@ -1044,7 +1088,7 @@ async function openPinnedVideoWindow() {
 
   if (hasTauriWindow) {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const pinnedVideoWindowUrl = getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime);
+    const pinnedVideoWindowUrl = await getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime);
 
     const windowHandle = new WebviewWindow(PINNED_VIDEO_WINDOW_LABEL, {
       url: pinnedVideoWindowUrl,
@@ -1085,7 +1129,7 @@ async function openPinnedVideoWindow() {
     'resizable=yes',
   ].join(',');
 
-  pinnedVideoPopupWindow = window.open(getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime), 'agent-lobby-pinned-video', popupFeatures);
+  pinnedVideoPopupWindow = window.open(await getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime), 'agent-lobby-pinned-video', popupFeatures);
   if (!pinnedVideoPopupWindow) {
     pinnedVideoDetached.value = false;
     return;

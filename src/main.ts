@@ -19,4 +19,6 @@ if (typeof document !== 'undefined') {
 
 createApp(isDMWindow ? DMWindowApp : isAgentAmpWindow ? AgentAmpWindowApp : isPinnedVideoWindow ? PinnedVideoWindowApp : App).mount("#app");
 
-void runAutoUpdater();
+if (!isPinnedVideoWindow) {
+  void runAutoUpdater();
+}

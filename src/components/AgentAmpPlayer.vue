@@ -1597,6 +1597,36 @@ async function getTauriConvertFileSrc() {
   return tauriConvertFileSrcPromise;
 }
 
+const TRACK_METADATA_RANGE_HEAD = 256 * 1024;
+const TRACK_METADATA_RANGE_TAIL = 128;
+
+async function fetchTrackRangeBytes(sourceUrl: string, rangeHeader: string): Promise<Uint8Array | null> {
+  try {
+    const headers = new Headers({ 'cache-control': 'no-cache' });
+    headers.set('Range', rangeHeader);
+
+    const response = await fetch(sourceUrl, { cache: 'no-store', headers });
+    if (!response.ok) {
+      return null;
+    }
+
+    if (response.status === 206) {
+      const arrayBuffer = await response.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    }
+
+    const contentLength = Number(response.headers.get('content-length'));
+    if (response.status === 200 && Number.isFinite(contentLength) && contentLength <= TRACK_METADATA_RANGE_HEAD) {
+      const arrayBuffer = await response.arrayBuffer();
+      return new Uint8Array(arrayBuffer);
+    }
+  } catch {
+    // Ignore range fetch failures and fall back to browser metadata loading.
+  }
+
+  return null;
+}
+
 async function getTauriFs() {
   if (!isTauriRuntime()) {
     return null;
@@ -1650,36 +1680,6 @@ function getMediaTypeFromFile(file: File): 'audio' | 'video' {
     return 'video';
   }
   return 'audio';
-}
-
-function getTrackBlobMimeType(track: PlaylistTrack): string {
-  const explicitMimeType = getTrackMimeType(track);
-  if (explicitMimeType) {
-    return explicitMimeType;
-  }
-
-  const mediaType = track.mediaType !== undefined
-    ? track.mediaType
-    : (isVideoPath(track.location) ? 'video' : 'audio');
-  const lowerPath = track.location.toLowerCase();
-
-  if (lowerPath.endsWith('.webm')) {
-    return mediaType === 'video' ? 'video/webm' : 'audio/webm';
-  }
-
-  if (lowerPath.endsWith('.mov')) {
-    return 'video/quicktime';
-  }
-
-  if (lowerPath.endsWith('.mp4')) {
-    return mediaType === 'video' ? 'video/mp4' : 'audio/mp4';
-  }
-
-  if (lowerPath.endsWith('.flac')) {
-    return 'audio/flac';
-  }
-
-  return mediaType === 'video' ? 'video/mp4' : 'audio/mpeg';
 }
 
 async function addTracksFromPaths(paths: string[]) {
@@ -1745,54 +1745,53 @@ async function loadTrackMetadata(track: PlaylistTrack): Promise<void> {
 
   let metadataSourceUrl: string | null = null;
   let bytes: Uint8Array | null = null;
-  let arrayBuffer: ArrayBuffer | null = null;
 
   try {
-    const response = await fetch(sourceUrl, { cache: 'no-store' });
-    if (!response.ok) {
-      return;
-    }
+    if (!isVideoTrack) {
+      const isM4a = isM4aTrack(track);
+      const isFlac = isFlacTrack(track);
+      let metadata = null as ({ artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null);
 
-    arrayBuffer = await response.arrayBuffer();
-    bytes = new Uint8Array(arrayBuffer);
-    const isM4a = isM4aTrack(track);
-    const isFlac = isFlacTrack(track);
-    const metadata = !isVideoTrack
-      ? (isM4a ? parseMp4Metadata(bytes) : isFlac ? parseFlacMetadata(bytes) : parseMp3Metadata(bytes))
-      : null;
+      bytes = await fetchTrackRangeBytes(sourceUrl, `bytes=0-${TRACK_METADATA_RANGE_HEAD - 1}`);
+      if (bytes) {
+        metadata = isM4a ? parseMp4Metadata(bytes) : isFlac ? parseFlacMetadata(bytes) : parseId3v2(bytes);
+      }
 
-    if (metadata) {
-      const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
+      if (!metadata && !isM4a && !isFlac) {
+        const tailBytes = await fetchTrackRangeBytes(sourceUrl, `bytes=-${TRACK_METADATA_RANGE_TAIL}`);
+        if (tailBytes) {
+          metadata = parseId3v1(tailBytes);
+        }
+      }
 
-      console.log(
-        `[AgentAmp] metadata found for ${track.name}: artist=${metadata.artist ?? 'missing'}, title=${metadata.title ?? 'missing'}, album=${metadata.album ?? 'missing'}, year=${metadata.year ?? 'missing'}, genre=${metadata.genre ?? 'missing'}, trackNumber=${metadata.trackNumber ?? 'missing'}`
-      );
+      if (metadata) {
+        const reactiveTrack = playlist.value.find((entry) => entry.id === track.id) ?? track;
 
-      if (metadata.artist) {
-        reactiveTrack.artist = metadata.artist;
-      }
-      if (metadata.title) {
-        reactiveTrack.title = metadata.title;
-      }
-      if (metadata.album) {
-        reactiveTrack.album = metadata.album;
-      }
-      if (metadata.year) {
-        reactiveTrack.year = metadata.year;
-      }
-      if (metadata.genre) {
-        reactiveTrack.genre = metadata.genre;
-      }
-      if (metadata.trackNumber) {
-        reactiveTrack.trackNumber = metadata.trackNumber;
-      }
-    } else {
-      console.log(`[AgentAmp] no metadata found for ${track.name}`);
-    }
+        console.log(
+          `[AgentAmp] metadata found for ${track.name}: artist=${metadata.artist ?? 'missing'}, title=${metadata.title ?? 'missing'}, album=${metadata.album ?? 'missing'}, year=${metadata.year ?? 'missing'}, genre=${metadata.genre ?? 'missing'}, trackNumber=${metadata.trackNumber ?? 'missing'}`
+        );
 
-    if (!track.duration || track.duration <= 0) {
-      const blobType = getTrackBlobMimeType(track);
-      metadataSourceUrl = arrayBuffer ? URL.createObjectURL(new Blob([arrayBuffer], { type: blobType })) : null;
+        if (metadata.artist) {
+          reactiveTrack.artist = metadata.artist;
+        }
+        if (metadata.title) {
+          reactiveTrack.title = metadata.title;
+        }
+        if (metadata.album) {
+          reactiveTrack.album = metadata.album;
+        }
+        if (metadata.year) {
+          reactiveTrack.year = metadata.year;
+        }
+        if (metadata.genre) {
+          reactiveTrack.genre = metadata.genre;
+        }
+        if (metadata.trackNumber) {
+          reactiveTrack.trackNumber = metadata.trackNumber;
+        }
+      } else {
+        console.log(`[AgentAmp] no metadata found for ${track.name}`);
+      }
     }
   } catch (error) {
     console.log(`[AgentAmp] failed to read metadata for ${track.name}`, error);
@@ -2218,19 +2217,26 @@ function parseFlacMetadata(data: Uint8Array): { artist?: string; title?: string;
   return null;
 }
 
-function parseMp3Metadata(data: Uint8Array): { artist?: string; title?: string; album?: string; year?: string; genre?: string; trackNumber?: string } | null {
-  const parsed = parseId3v2(data);
-  if (parsed && (parsed.artist || parsed.title || parsed.album || parsed.year || parsed.genre || parsed.trackNumber)) {
-    return parsed;
-  }
-
-  return parseId3v1(data);
-}
-
 async function loadPlaylistMetadata(tracks: PlaylistTrack[]) {
+  const maxConcurrent = 3;
+  const pending: Array<Promise<void>> = [];
+
   for (const track of tracks) {
-    await loadTrackMetadata(track);
+    const task = loadTrackMetadata(track).finally(() => {
+      const index = pending.indexOf(task);
+      if (index >= 0) {
+        pending.splice(index, 1);
+      }
+    });
+
+    pending.push(task);
+
+    if (pending.length >= maxConcurrent) {
+      await Promise.race(pending);
+    }
   }
+
+  await Promise.all(pending);
 }
 
 function isPlaylistPath(path: string): boolean {

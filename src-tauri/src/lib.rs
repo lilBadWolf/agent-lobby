@@ -3,8 +3,11 @@ use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Emitter, Manager, UserAttentionType};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 
 #[cfg(not(dev))]
 use tauri::{ipc::CapabilityBuilder, Url, WebviewUrl, WebviewWindowBuilder};
@@ -281,6 +284,256 @@ fn open_folder_in_os(path: &Path) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+struct LocalVideoProxy {
+    port: u16,
+}
+
+impl LocalVideoProxy {
+    fn start() -> Result<Self, String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|error| format!("Failed to bind local video proxy: {}", error))?;
+        let port = listener
+            .local_addr()
+            .map_err(|error| format!("Failed to get local video proxy port: {}", error))?
+            .port();
+
+        thread::Builder::new()
+            .name("local-video-proxy".to_string())
+            .spawn(move || {
+                for stream in listener.incoming() {
+                    if let Ok(stream) = stream {
+                        let _ = handle_local_video_proxy_connection(stream);
+                    }
+                }
+            })
+            .map_err(|error| format!("Failed to start local video proxy thread: {}", error))?;
+
+        Ok(Self { port })
+    }
+}
+
+fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), String> {
+    let mut buffer = [0_u8; 8192];
+    let read_bytes = stream
+        .read(&mut buffer)
+        .map_err(|_| "Failed to read request".to_string())?;
+    if read_bytes == 0 {
+        return Ok(());
+    }
+
+    let request = String::from_utf8_lossy(&buffer[..read_bytes]);
+    let mut lines = request.lines();
+    let request_line = lines
+        .next()
+        .ok_or_else(|| "Invalid HTTP request".to_string())?;
+
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let raw_target = parts.nth(1).unwrap_or("");
+    if method != "GET" {
+        let response = "HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n";
+        stream.write_all(response.as_bytes()).ok();
+        return Ok(());
+    }
+
+    let (path, query) = if let Some((path, query)) = raw_target.split_once('?') {
+        (path, query)
+    } else {
+        (raw_target, "")
+    };
+
+    if path != "/local-video" {
+        let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
+        stream.write_all(response.as_bytes()).ok();
+        return Ok(());
+    }
+
+    let headers = parse_http_headers(lines);
+    let query_params = parse_query_params(query);
+    let raw_path = match query_params.get("path") {
+        Some(path) => path,
+        None => {
+            let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nMissing path";
+            stream.write_all(response.as_bytes()).ok();
+            return Ok(());
+        }
+    };
+
+    let file_path = match normalize_local_file_path(raw_path) {
+        Some(path) => path,
+        None => {
+            let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nInvalid path";
+            stream.write_all(response.as_bytes()).ok();
+            return Ok(());
+        }
+    };
+
+    let mut file = std::fs::File::open(&file_path)
+        .map_err(|_| "Failed to open local video file".to_string())?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "Failed to read local video metadata".to_string())?;
+
+    if !metadata.is_file() {
+        let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\nFile not found";
+        stream.write_all(response.as_bytes()).ok();
+        return Ok(());
+    }
+
+    let file_size = metadata.len();
+    let range_header = headers.get("range").map(|value| value.as_str());
+    let (status_line, start, end) = match range_header {
+        Some(range_value) if range_value.starts_with("bytes=") => {
+            if let Some((start_str, end_str)) = range_value[6..].split_once('-') {
+                let start = start_str.parse::<u64>().unwrap_or(0);
+                let end = if end_str.is_empty() {
+                    file_size.saturating_sub(1)
+                } else {
+                    end_str.parse::<u64>().unwrap_or(file_size.saturating_sub(1))
+                };
+                let end = end.min(file_size.saturating_sub(1));
+                if start > end || start >= file_size {
+                    let response = "HTTP/1.1 416 Range Not Satisfiable\r\nConnection: close\r\n\r\n";
+                    stream.write_all(response.as_bytes()).ok();
+                    return Ok(());
+                }
+                ("HTTP/1.1 206 Partial Content", start, end)
+            } else {
+                ("HTTP/1.1 200 OK", 0, file_size.saturating_sub(1))
+            }
+        }
+        _ => ("HTTP/1.1 200 OK", 0, file_size.saturating_sub(1)),
+    };
+
+    let content_length = end.saturating_sub(start).saturating_add(1);
+    let content_type = guess_mime_type(&file_path);
+
+    let mut response_headers = format!(
+        "{}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n",
+        status_line,
+        content_type,
+        content_length,
+    );
+
+    if status_line.starts_with("HTTP/1.1 206") {
+        response_headers.push_str(&format!(
+            "Content-Range: bytes {}-{}/{}\r\n",
+            start, end, file_size
+        ));
+    }
+
+    response_headers.push_str("\r\n");
+    stream.write_all(response_headers.as_bytes()).map_err(|_| "Failed to write response headers".to_string())?;
+    file.seek(SeekFrom::Start(start)).map_err(|_| "Failed to seek local video file".to_string())?;
+    let mut limited_reader = file.take(content_length);
+    std::io::copy(&mut limited_reader, &mut stream)
+        .map_err(|_| "Failed to stream local video file".to_string())?;
+
+    Ok(())
+}
+
+fn parse_http_headers<'a, I>(lines: I) -> std::collections::HashMap<String, String>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut headers = std::collections::HashMap::new();
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = trimmed.split_once(':') {
+            headers.insert(name.to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+    headers
+}
+
+fn parse_query_params(query: &str) -> std::collections::HashMap<String, String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| (percent_decode(key), percent_decode(value)))
+        .collect()
+}
+
+fn percent_decode(value: &str) -> String {
+    let mut decoded = String::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                if let (Some(high), Some(low)) = (from_hex_digit(bytes[index + 1]), from_hex_digit(bytes[index + 2])) {
+                    decoded.push((high << 4 | low) as char);
+                    index += 3;
+                    continue;
+                }
+                decoded.push('%');
+                index += 1;
+            }
+            b'+' => {
+                decoded.push(' ');
+                index += 1;
+            }
+            byte => {
+                decoded.push(byte as char);
+                index += 1;
+            }
+        }
+    }
+
+    decoded
+}
+
+fn from_hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn normalize_local_file_path(raw: &str) -> Option<PathBuf> {
+    let trimmed = raw.trim();
+    let normalized = if let Some(stripped) = trimmed.strip_prefix("file://localhost/") {
+        stripped
+    } else if let Some(stripped) = trimmed.strip_prefix("file:///") {
+        stripped
+    } else if let Some(stripped) = trimmed.strip_prefix("file://") {
+        stripped
+    } else {
+        trimmed
+    };
+
+    let separator = std::path::MAIN_SEPARATOR.to_string();
+    let normalized = normalized.replace('/', &separator);
+    let normalized = normalized.replace('\\', &separator);
+    let path = PathBuf::from(normalized);
+    if path.is_absolute() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn guess_mime_type(path: &Path) -> &'static str {
+    match path.extension().and_then(|ext| ext.to_str()).map(|ext| ext.to_ascii_lowercase()) {
+        Some(ext) if ext == "mp4" => "video/mp4",
+        Some(ext) if ext == "mov" => "video/quicktime",
+        Some(ext) if ext == "webm" => "video/webm",
+        Some(ext) if ext == "mkv" => "video/x-matroska",
+        Some(ext) if ext == "mp3" => "audio/mpeg",
+        Some(ext) if ext == "m4a" => "audio/mp4",
+        Some(ext) if ext == "wav" => "audio/wav",
+        Some(ext) if ext == "ogg" => "audio/ogg",
+        Some(ext) if ext == "ogv" => "video/ogg",
+        _ => "application/octet-stream",
+    }
 }
 
 #[tauri::command]
@@ -590,11 +843,18 @@ fn save_agentamp_metadata(path: String, metadata: MetadataEditFields) -> Result<
     }
 }
 
+#[tauri::command]
+fn get_local_video_proxy_base_url(state: tauri::State<'_, LocalVideoProxy>) -> String {
+    format!("http://localhost:{}", state.port)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let port = portpicker::pick_unused_port().expect("failed to find unused port");
+    let local_video_proxy = LocalVideoProxy::start().expect("failed to start local video proxy");
 
     tauri::Builder::default()
+        .manage(local_video_proxy)
         .plugin(tauri_plugin_localhost::Builder::new(port).build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_fs::init())
@@ -685,7 +945,8 @@ pub fn run() {
             discover_custom_assets,
             open_themes_folder,
             open_soundpacks_folder,
-            save_agentamp_metadata
+            save_agentamp_metadata,
+            get_local_video_proxy_base_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

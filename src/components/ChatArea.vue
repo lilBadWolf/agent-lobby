@@ -121,17 +121,17 @@
         ></iframe>
       </div>
     </div>
-    <div v-else-if="props.agentAmpPinnedVideo" class="pinned-video-panel">
+    <div v-else-if="props.agentAmpPinnedVideo && !props.pinnedVideoDetached" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ props.agentAmpPinnedVideo.title }}</span>
         <div class="pinned-video-actions">
           <button
             class="video-control-btn"
             type="button"
-            @click="emit('agentAmpDockToggle')"
-            :aria-label="props.agentAmpDetached ? 'Repin agent amp' : 'Pop out agent amp'"
+            @click="emit('togglePinnedVideoPopup')"
+            :aria-label="props.pinnedVideoDetached ? 'Repin pinned video' : 'Pop out pinned video'"
           >
-            {{ props.agentAmpDetached ? 'REPIN' : 'POP OUT' }}
+            {{ props.pinnedVideoDetached ? 'REPIN' : 'POP OUT' }}
           </button>
         </div>
       </div>

@@ -25,6 +25,17 @@
           referrerpolicy="strict-origin"
         ></iframe>
       </template>
+      <template v-else-if="sourceType === 'direct' && url">
+        <video
+          ref="directVideoElement"
+          class="pinned-video-frame"
+          :src="directVideoSrc"
+          autoplay
+          controls
+          playsinline
+          @loadedmetadata="syncDirectVideoTime"
+        ></video>
+      </template>
       <template v-else>
         <div class="pinned-video-empty">
           <p>Unsupported pinned video source.</p>
@@ -36,10 +47,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const params = new URLSearchParams(window.location.search);
-const sourceType = (params.get('sourceType') as 'youtube' | 'twitch' | null) ?? null;
+const sourceType = (params.get('sourceType') as 'youtube' | 'twitch' | 'direct' | null) ?? null;
 const url = params.get('url') ?? '';
 const title = params.get('title') ?? 'Pinned Video';
 const currentTime = Number(params.get('currentTime'));
@@ -105,12 +116,39 @@ const videoId = computed(() => {
   return getYouTubeVideoId(url);
 });
 
+const directVideoSrc = computed(() => {
+  if (sourceType !== 'direct' || !url) {
+    return '';
+  }
+
+  const trimmed = url.trim();
+
+  if (/^(https?:|file:|blob:|data:)/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    return `file:///${trimmed.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+  }
+
+  const uncMatch = trimmed.match(/^([\\/]{2,})([^\\/]+)([\\/].*)$/);
+  if (uncMatch) {
+    const hostname = uncMatch[2];
+    const path = uncMatch[3].replace(/\\/g, '/');
+    return `file://${hostname}${path}`;
+  }
+
+  return trimmed;
+});
+
 const channel = computed(() => {
   if (sourceType !== 'twitch') {
     return null;
   }
   return getTwitchChannelName(url);
 });
+
+const directVideoElement = ref<HTMLVideoElement | null>(null);
 
 const youtubeEmbedUrl = computed(() => {
   if (!videoId.value) {
@@ -126,6 +164,28 @@ const youtubeEmbedUrl = computed(() => {
     embedUrl.searchParams.set('start', String(Math.floor(currentTime)));
   }
   return embedUrl.toString();
+});
+
+function syncDirectVideoTime() {
+  if (!directVideoElement.value || !Number.isFinite(currentTime) || currentTime <= 0) {
+    return;
+  }
+
+  try {
+    if (directVideoElement.value.duration > 0) {
+      directVideoElement.value.currentTime = Math.min(currentTime, directVideoElement.value.duration);
+    }
+  } catch {
+    // Ignore if the browser refuses to seek.
+  }
+}
+
+onMounted(() => {
+  if (sourceType === 'direct' && directVideoElement.value && Number.isFinite(currentTime) && currentTime > 0) {
+    if (directVideoElement.value.readyState >= 1) {
+      syncDirectVideoTime();
+    }
+  }
 });
 
 const twitchEmbedUrl = computed(() => {

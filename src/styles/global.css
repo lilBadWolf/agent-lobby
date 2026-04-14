@@ -153,14 +153,17 @@ body > #app {
 }
 
 html[data-app-view='agentamp'],
-body[data-app-view='agentamp'] {
+body[data-app-view='agentamp'],
+html[data-app-view='pinned-video'],
+body[data-app-view='pinned-video'] {
   min-height: 100vh;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
 }
 
-body[data-app-view='agentamp'] > #app {
+body[data-app-view='agentamp'] > #app,
+body[data-app-view='pinned-video'] > #app {
   height: 100%;
   min-height: 0;
 }

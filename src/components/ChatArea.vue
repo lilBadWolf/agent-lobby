@@ -1,6 +1,6 @@
 <template>
   <section id="chat-area" ref="chatAreaEl">
-    <div v-if="pinnedYouTubeEmbed" class="pinned-video-panel">
+    <div v-if="pinnedYouTubeEmbed && !props.pinnedVideoDetached" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ getYouTubeEmbedHeader(pinnedYouTubeEmbed.url) }}</span>
         <div class="pinned-video-actions">
@@ -9,6 +9,9 @@
           </button>
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">
             &gt;
+          </button>
+          <button class="video-control-btn" type="button" @click="emit('togglePinnedVideoPopup')">
+            {{ props.pinnedVideoDetached ? 'REPIN' : 'POP OUT' }}
           </button>
           <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">
             UNPIN
@@ -88,12 +91,15 @@
         </div>
       </div>
     </div>
-    <div v-else-if="pinnedTwitchEmbed" class="pinned-video-panel">
+    <div v-else-if="pinnedTwitchEmbed && !props.pinnedVideoDetached" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ getTwitchEmbedHeader(pinnedTwitchEmbed.url) }}</span>
         <div class="pinned-video-actions">
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Previous video" @click="goToPreviousPinnedVideo">&lt;</button>
           <button class="video-control-btn pinned-video-nav-btn" type="button" aria-label="Next video" @click="goToNextPinnedVideo">&gt;</button>
+          <button class="video-control-btn" type="button" @click="emit('togglePinnedVideoPopup')">
+            {{ props.pinnedVideoDetached ? 'REPIN' : 'POP OUT' }}
+          </button>
           <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">UNPIN</button>
         </div>
       </div>
@@ -118,6 +124,16 @@
     <div v-else-if="props.agentAmpPinnedVideo" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ props.agentAmpPinnedVideo.title }}</span>
+        <div class="pinned-video-actions">
+          <button
+            class="video-control-btn"
+            type="button"
+            @click="emit('agentAmpDockToggle')"
+            :aria-label="props.agentAmpDetached ? 'Repin agent amp' : 'Pop out agent amp'"
+          >
+            {{ props.agentAmpDetached ? 'REPIN' : 'POP OUT' }}
+          </button>
+        </div>
       </div>
       <div
         class="video-player-shell pinned-video-shell"
@@ -520,6 +536,8 @@ const props = defineProps<{
   defaultLobbyId?: string;
   mentionRequest?: { username: string; nonce: number } | null;
   agentAmpPinnedVideo?: AgentAmpPinnedVideo | null;
+  agentAmpDetached?: boolean;
+  pinnedVideoDetached?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -529,6 +547,8 @@ const emit = defineEmits<{
   switchLobby: [lobbyId: string];
   closeLobby: [lobbyId: string];
   agentAmpStop: [];
+  agentAmpDockToggle: [];
+  togglePinnedVideoPopup: [];
   pinnedVideoChange: [media: ActiveMedia | null];
 }>();
 
@@ -698,7 +718,8 @@ function getTwitchEmbedParents(): string[] {
 function getTwitchEmbedSrc(channel: string): string {
   const params = new URLSearchParams();
   params.set('channel', channel);
-  params.set('muted', 'true');
+  params.set('autoplay', 'true');
+  params.set('muted', 'false');
   getTwitchEmbedParents().forEach((parent) => params.append('parent', parent));
   return `https://player.twitch.tv/?${params.toString()}`;
 }
@@ -1927,7 +1948,16 @@ function getYouTubeEmbedHeader(url: string): string {
 }
 
 function getTwitchEmbedHeader(url: string): string {
-  return twitchTitleCache.value[url] || url;
+  if (twitchTitleCache.value[url]) {
+    return twitchTitleCache.value[url];
+  }
+
+  const channel = getTwitchChannelName(url);
+  if (channel) {
+    return `Twitch: ${channel}`;
+  }
+
+  return url;
 }
 
 function extractRawHttpUrls(text: string): string[] {
@@ -1969,19 +1999,12 @@ async function ensureTwitchTitle(url: string): Promise<void> {
   twitchTitleRequests.add(url);
 
   try {
-    const endpoint = `https://api.twitch.tv/v5/oembed?url=${encodeURIComponent(url)}`;
-    const response = await fetch(endpoint);
-
-    if (!response.ok) {
+    const channel = getTwitchChannelName(url);
+    if (!channel) {
       return;
     }
 
-    const data = await response.json() as { title?: unknown };
-    if (typeof data.title === 'string' && data.title.trim()) {
-      twitchTitleCache.value[url] = data.title.trim();
-    }
-  } catch {
-    // Ignore network and CORS failures; header falls back to URL.
+    twitchTitleCache.value[url] = `Twitch: ${channel}`;
   } finally {
     twitchTitleRequests.delete(url);
   }

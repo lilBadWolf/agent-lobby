@@ -89,7 +89,11 @@
           :default-lobby-id="networkConfig.defaultLobby"
           :mention-request="mentionRequest"
           :agent-amp-pinned-video="agentAmpPinnedVideo"
+          :agent-amp-detached="config.agentAmpDetached"
+          :pinned-video-detached="pinnedVideoDetached"
           @pinned-video-change="handlePinnedVideoChange"
+          @agent-amp-dock-toggle="handleToggleAgentAmpDock"
+          @toggle-pinned-video-popup="handleTogglePinnedVideoPopup"
           @send="handleChatSend"
           @join-lobby="handleJoinLobby"
           @switch-lobby="handleSwitchLobby"
@@ -497,6 +501,12 @@ let agentAmpStatusChannel: BroadcastChannel | null = null;
 let agentAmpActionChannel: BroadcastChannel | null = null;
 let cleanupAgentAmpStorageListener: (() => void) | null = null;
 const agentAmpPinnedVideo = ref<AgentAmpPinnedVideo | null>(null);
+const pinnedVideoDetached = ref(false);
+const PINNED_VIDEO_WINDOW_LABEL = 'pinned-video-window';
+const PINNED_VIDEO_ACTION_CHANNEL = 'agent-lobby-pinned-video-action';
+let pinnedVideoPopupWindow: Window | null = null;
+let pinnedVideoPopupWatchIntervalId: number | null = null;
+let pinnedVideoActionChannel: BroadcastChannel | null = null;
 const chatAreaRef = ref<any>(null);
 const currentAgentAmpMedia = ref<ActiveMedia | null>(null);
 const currentChatPinnedMedia = ref<ActiveMedia | null>(null);
@@ -888,6 +898,19 @@ function handleAgentAmpActionMessage(event: MessageEvent) {
   updateSettings();
 }
 
+function handlePinnedVideoPopupMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const message = event.data as { type?: string; action?: string };
+  if (message?.type !== 'pinned-video-action' || message.action !== 'repin') {
+    return;
+  }
+
+  void closePinnedVideoWindow();
+}
+
 function handlePinnedVideoChange(media: ActiveMedia | null) {
   currentChatPinnedMedia.value = media ? { ...media, mediaType: media.mediaType ?? 'video' } : null;
 }
@@ -899,6 +922,216 @@ function handlePinUserMedia(payload: { url: string; currentTime?: number }) {
 
   console.debug('[App] handlePinUserMedia', payload);
   chatAreaRef.value?.pinMediaUrl?.(payload);
+}
+
+function startPinnedVideoPopupHeartbeat() {
+  if (pinnedVideoPopupWatchIntervalId !== null) {
+    return;
+  }
+
+  pinnedVideoPopupWatchIntervalId = window.setInterval(() => {
+    if (pinnedVideoPopupWindow?.closed) {
+      pinnedVideoPopupWindow = null;
+      window.clearInterval(pinnedVideoPopupWatchIntervalId!);
+      pinnedVideoPopupWatchIntervalId = null;
+      pinnedVideoDetached.value = false;
+    }
+  }, 750);
+}
+
+function cleanupPinnedVideoPopupHeartbeat() {
+  if (pinnedVideoPopupWatchIntervalId !== null) {
+    window.clearInterval(pinnedVideoPopupWatchIntervalId);
+    pinnedVideoPopupWatchIntervalId = null;
+  }
+}
+
+async function focusPinnedVideoWindow(): Promise<boolean> {
+  if (hasTauriWindow) {
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const existingWindow = await WebviewWindow.getByLabel(PINNED_VIDEO_WINDOW_LABEL);
+      if (!existingWindow) {
+        return false;
+      }
+
+      if (await existingWindow.isMinimized()) {
+        await existingWindow.unminimize();
+      }
+
+      await existingWindow.show();
+      await existingWindow.setFocus();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (pinnedVideoPopupWindow && !pinnedVideoPopupWindow.closed) {
+    pinnedVideoPopupWindow.focus();
+    return true;
+  }
+
+  return false;
+}
+
+async function closePinnedVideoWindow() {
+  pinnedVideoDetached.value = false;
+
+  if (hasTauriWindow) {
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const existingWindow = await WebviewWindow.getByLabel(PINNED_VIDEO_WINDOW_LABEL);
+      if (existingWindow) {
+        await existingWindow.close();
+      }
+    } catch {
+      // Ignore close failures.
+    }
+  }
+
+  if (pinnedVideoPopupWindow && !pinnedVideoPopupWindow.closed) {
+    pinnedVideoPopupWindow.close();
+  }
+
+  pinnedVideoPopupWindow = null;
+  cleanupPinnedVideoPopupHeartbeat();
+}
+
+function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | null {
+  if (/\b(?:youtube\.com|youtu\.be)\b/i.test(url)) {
+    return 'youtube';
+  }
+
+  if (/\b(?:twitch\.tv)\b/i.test(url)) {
+    return 'twitch';
+  }
+
+  return null;
+}
+
+function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch', url: string, title: string | undefined, currentTime?: number) {
+  const popupUrl = new URL(window.location.href);
+  popupUrl.searchParams.set('view', 'pinned-video');
+  popupUrl.searchParams.set('sourceType', sourceType);
+  popupUrl.searchParams.set('url', url);
+  if (title) {
+    popupUrl.searchParams.set('title', title);
+  }
+  if (sourceType === 'youtube' && typeof currentTime === 'number') {
+    popupUrl.searchParams.set('currentTime', String(Math.floor(currentTime)));
+  }
+  return popupUrl.toString();
+}
+
+async function openPinnedVideoWindow() {
+  const pinned = currentChatPinnedMedia.value;
+  if (!pinned || pinned.mediaType !== 'video' || !pinned.url) {
+    return;
+  }
+
+  const sourceType = getPinnedVideoSourceType(pinned.url);
+  if (!sourceType) {
+    return;
+  }
+
+  const focused = await focusPinnedVideoWindow();
+  if (focused) {
+    return;
+  }
+
+  pinnedVideoDetached.value = true;
+
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const pinnedVideoWindowUrl = getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime);
+
+    const windowHandle = new WebviewWindow(PINNED_VIDEO_WINDOW_LABEL, {
+      url: pinnedVideoWindowUrl,
+      title: 'PINNED VIDEO',
+      width: 860,
+      height: 520,
+      minWidth: 560,
+      minHeight: 320,
+      center: true,
+      resizable: true,
+      decorations: false,
+      transparent: false,
+      useHttpsScheme: true,
+      dragDropEnabled: false,
+    });
+
+    windowHandle.once('tauri://created', () => {
+      void focusPinnedVideoWindow();
+    });
+
+    windowHandle.once('tauri://destroyed', () => {
+      pinnedVideoDetached.value = false;
+      cleanupPinnedVideoPopupHeartbeat();
+    });
+
+    return;
+  }
+
+  const popupFeatures = [
+    'popup=yes',
+    `width=${AGENTAMP_WINDOW_DEFAULT_WIDTH}`,
+    `height=${AGENTAMP_WINDOW_DEFAULT_HEIGHT}`,
+    'toolbar=no',
+    'menubar=no',
+    'location=no',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+  ].join(',');
+
+  pinnedVideoPopupWindow = window.open(getPinnedVideoPopupUrl(sourceType, pinned.url, pinned.label, pinned.currentTime), 'agent-lobby-pinned-video', popupFeatures);
+  if (!pinnedVideoPopupWindow) {
+    pinnedVideoDetached.value = false;
+    return;
+  }
+
+  startPinnedVideoPopupHeartbeat();
+}
+
+function handleTogglePinnedVideoPopup() {
+  if (pinnedVideoDetached.value) {
+    void closePinnedVideoWindow();
+    return;
+  }
+
+  void openPinnedVideoWindow();
+}
+
+function initializePinnedVideoActionBridge() {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('message', handlePinnedVideoPopupMessage);
+  }
+
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  pinnedVideoActionChannel = new BroadcastChannel(PINNED_VIDEO_ACTION_CHANNEL);
+  pinnedVideoActionChannel.onmessage = (event: MessageEvent) => {
+    const message = event.data as { type?: string; action?: string };
+    if (message?.type !== 'pinned-video-action' || message.action !== 'repin') {
+      return;
+    }
+
+    void closePinnedVideoWindow();
+  };
+}
+
+function teardownPinnedVideoActionBridge() {
+  if (pinnedVideoActionChannel) {
+    pinnedVideoActionChannel.close();
+    pinnedVideoActionChannel = null;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('message', handlePinnedVideoPopupMessage);
+  }
 }
 
 function initializeAgentAmpActionBridge() {
@@ -945,6 +1178,7 @@ onMounted(async () => {
 
   initializeAgentAmpStatusBridge();
   initializeAgentAmpActionBridge();
+  initializePinnedVideoActionBridge();
   initializeWebDMBridge();
   await initializeDMWindowActionListener();
   await initializeAgentConfFileListener();
@@ -960,7 +1194,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   markAgentAmpStopped();
   teardownAgentAmpStatusBridge();
+  teardownPinnedVideoActionBridge();
   void closeDetachedAgentAmpWindow();
+  void closePinnedVideoWindow();
   for (const intervalId of dmPopupWatchIntervals.values()) {
     window.clearInterval(intervalId);
   }
@@ -1280,6 +1516,15 @@ function handleAgentAmpDetachRequest() {
   }
 
   config.value.agentAmpDetached = true;
+  updateSettings();
+}
+
+function handleToggleAgentAmpDock() {
+  if (!config.value.agentAmpEnabled) {
+    return;
+  }
+
+  config.value.agentAmpDetached = !config.value.agentAmpDetached;
   updateSettings();
 }
 

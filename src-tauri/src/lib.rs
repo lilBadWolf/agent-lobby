@@ -8,6 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
+use walkdir::WalkDir;
 
 #[cfg(not(dev))]
 use tauri::{ipc::CapabilityBuilder, Url, WebviewUrl, WebviewWindowBuilder};
@@ -143,6 +144,272 @@ fn raise_agentamp_window(app: tauri::AppHandle) -> Result<bool, String> {
         .request_user_attention(None)
         .map_err(|error| error.to_string())?;
 
+    Ok(true)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaLibraryFolderEntry {
+    path: String,
+    added_at: u64,
+    last_scan_at: Option<u64>,
+    track_count: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MediaLibraryTrackEntry {
+    id: String,
+    path: String,
+    name: String,
+    folder_path: String,
+    media_type: String,
+    artist: Option<String>,
+    title: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    track_number: Option<String>,
+    duration: Option<f32>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LibraryTrackPayload {
+    path: String,
+    artist: Option<String>,
+    title: Option<String>,
+    album: Option<String>,
+    year: Option<String>,
+    genre: Option<String>,
+    media_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MediaLibraryState {
+    folders: Vec<MediaLibraryFolderEntry>,
+    tracks: Vec<MediaLibraryTrackEntry>,
+}
+
+fn media_library_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to resolve app data directory: {}", error))?;
+
+    Ok(app_data_dir.join("media_library.json"))
+}
+
+fn load_media_library_state_internal(app: &tauri::AppHandle) -> Result<MediaLibraryState, String> {
+    let path = media_library_state_path(app)?;
+    if !path.is_file() {
+        return Ok(MediaLibraryState {
+            folders: Vec::new(),
+            tracks: Vec::new(),
+        });
+    }
+
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read media library state: {}", error))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse media library state: {}", error))
+}
+
+fn save_media_library_state_internal(app: &tauri::AppHandle, state: &MediaLibraryState) -> Result<(), String> {
+    let path = media_library_state_path(app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create media library directory: {}", error))?;
+    }
+
+    let contents = serde_json::to_string_pretty(state)
+        .map_err(|error| format!("Failed to serialize media library state: {}", error))?;
+    fs::write(&path, contents)
+        .map_err(|error| format!("Failed to save media library state: {}", error))
+}
+
+fn is_supported_media_extension(ext: &str) -> bool {
+    matches!(ext.to_ascii_lowercase().as_str(), "mp3" | "m4a" | "flac" | "mp4" | "webm" | "mov")
+}
+
+fn metadata_from_audio(path: &Path) -> (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) {
+    let tag = audiotags::Tag::new().read_from_path(path).ok();
+    if let Some(tag) = tag {
+        (
+            tag.artist().map(|value| value.to_string()),
+            tag.title().map(|value| value.to_string()),
+            tag.album().map(|value| value.title.to_string()),
+            tag.year().map(|value| value.to_string()),
+            tag.genre().map(|value| value.to_string()),
+            tag.track_number().map(|value| value.to_string()),
+        )
+    } else {
+        (None, None, None, None, None, None)
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MediaLibraryScanProgress {
+    folder_path: String,
+    scanned_files: u32,
+    matched_files: u32,
+    current_path: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct MediaLibraryScanComplete {
+    folder_path: String,
+    scanned_files: u32,
+    matched_files: u32,
+}
+
+#[tauri::command]
+fn load_media_library_state(app: tauri::AppHandle) -> Result<MediaLibraryState, String> {
+    load_media_library_state_internal(&app)
+}
+
+#[tauri::command]
+fn scan_media_library_folder(app: tauri::AppHandle, folder_path: String) -> Result<(), String> {
+    let folder_path_buf = PathBuf::from(folder_path.clone());
+    if !folder_path_buf.is_dir() {
+        return Err(format!("Folder does not exist: {}", folder_path));
+    }
+
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        let mut scanned_files = 0u32;
+        let mut matched_files = 0u32;
+        let mut new_tracks: Vec<MediaLibraryTrackEntry> = Vec::new();
+
+        for entry in WalkDir::new(&folder_path_buf).into_iter().filter_map(Result::ok) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            scanned_files += 1;
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if !is_supported_media_extension(ext) {
+                    continue;
+                }
+
+                matched_files += 1;
+                let filename = path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or_default()
+                    .to_string();
+
+                let (artist, title, album, year, genre, track_number) = if matches!(ext.to_ascii_lowercase().as_str(), "mp3" | "m4a" | "flac") {
+                    metadata_from_audio(path)
+                } else {
+                    (None, None, None, None, None, None)
+                };
+
+                let media_type = if matches!(ext.to_ascii_lowercase().as_str(), "mp4" | "webm" | "mov") {
+                    "video"
+                } else {
+                    "audio"
+                };
+
+                let track = MediaLibraryTrackEntry {
+                    id: format!("{}-{}", folder_path_buf.to_string_lossy(), matched_files),
+                    path: path.to_string_lossy().to_string(),
+                    name: title.clone().unwrap_or_else(|| filename.clone()),
+                    folder_path: folder_path.clone(),
+                    media_type: media_type.to_string(),
+                    artist,
+                    title,
+                    album,
+                    year,
+                    genre,
+                    track_number,
+                    duration: None,
+                };
+
+                new_tracks.push(track);
+            }
+
+            if matched_files % 25 == 0 {
+                let progress = MediaLibraryScanProgress {
+                    folder_path: folder_path.clone(),
+                    scanned_files,
+                    matched_files,
+                    current_path: path.to_string_lossy().to_string(),
+                };
+                let _ = app_handle.emit("media-library-scan-progress", progress);
+            }
+        }
+
+        let mut library_state = load_media_library_state_internal(&app_handle).unwrap_or(MediaLibraryState {
+            folders: Vec::new(),
+            tracks: Vec::new(),
+        });
+
+        let updated_folder = MediaLibraryFolderEntry {
+            path: folder_path.clone(),
+            added_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis() as u64)
+                .unwrap_or(0),
+            last_scan_at: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|duration| duration.as_millis() as u64)
+                    .unwrap_or(0),
+            ),
+            track_count: Some(matched_files),
+        };
+
+        let existing_folder_index = library_state.folders.iter().position(|folder| folder.path == folder_path);
+        if let Some(index) = existing_folder_index {
+            library_state.folders[index] = updated_folder;
+        } else {
+            library_state.folders.push(updated_folder);
+        }
+
+        let mut track_map = library_state
+            .tracks
+            .into_iter()
+            .map(|track| (track.path.clone(), track))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        for track in new_tracks {
+            track_map.insert(track.path.clone(), track);
+        }
+
+        library_state.tracks = track_map.into_values().collect();
+
+        let _ = save_media_library_state_internal(&app_handle, &library_state);
+
+        let complete = MediaLibraryScanComplete {
+            folder_path: folder_path.clone(),
+            scanned_files,
+            matched_files,
+        };
+        let _ = app_handle.emit("media-library-scan-complete", complete);
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn library_add_tracks_to_playlist(app: tauri::AppHandle, tracks: Vec<LibraryTrackPayload>) -> Result<bool, String> {
+    app.emit("media-library-add-to-playlist", tracks)
+        .map_err(|error: tauri::Error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn remove_media_library_folder(app: tauri::AppHandle, folder_path: String) -> Result<bool, String> {
+    let mut state = load_media_library_state_internal(&app)?;
+    state.folders.retain(|folder| folder.path != folder_path);
+    state.tracks.retain(|track| track.folder_path != folder_path);
+    save_media_library_state_internal(&app, &state)
+        .map_err(|error| error.to_string())?;
     Ok(true)
 }
 
@@ -886,7 +1153,7 @@ pub fn run() {
                 app.add_capability(
                     CapabilityBuilder::new("localhost")
                         .remote(url.to_string())
-                        .windows(["main", "dm-window-*", "agentamp-window"])
+                        .windows(["main", "dm-window-*", "agentamp-window", "media-library"])
                         .permission("core:default")
                         .permission("core:event:allow-emit-to")
                         .permission("core:window:allow-set-size")
@@ -946,6 +1213,10 @@ pub fn run() {
             open_themes_folder,
             open_soundpacks_folder,
             save_agentamp_metadata,
+            load_media_library_state,
+            scan_media_library_folder,
+            library_add_tracks_to_playlist,
+            remove_media_library_folder,
             get_local_video_proxy_base_url
         ])
         .run(tauri::generate_context!())

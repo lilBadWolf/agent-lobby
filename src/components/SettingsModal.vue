@@ -160,6 +160,28 @@
               @change="handleChange"
             />
           </div>
+          <div class="setting-row media-library-actions-row">
+            <label>MEDIA LIBRARY</label>
+            <div class="settings-action-buttons">
+              <button class="preview-btn" type="button" @click="promptAddFolderToLibrary">+</button>
+            </div>
+          </div>
+          <div class="media-library-folder-list">
+            <div v-if="!libraryFolders.length" class="media-library-empty">No media folders added.</div>
+            <div v-else>
+              <div
+                v-for="folder in libraryFolders"
+                :key="folder"
+                class="media-library-folder-entry"
+              >
+                <span class="media-library-folder-text">{{ folder }}</span>
+                <button class="preview-btn remove-folder-btn" type="button" @click="removeLibraryFolder(folder)">✕</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="libraryStatusMessage" class="media-library-status">
+            {{ libraryStatusMessage }}
+          </div>
           <hr class="settings-divider" />
           <div class="setting-row">
             <label>SPECTRUM BARS</label>
@@ -350,6 +372,7 @@
               <video ref="videoPreviewRef" class="video-preview" autoplay muted playsinline></video>
             </div>
           </div>
+          <hr class="settings-divider" />
         </div>
         <div v-if="activeTab === 'help'" class="tab-panel help-panel">
           <div class="help-title">SLASH COMMANDS</div>
@@ -441,7 +464,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
@@ -558,6 +581,8 @@ const isVideoPreviewVisible = ref(false);
 const previewCameraLabel = ref('UNKNOWN');
 const previewResolutionLabel = ref('N/A');
 let previewStream: MediaStream | null = null;
+let scanProgressUnlisten: (() => void) | null = null;
+let scanCompleteUnlisten: (() => void) | null = null;
 const { playAnimation } = useMessageAnimations();
 
 const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
@@ -575,28 +600,36 @@ watch(
 watch(
   () => [props.showModal, activeTab.value] as const,
   async ([isOpen, tab]) => {
-    if (!isOpen || tab !== 'media' || hasInitializedMediaForOpen.value) {
+    if (!isOpen) {
       return;
     }
 
-    hasInitializedMediaForOpen.value = true;
+    if (tab === 'media' && !hasInitializedMediaForOpen.value) {
+      hasInitializedMediaForOpen.value = true;
 
-    // Only initialize media permissions/devices once user opens the Media tab.
-    const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
-    const includeAudio = localConfig.value.audioInputDeviceId !== NO_MIC_DEVICE_ID;
-    const hasVideoDevices = await requestMediaPermission(includeVideo, includeAudio);
+      // Only initialize media permissions/devices once user opens the Media tab.
+      const includeVideo = localConfig.value.videoInputDeviceId !== NO_WEBCAM_DEVICE_ID;
+      const includeAudio = localConfig.value.audioInputDeviceId !== NO_MIC_DEVICE_ID;
+      const hasVideoDevices = await requestMediaPermission(includeVideo, includeAudio);
 
-    // Auto-default no-webcam when no camera found and user hasn't chosen yet.
-    if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
-      localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
-      emit('update', { ...localConfig.value });
+      // Auto-default no-webcam when no camera found and user hasn't chosen yet.
+      if (!hasVideoDevices && localConfig.value.videoInputDeviceId === '') {
+        localConfig.value.videoInputDeviceId = NO_WEBCAM_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
+
+      // Auto-default no-mic when no audio input found and user hasn't chosen yet.
+      const hasAudioDevices = audioInputDevices.value.length > 0;
+      if (!hasAudioDevices && localConfig.value.audioInputDeviceId === '') {
+        localConfig.value.audioInputDeviceId = NO_MIC_DEVICE_ID;
+        emit('update', { ...localConfig.value });
+      }
+
+      return;
     }
 
-    // Auto-default no-mic when no audio input found and user hasn't chosen yet.
-    const hasAudioDevices = audioInputDevices.value.length > 0;
-    if (!hasAudioDevices && localConfig.value.audioInputDeviceId === '') {
-      localConfig.value.audioInputDeviceId = NO_MIC_DEVICE_ID;
-      emit('update', { ...localConfig.value });
+    if (tab === 'agentamp' && !libraryFoldersLoaded.value) {
+      await loadLibraryFolders();
     }
   }
 );
@@ -716,6 +749,125 @@ function updateSlashText(index: number, event: Event) {
 function handleClearLog() {
   emit('clearLog');
 }
+
+interface MediaLibraryFolder {
+  path: string;
+}
+
+interface MediaLibraryState {
+  folders: MediaLibraryFolder[];
+}
+
+const libraryFolders = ref<string[]>([]);
+const libraryFoldersLoaded = ref(false);
+const libraryStatusMessage = ref('');
+
+async function loadLibraryFolders() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  try {
+    const state = await invoke<MediaLibraryState>('load_media_library_state');
+    if (state && Array.isArray((state as any).folders)) {
+      libraryFolders.value = (state as any).folders.map((folder: any) => String(folder.path)).filter(Boolean);
+    }
+  } catch (error) {
+    console.error('Failed to load media library folders:', error);
+  } finally {
+    libraryFoldersLoaded.value = true;
+  }
+}
+
+async function removeLibraryFolder(folderPath: string) {
+  if (!folderPath) {
+    return;
+  }
+
+  try {
+    await invoke('remove_media_library_folder', { folderPath });
+    await loadLibraryFolders();
+    libraryStatusMessage.value = 'Folder removed from library.';
+  } catch (error) {
+    console.error('Failed to remove library folder:', error);
+    libraryStatusMessage.value = 'Unable to remove folder.';
+  }
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
+}
+
+async function promptAddFolderToLibrary() {
+  if (!isTauriRuntime()) {
+    libraryStatusMessage.value = 'Folder selection is only available in the desktop app.';
+    return;
+  }
+
+  const dialog = await getTauriDialogOpen();
+  if (!dialog) {
+    libraryStatusMessage.value = 'Unable to open folder picker.';
+    return;
+  }
+
+  try {
+    const selection = await dialog({ directory: true, multiple: false });
+    const folderPath = Array.isArray(selection) ? selection[0] : selection;
+    if (!folderPath) {
+      return;
+    }
+
+    libraryStatusMessage.value = `Scanning ${folderPath}...`;
+    await invoke('scan_media_library_folder', { folderPath });
+  } catch (error) {
+    console.error('Failed to add library folder:', error);
+    libraryStatusMessage.value = 'Failed to add folder to library.';
+  }
+}
+
+async function getTauriDialogOpen() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  const dialog = await import('@tauri-apps/plugin-dialog').catch(() => null);
+  return dialog?.open ?? null;
+}
+
+async function handleScanProgress(payload: { folderPath: string; scannedFiles: number; matchedFiles: number; currentPath: string }) {
+  libraryStatusMessage.value = `Scanning ${payload.currentPath} (${payload.matchedFiles} files matched)`;
+}
+
+async function handleScanComplete(payload: { folderPath: string; scannedFiles: number; matchedFiles: number }) {
+  libraryStatusMessage.value = `Finished scanning ${payload.folderPath}: ${payload.matchedFiles} tracks found.`;
+  await loadLibraryFolders();
+}
+
+onMounted(async () => {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const eventModule = await import('@tauri-apps/api/event').catch(() => null);
+  if (!eventModule?.listen) {
+    return;
+  }
+
+  scanProgressUnlisten = await eventModule.listen('media-library-scan-progress', (event) => {
+    handleScanProgress(event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number; currentPath: string });
+  });
+
+  scanCompleteUnlisten = await eventModule.listen('media-library-scan-complete', (event) => {
+    handleScanComplete(event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number });
+  });
+});
+
+onBeforeUnmount(() => {
+  scanProgressUnlisten?.();
+  scanProgressUnlisten = null;
+  scanCompleteUnlisten?.();
+  scanCompleteUnlisten = null;
+});
 
 async function previewEffect() {
   showEffectPreview.value = true;
@@ -881,6 +1033,46 @@ watch(
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+}
+
+.settings-action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.media-library-status {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+  color: var(--color-accent);
+}
+
+.media-library-folder-list {
+  margin-top: 8px;
+}
+
+.media-library-folder-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-accent-muted);
+  background: var(--color-surface);
+  margin-bottom: 6px;
+}
+
+.media-library-folder-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.remove-folder-btn {
+  min-width: 26px;
+  padding: 4px 8px;
 }
 
 .settings-tabs {

@@ -75,6 +75,14 @@
           ⇄
         </button>
         <button
+          class="agentamp-btn compact-toggle-btn agentamp-library-toggle"
+          type="button"
+          data-tooltip="SHOW LIBRARY"
+          @click="openLibraryWindow"
+        >
+          🕮
+        </button>
+        <button
           class="agentamp-btn compact-toggle-btn agentamp-compact-toggle-spaced"
           type="button"
           :data-tooltip="isCompact ? 'EXPAND' : 'COMPACT'"
@@ -588,6 +596,7 @@ const isNowHovered = ref(false);
 const nowDisplayMode = ref<'now' | 'next' | 'then'>('now');
 const visibleMetadataIndex = ref<number | null>(null);
 let metadataTooltipHideTimer: number | null = null;
+let mediaLibraryAddListener: (() => void) | null = null;
 const editingMetadataIndex = ref<number | null>(null);
 const metadataEditorForm = ref<MetadataEditFields>({
   artist: '',
@@ -1555,6 +1564,51 @@ function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+async function openLibraryWindow() {
+  if (!isTauriRuntime()) {
+    const popupUrl = `${window.location.pathname}?view=media-library`;
+    window.open(popupUrl, 'agent-lobby-media-library', 'popup=yes,width=960,height=720,resizable=yes');
+    return;
+  }
+
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existing = await WebviewWindow.getByLabel('media-library').catch(() => null);
+    if (existing) {
+      if (await existing.isMinimized()) {
+        await existing.unminimize();
+      }
+      await existing.show();
+      await existing.setFocus();
+      return;
+    }
+
+    const libraryUrl = new URL(window.location.href);
+    libraryUrl.searchParams.set('view', 'media-library');
+
+    const windowHandle = new WebviewWindow('media-library', {
+      url: libraryUrl.toString(),
+      title: 'AGENT // MEDIA LIBRARY',
+      width: 960,
+      height: 720,
+      minWidth: 640,
+      minHeight: 480,
+      center: true,
+      resizable: true,
+      decorations: false,
+      transparent: false,
+      useHttpsScheme: true,
+      dragDropEnabled: false,
+    });
+
+    windowHandle.once('tauri://created', () => {
+      windowHandle.setFocus().catch(() => undefined);
+    });
+  } catch (error) {
+    console.error('Failed to open media library window:', error);
+  }
+}
+
 async function getTauriDialogOpen() {
   if (!isTauriRuntime()) {
     return null;
@@ -1705,6 +1759,55 @@ async function addTracksFromPaths(paths: string[]) {
     genre: undefined,
     trackNumber: undefined,
     mediaType: getTrackMediaType(path),
+  }));
+
+  playlist.value = [...playlist.value, ...nextTracks];
+
+  if (currentIndex.value < 0) {
+    currentIndex.value = 0;
+    loadCurrentTrack(false);
+  }
+
+  void loadPlaylistMetadata(nextTracks);
+  await persistPlayerState();
+}
+
+type MediaLibraryAddPayload = {
+  path: string;
+  artist?: string;
+  title?: string;
+  album?: string;
+  year?: string;
+  genre?: string;
+  mediaType?: 'audio' | 'video';
+};
+
+async function addTracksFromLibraryEntries(entries: MediaLibraryAddPayload[]) {
+  const normalized = entries
+    .map((entry) => ({
+      ...entry,
+      path: entry.path?.trim() ?? '',
+    }))
+    .filter((entry) => entry.path && isSupportedMediaPath(entry.path));
+
+  if (!normalized.length) {
+    return;
+  }
+
+  const nextTracks: PlaylistTrack[] = normalized.map((entry, index) => ({
+    id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    name: entry.title?.trim() || extractNameFromPath(entry.path),
+    source: 'path',
+    location: entry.path,
+    order: playlist.value.length + index,
+    duration: undefined,
+    artist: entry.artist?.trim(),
+    title: entry.title?.trim(),
+    album: entry.album?.trim(),
+    year: entry.year?.trim(),
+    genre: entry.genre?.trim(),
+    trackNumber: undefined,
+    mediaType: entry.mediaType ?? getTrackMediaType(entry.path),
   }));
 
   playlist.value = [...playlist.value, ...nextTracks];
@@ -3324,9 +3427,24 @@ onMounted(() => {
   publishPlaybackState();
   window.addEventListener('keydown', handleMediaKeyEvent);
   initializeMediaSession();
+
+  if (isTauriRuntime()) {
+    import('@tauri-apps/api/event')
+      .then(async ({ listen }) => {
+        mediaLibraryAddListener = await listen('media-library-add-to-playlist', async (event) => {
+          const payload = event.payload as MediaLibraryAddPayload[];
+          if (Array.isArray(payload) && payload.length > 0) {
+            await addTracksFromLibraryEntries(payload);
+          }
+        });
+      })
+      .catch(() => undefined);
+  }
 });
 
 onBeforeUnmount(() => {
+  mediaLibraryAddListener?.();
+  mediaLibraryAddListener = null;
   stopDockedPlaylistResize();
   window.removeEventListener('keydown', handleMediaKeyEvent);
   clearMediaSessionHandlers();

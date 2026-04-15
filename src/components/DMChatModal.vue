@@ -648,9 +648,9 @@ function handleDrop(e: DragEvent) {
   const files = e.dataTransfer.files;
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    // Validate file size (500MB max)
-    if (file.size > 500 * 1024 * 1024) {
-      console.warn(`File ${file.name} exceeds 500MB limit`);
+    // Validate file size (1GB max)
+    if (file.size > 1024 * 1024 * 1024) {
+      console.warn(`File ${file.name} exceeds 1GB limit`);
       continue;
     }
     emit('sendFile', currentTab.value, file);

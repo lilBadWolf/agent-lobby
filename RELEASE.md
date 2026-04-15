@@ -1,5 +1,12 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.9**
+
+- 📦 **File transfer limit increased**: larger attachments and batch transfers are now supported more reliably across DMs.
+- 🔒 **Stability improvements** for file upload flows, reducing failed transfers on busy connections.
+
+> This patch raises the DM file transfer ceiling and improves transfer reliability for larger content.
+
 🎉 **Release highlights for agent-lobby 0.4.8**
 
 - 🧑‍💻 **User avatar support**: new avatar URL setting is shared via MQTT presence and rendered next to chat senders when enabled.

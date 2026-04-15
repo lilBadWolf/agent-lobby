@@ -689,6 +689,14 @@ export function useDirectMessage(
       rtcConn.dataChannel = dataChannel;
     }
 
+    if ('bufferedAmountLowThreshold' in dataChannel) {
+      try {
+        dataChannel.bufferedAmountLowThreshold = 256 * 1024;
+      } catch (e) {
+        console.debug('[DM] failed to set bufferedAmountLowThreshold', e);
+      }
+    }
+
     dataChannel.onopen = () => {
       dmLog(`data channel opened with ${otherUser}`);
       const chat = activeChats.value.get(otherUser);
@@ -854,18 +862,65 @@ export function useDirectMessage(
 
   async function waitForDataChannelBackpressure(
     channel: RTCDataChannel,
-    maxBufferedAmount = 512 * 1024,
-    timeoutMs = 10000
+    maxBufferedAmount = 256 * 1024,
+    timeoutMs = 30000
   ) {
-    const start = Date.now();
-    while (channel.readyState === 'open' && channel.bufferedAmount > maxBufferedAmount) {
-      if (Date.now() - start >= timeoutMs) {
-        throw new Error('Timed out waiting for RTC data channel buffer to drain');
-      }
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 8);
-      });
+    if (channel.readyState !== 'open') {
+      throw new Error('RTC data channel is not open');
     }
+
+    if (channel.bufferedAmount <= maxBufferedAmount) {
+      return;
+    }
+
+    const start = Date.now();
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let intervalId: ReturnType<typeof setInterval> | null = null;
+
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        channel.removeEventListener('bufferedamountlow', onBufferedAmountLow);
+        if (intervalId !== null) {
+          clearInterval(intervalId);
+        }
+      };
+
+      const rejectWith = (error: Error) => {
+        cleanup();
+        reject(error);
+      };
+
+      const onBufferedAmountLow = () => {
+        if (channel.bufferedAmount <= maxBufferedAmount) {
+          cleanup();
+          resolve();
+        }
+      };
+
+      intervalId = globalThis.setInterval(() => {
+        if (settled) return;
+
+        if (channel.readyState !== 'open') {
+          rejectWith(new Error('RTC data channel closed while waiting for buffer drain'));
+          return;
+        }
+
+        if (channel.bufferedAmount <= maxBufferedAmount) {
+          cleanup();
+          resolve();
+          return;
+        }
+
+        if (Date.now() - start >= timeoutMs) {
+          rejectWith(new Error('Timed out waiting for RTC data channel buffer to drain'));
+        }
+      }, 50);
+
+      channel.addEventListener('bufferedamountlow', onBufferedAmountLow);
+      onBufferedAmountLow();
+    });
   }
 
   async function streamFileToPeer(otherUser: string, fileId: string, file: File) {
@@ -879,9 +934,8 @@ export function useDirectMessage(
     const transfer = chat.fileTransfers.get(fileId);
     if (!transfer) return;
 
-    const chunkSize = 16384;
-    const buffer = await file.arrayBuffer();
-    const totalChunks = Math.ceil(buffer.byteLength / chunkSize);
+    const chunkSize = 8192;
+    const totalChunks = Math.ceil(file.size / chunkSize);
 
     transfer.totalChunks = totalChunks;
     transfer.totalSize = file.size;
@@ -900,13 +954,14 @@ export function useDirectMessage(
         totalChunks
       }));
 
-      const fileBuffer = new Uint8Array(buffer);
       const idBytes = new TextEncoder().encode(fileId);
 
       for (let i = 0; i < totalChunks; i++) {
         const start = i * chunkSize;
-        const end = Math.min(start + chunkSize, buffer.byteLength);
-        const chunk = fileBuffer.slice(start, end);
+        const end = Math.min(start + chunkSize, file.size);
+        const chunkBlob = file.slice(start, end);
+        const chunkBuffer = await chunkBlob.arrayBuffer();
+        const chunk = new Uint8Array(chunkBuffer);
 
         const chunkMessage = new ArrayBuffer(40 + chunk.byteLength);
         const chunkView = new Uint8Array(chunkMessage);

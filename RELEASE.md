@@ -1,14 +1,15 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.8**
+
+- 🧑‍💻 **User avatar support**: new avatar URL setting is shared via MQTT presence and rendered next to chat senders when enabled.
+- 🪪 **User taglines**: add a personal tagline in settings and share it through presence updates.
+- 💬 **Sidebar user detail popup**: hover over a username to reveal avatar and tagline in a lightweight modal-style card.
+- 📩 **Modern message styling**: current-user messages are now aligned to the right for a cleaner instant-message experience.
+
+> This patch adds richer presence metadata, a user detail hover experience, and a more modern chat layout.
+
 🎉 **Release highlights for agent-lobby 0.4.7**
-
-- 🐧 **Ubuntu/Linux agentAMP playback fix**: path-based local audio now uses native `file://` URLs instead of unsupported `asset://localhost` encoding.
-- 🔧 **Tauri media CSP updated** to allow local file playback without breaking desktop security.
-- 🛠️ **Avoids `player.play() failed (4)` NotSupportedError** on Linux builds.
-
-> This patch fixes Linux local audio playback in agentAMP and makes path-based track loading more reliable.
-
-🎉 **Release highlights for agent-lobby 0.4.6**
 
 - 🎵 **Playlist Track # column** now makes same-album sorting easier and more reliable.
 - 📅 **Year metadata is now normalized** in both playlist and media library editors, trimming dates like `2025-04-25` to `2025`.

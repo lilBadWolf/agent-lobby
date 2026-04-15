@@ -1186,6 +1186,38 @@ function normalizeTrackFsPath(path: string): string {
   return normalized.replace(/\\/g, '/');
 }
 
+function getFileUrlFromFsPath(path: string): string {
+  const normalized = normalizeTrackFsPath(path);
+
+  if (/^[A-Za-z]:[\\/]/.test(normalized)) {
+    return `file:///${normalized.replace(/\\/g, '/').replace(/^\/+/, '')}`;
+  }
+
+  if (normalized.startsWith('//')) {
+    return `file:${normalized}`;
+  }
+
+  return `file://${normalized}`;
+}
+
+function shouldPreferNativeFileUrlForTauriPath(): boolean {
+  return isTauriRuntime() && typeof navigator !== 'undefined' && /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+}
+
+async function resolvePathTrackSourceUrl(path: string): Promise<string> {
+  const normalizedPath = normalizeTrackFsPath(path);
+  if (!isTauriRuntime()) {
+    return normalizedPath;
+  }
+
+  const convertFileSrc = await getTauriConvertFileSrc();
+  if (convertFileSrc && !shouldPreferNativeFileUrlForTauriPath()) {
+    return convertFileSrc(normalizedPath);
+  }
+
+  return getFileUrlFromFsPath(normalizedPath);
+}
+
 async function writeTrackMetadataToFile(track: PlaylistTrack, metadata: MetadataEditFields): Promise<void> {
   if (track.source !== 'path') {
     throw new Error('Unable to save metadata for non-path track source');
@@ -2812,24 +2844,14 @@ function loadCurrentTrack(autoplay: boolean, resumeTime = 0) {
 
   if (track.source === 'path') {
     player.crossOrigin = 'anonymous';
-    void getTauriConvertFileSrc().then((convertFileSrc) => {
-      if (!convertFileSrc) {
-        console.warn('[AgentAmp] convertFileSrc unavailable for path track', track.location);
-        player.src = track.location;
-        player.currentTime = 0;
-        currentTime.value = pendingRestoreTime;
-        duration.value = 0;
-        return;
-      }
-
-      const converted = convertFileSrc(normalizeTrackFsPath(track.location));
-      player.src = converted;
+    void resolvePathTrackSourceUrl(track.location).then((sourceUrl) => {
+      player.src = sourceUrl;
       console.debug('[AgentAmp] path track src set', track.location, player.src);
       player.currentTime = 0;
       currentTime.value = pendingRestoreTime;
       duration.value = 0;
     }).catch((error) => {
-      console.error('[AgentAmp] failed to convert path src', track.location, error);
+      console.error('[AgentAmp] failed to resolve path source url', track.location, error);
       player.src = track.location;
       player.currentTime = 0;
       currentTime.value = pendingRestoreTime;

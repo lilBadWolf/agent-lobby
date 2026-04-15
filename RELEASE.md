@@ -1,5 +1,13 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.7**
+
+- 🐧 **Ubuntu/Linux agentAMP playback fix**: path-based local audio now uses native `file://` URLs instead of unsupported `asset://localhost` encoding.
+- 🔧 **Tauri media CSP updated** to allow local file playback without breaking desktop security.
+- 🛠️ **Avoids `player.play() failed (4)` NotSupportedError** on Linux builds.
+
+> This patch fixes Linux local audio playback in agentAMP and makes path-based track loading more reliable.
+
 🎉 **Release highlights for agent-lobby 0.4.6**
 
 - 🎵 **Playlist Track # column** now makes same-album sorting easier and more reliable.

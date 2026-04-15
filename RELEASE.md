@@ -1,13 +1,14 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.10**
+
+- 🚀 **More reliable DM file transfers**: transfer commands now use the active peer data channel when available and recover better from channel handoff.
+- ⚙️ **Safer chunk handling**: malformed file chunks are ignored and duplicate chunks are filtered out before reassembly.
+- 🧩 **Cleaner transfer cleanup**: failed remote file deliveries now release pending send state immediately.
+
+> This patch improves DM file transfer reliability and makes large attachment handoff safer across peer connections.
+
 🎉 **Release highlights for agent-lobby 0.4.9**
-
-- 📦 **File transfer limit increased**: larger attachments and batch transfers are now supported more reliably across DMs.
-- 🔒 **Stability improvements** for file upload flows, reducing failed transfers on busy connections.
-
-> This patch raises the DM file transfer ceiling and improves transfer reliability for larger content.
-
-🎉 **Release highlights for agent-lobby 0.4.8**
 
 - 🧑‍💻 **User avatar support**: new avatar URL setting is shared via MQTT presence and rendered next to chat senders when enabled.
 - 🪪 **User taglines**: add a personal tagline in settings and share it through presence updates.

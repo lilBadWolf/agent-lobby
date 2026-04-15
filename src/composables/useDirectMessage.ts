@@ -824,9 +824,14 @@ export function useDirectMessage(
   }
 
   function handleIncomingBinaryChunk(otherUser: string, data: ArrayBuffer) {
+    if (data.byteLength < 40) {
+      console.warn('[DM] Ignoring malformed file chunk: too short');
+      return;
+    }
+
     const view = new Uint8Array(data);
     const fileId = normalizeFileId(new TextDecoder().decode(view.slice(0, 36)));
-    const chunkIndex = new DataView(data).getUint32(36);
+    const chunkIndex = new DataView(data).getUint32(36, false);
     const chunkData = view.slice(40);
 
     const chat = activeChats.value.get(otherUser);
@@ -834,10 +839,15 @@ export function useDirectMessage(
 
     const transfer = chat.fileTransfers.get(fileId);
     if (!transfer || transfer.direction !== 'incoming') return;
+    if (transfer.chunks.has(chunkIndex)) {
+      return;
+    }
 
     transfer.chunks.set(chunkIndex, chunkData);
     transfer.receivedSize += chunkData.length;
-    transfer.progress = Math.min(100, (transfer.receivedSize / transfer.totalSize) * 100);
+    transfer.progress = transfer.totalSize > 0
+      ? Math.min(100, (transfer.receivedSize / transfer.totalSize) * 100)
+      : 100;
     transfer.status = 'in-progress';
     setOrUpdateChat(otherUser, chat);
   }
@@ -1060,6 +1070,7 @@ export function useDirectMessage(
         transfer.status = 'failed';
         setOrUpdateChat(otherUser, chat);
       }
+      pendingOutgoingFiles.delete(data.id);
       return true;
     }
 
@@ -1159,7 +1170,8 @@ export function useDirectMessage(
     if (isPresenceRuntime) return;
 
     const chat = activeChats.value.get(fromUser);
-    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+    const channel = resolveOpenDataChannel(fromUser, chat?.dataChannel ?? null);
+    if (!chat || !channel || channel.readyState !== 'open') return;
 
     const transfer = chat.fileTransfers.get(fileId);
     if (!transfer || transfer.direction !== 'incoming') return;
@@ -1168,7 +1180,7 @@ export function useDirectMessage(
     setOrUpdateChat(fromUser, chat);
 
     try {
-      chat.dataChannel.send(JSON.stringify({
+      channel.send(JSON.stringify({
         type: 'file-accept',
         id: fileId
       }));
@@ -1183,7 +1195,8 @@ export function useDirectMessage(
     if (isPresenceRuntime) return;
 
     const chat = activeChats.value.get(fromUser);
-    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') return;
+    const channel = resolveOpenDataChannel(fromUser, chat?.dataChannel ?? null);
+    if (!chat || !channel || channel.readyState !== 'open') return;
 
     const transfer = chat.fileTransfers.get(fileId);
     if (!transfer || transfer.direction !== 'incoming') return;
@@ -1192,7 +1205,7 @@ export function useDirectMessage(
     setOrUpdateChat(fromUser, chat);
 
     try {
-      chat.dataChannel.send(JSON.stringify({
+      channel.send(JSON.stringify({
         type: 'file-reject',
         id: fileId
       }));
@@ -1206,7 +1219,8 @@ export function useDirectMessage(
     if (isPresenceRuntime) return;
 
     const chat = activeChats.value.get(toUser);
-    if (!chat || !chat.dataChannel || chat.dataChannel.readyState !== 'open') {
+    const channel = resolveOpenDataChannel(toUser, chat?.dataChannel ?? null);
+    if (!chat || !channel || channel.readyState !== 'open') {
       pushNotice('File transfer requires active connection');
       return;
     }
@@ -1234,7 +1248,7 @@ export function useDirectMessage(
     pendingOutgoingFiles.set(fileId, { user: toUser, file });
 
     try {
-      chat.dataChannel.send(JSON.stringify({
+      channel.send(JSON.stringify({
         type: 'file-offer',
         id: fileId,
         filename: file.name,

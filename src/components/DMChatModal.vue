@@ -91,13 +91,14 @@
                     <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
                     <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
                     <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
-                    <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'incoming'" class="file-progress">
+                    <div v-else-if="transfer.status === 'in-progress'" class="file-progress">
                       <div class="progress-bar">
                         <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
                       </div>
-                      <span class="progress-text">{{ Math.round(transfer.progress) }}%</span>
+                      <span class="progress-text">
+                        {{ transfer.direction === 'incoming' ? 'RECEIVING' : 'SENDING' }} {{ Math.round(transfer.progress) }}%
+                      </span>
                     </div>
-                    <div v-else-if="transfer.status === 'in-progress' && transfer.direction === 'outgoing'" class="file-status awaiting-completion">AWAITING COMPLETION</div>
                     <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
                     <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
                     <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
@@ -731,6 +732,27 @@ function buildTransferBytes(transfer: FileTransferState): Uint8Array {
   return merged;
 }
 
+function buildTransferStream(transfer: FileTransferState): ReadableStream<Uint8Array> {
+  if (typeof ReadableStream === 'undefined') {
+    throw new Error('ReadableStream is not supported in this environment');
+  }
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < transfer.totalChunks; i++) {
+        const chunk = transfer.chunks.get(i);
+        if (!chunk) {
+          controller.error(new Error(`Missing file chunk ${i}`));
+          return;
+        }
+
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    }
+  });
+}
+
 function isSavingFile(fileId: string): boolean {
   return savingFileIds.value.has(fileId);
 }
@@ -797,7 +819,8 @@ async function downloadFile(transfer: FileTransferState) {
     if (tauriApis) {
       const targetPath = await resolveAvailableFilename(baseName);
 
-      await tauriApis.fs.writeFile(targetPath, bytes, {
+      const fileStream = buildTransferStream(transfer);
+      await tauriApis.fs.writeFile(targetPath, fileStream, {
         baseDir: tauriApis.fs.BaseDirectory.Download
       });
 

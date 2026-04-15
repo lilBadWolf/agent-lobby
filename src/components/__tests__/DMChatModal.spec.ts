@@ -506,7 +506,11 @@ describe('DMChatModal', () => {
     expect(saveButton).toBeTruthy();
     await saveButton!.trigger('click');
     await vi.waitFor(() => {
-      expect(tauriWriteFileMock).toHaveBeenCalled();
+      expect(tauriWriteFileMock).toHaveBeenCalledWith(
+        'report.txt',
+        expect.any(Object),
+        expect.objectContaining({ baseDir: 'Download' })
+      );
     });
     expect(wrapper.emitted('fileSaved')?.slice(-1)?.[0]).toEqual(['BRAVO', 'file-2']);
 
@@ -516,6 +520,45 @@ describe('DMChatModal', () => {
     await revealButton!.trigger('click');
 
     expect(tauriRevealItemMock).toHaveBeenCalledWith('/downloads/report.txt');
+  });
+
+  it('shows outgoing transfer progress to the sender', async () => {
+    setTauriRuntime(false);
+
+    const chat = makeChat(true) as any;
+    chat.fileTransfers.set('file-out', {
+      id: 'file-out',
+      filename: 'bigfile.zip',
+      mimeType: 'application/zip',
+      totalSize: 1024,
+      receivedSize: 512,
+      totalChunks: 4,
+      chunks: new Map(),
+      progress: 42,
+      direction: 'outgoing',
+      status: 'in-progress',
+      savedToDisk: false,
+    });
+
+    const wrapper = mount(DMChatModal, {
+      props: {
+        showModal: true,
+        activeChats: new Map([['BRAVO', chat]]),
+        pendingRequests: [],
+        pendingAudioCalls: [],
+        pendingVideoCalls: [],
+        outgoingRequests: [],
+        notices: [],
+        username: 'ALPHA',
+        dmChatEffect: 'codex',
+      },
+      global: {
+        stubs: { VideoWindow: true },
+      },
+    });
+
+    await wrapper.find('.tab').trigger('click');
+    expect(wrapper.text()).toContain('SENDING 42%');
   });
 
   it('handles empty file bytes save failure without emitting fileSaved', async () => {

@@ -42,6 +42,9 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   spectrumThresholdHigh: 'agent_spectrum_threshold_high',
   dmEnabled: 'agent_dm_enabled',
   mediaSharing: 'agent_media_sharing',
+  enableAvatars: 'agent_enable_avatars',
+  avatarUrl: 'agent_avatar_url',
+  tagline: 'agent_tagline',
   agentAmpEnabled: 'agent_agent_amp_enabled',
   agentAmpDetached: 'agent_agent_amp_detached',
   scanlines: 'agent_scanlines',
@@ -75,6 +78,9 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   spectrumThresholdHigh: 0.6,
   soundpack: 'default',
   theme: 'retro-terminal',
+  enableAvatars: false,
+  avatarUrl: '',
+  tagline: '',
   dmChatEffect: 'codex',
   showJoinPartMessages: true,
   audioInputDeviceId: '',
@@ -109,6 +115,22 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
 
   if (typeof normalized.mediaSharing !== 'boolean') {
     normalized.mediaSharing = DEFAULT_AUDIO_CONFIG.mediaSharing;
+  }
+
+  if (typeof normalized.enableAvatars !== 'boolean') {
+    normalized.enableAvatars = DEFAULT_AUDIO_CONFIG.enableAvatars;
+  }
+
+  if (typeof normalized.avatarUrl !== 'string') {
+    normalized.avatarUrl = DEFAULT_AUDIO_CONFIG.avatarUrl;
+  } else {
+    normalized.avatarUrl = normalized.avatarUrl.trim();
+  }
+
+  if (typeof normalized.tagline !== 'string') {
+    normalized.tagline = DEFAULT_AUDIO_CONFIG.tagline;
+  } else {
+    normalized.tagline = normalized.tagline.trim();
   }
 
   if (typeof normalized.agentAmpEnabled !== 'boolean') {
@@ -207,6 +229,9 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.scanlines, nextConfig.scanlines ?? DEFAULT_AUDIO_CONFIG.scanlines),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars, nextConfig.enableAvatars ?? DEFAULT_AUDIO_CONFIG.enableAvatars),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl, nextConfig.avatarUrl ?? DEFAULT_AUDIO_CONFIG.avatarUrl),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.tagline, nextConfig.tagline ?? DEFAULT_AUDIO_CONFIG.tagline),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages, nextConfig.showJoinPartMessages ?? DEFAULT_AUDIO_CONFIG.showJoinPartMessages),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId, nextConfig.audioInputDeviceId),
@@ -232,6 +257,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     spectrumThresholdHigh,
     dmEnabled,
     mediaSharing,
+    enableAvatars,
+    avatarUrl,
+    tagline,
     agentAmpEnabled,
     agentAmpDetached,
     scanlines,
@@ -258,6 +286,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdHigh),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing),
+    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.tagline),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
@@ -286,6 +317,9 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof spectrumThresholdHigh === 'number') saved.spectrumThresholdHigh = spectrumThresholdHigh;
   if (typeof dmEnabled === 'boolean') saved.dmEnabled = dmEnabled;
   if (typeof mediaSharing === 'boolean') saved.mediaSharing = mediaSharing;
+  if (typeof enableAvatars === 'boolean') saved.enableAvatars = enableAvatars;
+  if (typeof avatarUrl === 'string') saved.avatarUrl = avatarUrl;
+  if (typeof tagline === 'string') saved.tagline = tagline;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;
   }
@@ -314,6 +348,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     saved.dmChatEffect = dmChatEffect;
   }
   if (typeof showJoinPartMessages === 'boolean') saved.showJoinPartMessages = showJoinPartMessages;
+  if (typeof avatarUrl === 'string') saved.avatarUrl = avatarUrl;
+  if (typeof tagline === 'string') saved.tagline = tagline;
   if (typeof audioInputDeviceId === 'string') saved.audioInputDeviceId = audioInputDeviceId;
   if (typeof audioOutputDeviceId === 'string') saved.audioOutputDeviceId = audioOutputDeviceId;
   if (typeof videoInputDeviceId === 'string') saved.videoInputDeviceId = videoInputDeviceId;
@@ -533,6 +569,14 @@ export function useLobbyChat() {
       isAway: isAway.value,
       mediaSharing: config.value.mediaSharing,
     };
+
+    if (typeof config.value.avatarUrl === 'string' && config.value.avatarUrl.trim()) {
+      payload.avatarUrl = config.value.avatarUrl.trim();
+    }
+
+    if (typeof config.value.tagline === 'string' && config.value.tagline.trim()) {
+      payload.tagline = config.value.tagline.trim();
+    }
 
     if (config.value.mediaSharing && activeMedia.value) {
       payload.activeMedia = activeMedia.value;

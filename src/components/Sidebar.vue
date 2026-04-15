@@ -58,6 +58,8 @@
           :class="{ 'compact-user-handle-btn': props.isCompact, 'typing-user': user.isTyping }"
           :aria-label="`Mention ${user.username}`"
           @click="emit('mentionRequest', user.username)"
+          @mouseenter.stop="showUserDetails(user, $event)"
+          @mouseleave="scheduleHideUserDetails"
           @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
         >
           {{ props.isCompact ? getCompactUserLabel(user.username) : user.username }}
@@ -97,6 +99,31 @@
       >
         PIN SAME VIDEO
       </button>
+    </div>
+    <div
+      v-if="hoveredUser"
+      class="user-details-popup"
+      :style="{ left: `${hoverPopup.x}px`, top: `${hoverPopup.y}px` }"
+      @mouseenter="clearHoverTimeout"
+      @mouseleave="scheduleHideUserDetails"
+    >
+      <div class="user-details-card">
+        <div class="user-details-avatar-wrap">
+          <img
+            v-if="getUserDetailsAvatarUrl(hoveredUser)"
+            :src="getUserDetailsAvatarUrl(hoveredUser)"
+            alt=""
+            class="user-details-avatar"
+          />
+          <div v-else class="user-details-avatar-placeholder">
+            {{ hoveredUser.username.slice(0, 1) }}
+          </div>
+        </div>
+        <div class="user-details-body">
+          <div class="user-details-name">{{ hoveredUser.username }}</div>
+          <div class="user-details-tagline">{{ hoveredUser.tagline?.trim() || 'No tagline set' }}</div>
+        </div>
+      </div>
     </div>
     <button id="disconnect-btn" :class="{ 'compact-disconnect-btn': props.isCompact }" @click="emit('disconnect')">{{ props.isCompact ? 'X' : 'TERMINATE' }}</button>
   </aside>
@@ -141,6 +168,56 @@ const contextMenu = ref<{
   y: number;
   username: string | null;
 }>({ visible: false, x: 0, y: 0, username: null });
+const hoveredUser = ref<UserPresence | null>(null);
+const hoverPopup = ref({ x: 0, y: 0 });
+let hoverTimeout: number | null = null;
+
+function clearHoverTimeout() {
+  if (hoverTimeout !== null) {
+    window.clearTimeout(hoverTimeout);
+    hoverTimeout = null;
+  }
+}
+
+function showUserDetails(user: UserPresence, event: MouseEvent) {
+  clearHoverTimeout();
+
+  const target = event.currentTarget as HTMLElement | null;
+  const rect = target?.getBoundingClientRect();
+  const x = rect ? rect.right + 10 : event.clientX + 10;
+  const y = rect ? rect.top : event.clientY;
+
+  hoverPopup.value = {
+    x: Math.min(window.innerWidth - 280, x),
+    y: Math.min(window.innerHeight - 220, y),
+  };
+  hoveredUser.value = user;
+}
+
+function scheduleHideUserDetails() {
+  clearHoverTimeout();
+  hoverTimeout = window.setTimeout(() => {
+    hoveredUser.value = null;
+  }, 100);
+}
+
+function getSafeAvatarUrl(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed) || /\s/.test(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
+function getUserDetailsAvatarUrl(user: UserPresence): string | undefined {
+  return getSafeAvatarUrl(user.avatarUrl);
+}
+
 const contextMenuActiveMedia = computed(() => {
   const currentUsername = contextMenu.value.username;
   const presence = currentUsername ? props.users?.[currentUsername] : undefined;
@@ -660,6 +737,71 @@ function pinUserMedia() {
 #disconnect-btn:hover {
   background: var(--color-danger);
   color: var(--color-on-danger);
+}
+
+.user-details-popup {
+  position: fixed;
+  z-index: 1003;
+  width: min(260px, calc(100vw - 24px));
+  max-width: 260px;
+  pointer-events: auto;
+}
+
+.user-details-card {
+  background: rgba(16, 18, 26, 0.98);
+  border: 1px solid rgba(120, 138, 255, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  padding: 14px;
+}
+
+.user-details-avatar-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-details-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.user-details-avatar-placeholder {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+  font-size: 28px;
+  text-transform: uppercase;
+}
+
+.user-details-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.user-details-name {
+  font-weight: bold;
+  margin-bottom: 6px;
+  color: var(--color-accent);
+}
+
+.user-details-tagline {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-text-primary);
 }
 
 .user-context-tooltip {

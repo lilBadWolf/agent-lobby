@@ -13,6 +13,8 @@ export interface UserPresence {
   isBot?: boolean;
   mediaSharing?: boolean;
   activeMedia?: ActiveMedia | null;
+  avatarUrl?: string;
+  tagline?: string;
 }
 
 export interface ChatMessage {
@@ -44,6 +46,9 @@ export interface AudioConfig {
   spectrumThresholdHigh?: number;
   dmEnabled: boolean;
   mediaSharing: boolean;
+  enableAvatars?: boolean;
+  avatarUrl?: string;
+  tagline?: string;
   agentAmpEnabled: boolean;
   agentAmpDetached?: boolean;
   scanlines?: boolean;

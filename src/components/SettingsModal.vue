@@ -78,6 +78,36 @@
               @change="handleChange"
             />
           </div>
+          <div class="setting-row">
+            <label>AVATAR URL</label>
+            <input
+              v-model="localConfig.avatarUrl"
+              type="url"
+              id="set-avatar-url"
+              placeholder="https://example.com/avatar.png"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
+            <label>TAGLINE</label>
+            <input
+              v-model="localConfig.tagline"
+              type="text"
+              id="set-tagline"
+              placeholder="AGENT ON THE MOVE"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
+            <label>ENABLE AVATARS</label>
+            <input
+              v-model="localConfig.enableAvatars"
+              type="checkbox"
+              id="set-enable-avatars-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-note">Web-accessible avatar images render at a maximum height of 40px in chat.</div>
           <hr class="settings-divider" />
           <div class="setting-row">
             <label>DM ENABLED</label>
@@ -557,6 +587,9 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
     theme: normalizedTheme,
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
+    enableAvatars: config.enableAvatars ?? false,
+    avatarUrl: typeof config.avatarUrl === 'string' ? config.avatarUrl.trim() : '',
+    tagline: typeof config.tagline === 'string' ? config.tagline.trim() : '',
     spectrumBarCount: config.spectrumBarCount ?? 64,
     spectrumFftSize: config.spectrumFftSize ?? 2048,
     spectrumSensitivity: config.spectrumSensitivity ?? 1,
@@ -1126,6 +1159,13 @@ watch(
   border: 0;
   border-top: 1px solid var(--color-settings-divider);
   margin: 10px 0 4px;
+}
+
+.setting-note {
+  color: var(--color-chat-text-muted);
+  font-size: 12px;
+  margin-top: -8px;
+  margin-bottom: 12px;
 }
 
 .media-panel .setting-row {

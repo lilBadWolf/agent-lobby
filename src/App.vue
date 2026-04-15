@@ -90,6 +90,7 @@
           :mention-request="mentionRequest"
           :agent-amp-pinned-video="agentAmpPinnedVideo"
           :agent-amp-detached="config.agentAmpDetached"
+          :enable-avatars="config.enableAvatars"
           :pinned-video-detached="pinnedVideoDetached"
           @pinned-video-change="handlePinnedVideoChange"
           @agent-amp-dock-toggle="handleToggleAgentAmpDock"

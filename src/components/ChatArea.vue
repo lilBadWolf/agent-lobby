@@ -225,28 +225,38 @@
         <div v-if="msg.isSystem" class="system-msg">
           <span class="text">[{{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>]</span>
         </div>
-        <div v-else class="msg">
-          <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
-          <span
-            class="text"
-            :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
-            :style="{ color: msg.user === username ? 'var(--color-accent)' : 'var(--color-text-primary)' }"
-          >
-            <template v-for="(part, partIndex) in getDisplayedParts(index)" :key="`${index}-${partIndex}`">
-              <span v-if="part.type === 'mention'" class="mention-highlight">{{ part.text }}</span>
-              <a
-                v-else-if="part.type === 'link'"
-                class="chat-link"
-                :href="part.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                @click.prevent="openExternalLink(part.url)"
-              >
-                {{ getExternalLinkLabel(part) }}
-              </a>
-              <span v-else>{{ part.text }}</span>
-            </template><span v-if="isTyping(index)" class="cursor">█</span>
-          </span>
+        <div v-else :class="['msg', { 'self-msg': msg.user === username }]">
+          <div v-if="getSenderAvatarUrl(msg.user)" class="sender-avatar-wrap">
+            <img
+              :src="getSenderAvatarUrl(msg.user)"
+              alt=""
+              class="sender-avatar"
+            />
+          </div>
+          <div class="message-body">
+            <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
+            <span
+              class="text"
+              :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
+              :style="{ color: msg.user === username ? 'var(--color-accent)' : 'var(--color-text-primary)' }"
+            >
+              <template v-for="(part, partIndex) in getDisplayedParts(index)" :key="`${index}-${partIndex}`">
+                <span v-if="part.type === 'mention'" class="mention-highlight">{{ part.text }}</span>
+                <a
+                  v-else-if="part.type === 'link'"
+                  class="chat-link"
+                  :href="part.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  @click.prevent="openExternalLink(part.url)"
+                >
+                  {{ getExternalLinkLabel(part) }}
+                </a>
+                <span v-else>{{ part.text }}</span>
+              </template>
+              <span v-if="isTyping(index)" class="cursor">█</span>
+            </span>
+          </div>
           <div v-if="getMessageImages(index).length > 0" class="message-images">
             <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
               <img
@@ -531,6 +541,7 @@ const props = defineProps<{
   username: string;
   isConnected: boolean;
   users: Record<string, UserPresence>;
+  enableAvatars?: boolean;
   lobbyTabs?: Array<{ id: string; label: string; unreadCount: number; isDefault?: boolean }>;
   activeLobbyId?: string;
   defaultLobbyId?: string;
@@ -554,6 +565,40 @@ const emit = defineEmits<{
 
 const { getUserColor } = useTheme();
 const { extractImageUris, initializeImage, markImageLoaded, markImageError, getImageState } = useImageDetection();
+
+function normalizeUserPresenceUsername(user: string): string {
+  return user ? user.toUpperCase() : '';
+}
+
+function getUserPresence(user: string): UserPresence | undefined {
+  const exact = props.users[user] ?? props.users[normalizeUserPresenceUsername(user)];
+  if (exact) {
+    return exact;
+  }
+
+  return Object.values(props.users).find(
+    (presence) => presence.username?.toLowerCase() === user.toLowerCase()
+  );
+}
+
+function isSafeAvatarUrl(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) && !/\s/.test(trimmed);
+}
+
+function getSenderAvatarUrl(user: string): string | undefined {
+  if (!props.enableAvatars) {
+    return undefined;
+  }
+
+  const presence = getUserPresence(user);
+  const url = presence?.avatarUrl?.trim();
+  return isSafeAvatarUrl(url) ? url : undefined;
+}
 
 // --- YouTube URL detection ---
 function extractYouTubeUrls(text: string): string[] {
@@ -2906,10 +2951,55 @@ onBeforeUnmount(() => {
 }
 
 .msg {
+  position: relative;
   margin-bottom: 12px;
   line-height: 1.5;
   border-left: 3px solid var(--color-accent-muted);
-  padding-left: 12px;
+  padding: 12px 12px 12px 56px;
+  max-width: min(78%, 100%);
+}
+
+.msg.self-msg {
+  margin-left: auto;
+  border-left: none;
+  border-right: 3px solid var(--color-accent-muted);
+  padding: 12px 56px 12px 12px;
+  text-align: right;
+}
+
+.sender-avatar-wrap {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.msg.self-msg .sender-avatar-wrap {
+  left: auto;
+  right: 12px;
+}
+
+.sender-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.message-body {
+  display: block;
+}
+
+.sender {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 6px;
+  text-shadow: 0 0 5px currentColor;
 }
 
 .system-msg {
@@ -2926,6 +3016,18 @@ onBeforeUnmount(() => {
   font-weight: bold;
   margin-right: 10px;
   text-shadow: 0 0 5px currentColor;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sender-avatar {
+  display: inline-block;
+  width: auto;
+  max-height: 40px;
+  max-width: 40px;
+  border-radius: 50%;
+  object-fit: contain;
 }
 
 .text {

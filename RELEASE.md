@@ -1,5 +1,12 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.13**
+
+- 🧭 **Compact sidebar popup reposition**: the compact sidebar hover card now appears slightly closer and higher for better alignment.
+- 🧼 **UI polish for compact mode**: this patch refines the user-hover modal placement without changing compact sidebar behavior.
+
+> This patch fine-tunes compact sidebar hover popup placement for a smoother user experience.
+
 🎉 **Release highlights for agent-lobby 0.4.12**
 
 - 📦 **DM file transfers now survive large attachments more reliably**: sender-side transfers stream 8 KB chunks and avoid buffering the entire file in memory.

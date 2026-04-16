@@ -96,6 +96,7 @@
           <img
             v-if="getUserDetailsAvatarUrl(hoveredUser)"
             :src="getUserDetailsAvatarUrl(hoveredUser)"
+            :style="getUserDetailsAvatarStyle(hoveredUser)"
             alt=""
             class="user-details-avatar"
           />
@@ -127,6 +128,7 @@
 import { computed, ref, watch } from 'vue';
 import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
+import { parseAvatarUrl, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
@@ -214,7 +216,32 @@ function getSafeAvatarUrl(value: string | undefined): string | undefined {
 }
 
 function getUserDetailsAvatarUrl(user: UserPresence): string | undefined {
-  return getSafeAvatarUrl(user.avatarUrl);
+  const url = getSafeAvatarUrl(user.avatarUrl);
+  if (!url) {
+    return undefined;
+  }
+
+  const parsed = parseAvatarUrl(url);
+  return parsed ? parsed.src : undefined;
+}
+
+function getUserDetailsAvatarStyle(user: UserPresence): Record<string, string> | undefined {
+  const url = getSafeAvatarUrl(user.avatarUrl);
+  if (!url) {
+    return undefined;
+  }
+
+  const parsed = parseAvatarUrl(url);
+  if (!parsed || parsed.avatarIndex === null) {
+    return undefined;
+  }
+
+  return {
+    width: '120px',
+    height: '120px',
+    objectFit: 'none',
+    objectPosition: getAvatarObjectPosition(parsed.avatarIndex),
+  };
 }
 
 const contextMenuActiveMedia = computed(() => {
@@ -775,6 +802,7 @@ function pinUserMedia() {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .user-details-avatar {

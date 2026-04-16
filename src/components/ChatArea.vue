@@ -227,7 +227,14 @@
         </div>
         <div v-else :class="['msg', { 'self-msg': msg.user === username }]">
           <div v-if="getSenderAvatarUrl(msg.user)" class="sender-avatar-wrap">
+            <div
+              v-if="getSenderAvatarPackStyle(msg.user)"
+              class="sender-avatar-sprite"
+              :style="getSenderAvatarPackStyle(msg.user)"
+              aria-hidden="true"
+            />
             <img
+              v-else
               :src="getSenderAvatarUrl(msg.user)"
               alt=""
               class="sender-avatar"
@@ -467,6 +474,7 @@ import type { ActiveMedia, ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
+import { parseAvatarUrl, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 import * as nodeEmoji from 'node-emoji';
 
 type YouTubePlayerState = {
@@ -597,7 +605,37 @@ function getSenderAvatarUrl(user: string): string | undefined {
 
   const presence = getUserPresence(user);
   const url = presence?.avatarUrl?.trim();
-  return isSafeAvatarUrl(url) ? url : undefined;
+  if (!isSafeAvatarUrl(url)) {
+    return undefined;
+  }
+
+  const parsed = parseAvatarUrl(url);
+  return parsed ? parsed.src : undefined;
+}
+
+function getSenderAvatarPackStyle(user: string): Record<string, string> | undefined {
+  if (!props.enableAvatars) {
+    return undefined;
+  }
+
+  const presence = getUserPresence(user);
+  const url = presence?.avatarUrl?.trim();
+  if (!isSafeAvatarUrl(url)) {
+    return undefined;
+  }
+
+  const parsed = parseAvatarUrl(url);
+  if (!parsed || parsed.avatarIndex === null) {
+    return undefined;
+  }
+
+  return {
+    backgroundImage: `url(${parsed.src})`,
+    backgroundSize: '300% 300%',
+    backgroundPosition: getAvatarObjectPosition(parsed.avatarIndex),
+    width: '100%',
+    height: '100%',
+  };
 }
 
 // --- YouTube URL detection ---
@@ -2976,6 +3014,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .msg.self-msg .sender-avatar-wrap {
@@ -2986,9 +3025,16 @@ onBeforeUnmount(() => {
 .sender-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 0;
   object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sender-avatar-sprite {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background-repeat: no-repeat;
 }
 
 .message-body {
@@ -3026,7 +3072,7 @@ onBeforeUnmount(() => {
   width: auto;
   max-height: 40px;
   max-width: 40px;
-  border-radius: 50%;
+  border-radius: 0;
   object-fit: contain;
 }
 

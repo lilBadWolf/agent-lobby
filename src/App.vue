@@ -29,6 +29,7 @@
       type="button"
       :aria-label="isSidebarVisible ? 'Compact agent pane' : 'Expand agent pane'"
       @click="toggleSidebarPane"
+      @contextmenu.prevent.stop="openProfileSettings"
     >
       &#x1F464;&#xFE0E;
     </button>
@@ -42,6 +43,13 @@
       @update="handleSettingsUpdate"
       @clear-log="clearMessages"
       @close="toggleSettings"
+    />
+
+    <ProfileSettingsModal
+      :show-modal="showProfileSettings"
+      :config="config"
+      @update="handleSettingsUpdate"
+      @close="closeProfileSettings"
     />
 
     <NetworkConfigModal
@@ -316,6 +324,7 @@ import AuthScreen from './components/AuthScreen.vue';
 import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';
+import ProfileSettingsModal from './components/ProfileSettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMRequestStack from './components/DMRequestStack.vue';
 import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
@@ -714,6 +723,7 @@ watch(isConnected, (connected) => {
 
 const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
+const showProfileSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
 const SIDEBAR_VISIBILITY_KEY = 'agent_sidebar_visible';
@@ -1519,6 +1529,14 @@ function toggleSidebarPane() {
   isSidebarVisible.value = !isSidebarVisible.value;
 }
 
+function openProfileSettings() {
+  showProfileSettings.value = true;
+}
+
+function closeProfileSettings() {
+  showProfileSettings.value = false;
+}
+
 function toggleNetworkConfig() {
   const nextOpen = !showNetworkConfig.value;
   showNetworkConfig.value = nextOpen;
@@ -1579,7 +1597,7 @@ function handleAmbience() {
   tryPlayAmbience();
 }
 
-function handleSettingsUpdate(newConfig: AudioConfig) {
+function handleSettingsUpdate(newConfig: Partial<AudioConfig>) {
   const previousSoundpack = config.value.soundpack;
 
   config.value = {

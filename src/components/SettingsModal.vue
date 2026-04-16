@@ -79,26 +79,6 @@
             />
           </div>
           <div class="setting-row">
-            <label>AVATAR URL</label>
-            <input
-              v-model="localConfig.avatarUrl"
-              type="url"
-              id="set-avatar-url"
-              placeholder="https://example.com/avatar.png"
-              @change="handleChange"
-            />
-          </div>
-          <div class="setting-row">
-            <label>TAGLINE</label>
-            <input
-              v-model="localConfig.tagline"
-              type="text"
-              id="set-tagline"
-              placeholder="AGENT ON THE MOVE"
-              @change="handleChange"
-            />
-          </div>
-          <div class="setting-row">
             <label>ENABLE AVATARS</label>
             <input
               v-model="localConfig.enableAvatars"
@@ -107,7 +87,6 @@
               @change="handleChange"
             />
           </div>
-          <div class="setting-note">Web-accessible avatar images render at a maximum height of 40px in chat.</div>
           <hr class="settings-divider" />
           <div class="setting-row">
             <label>DM ENABLED</label>
@@ -161,16 +140,7 @@
             </select>
           </div>
         </div>
-        <div v-if="activeTab === 'agentamp'" class="tab-panel media-panel">
-          <div class="setting-row">
-            <label>MEDIA SHARING</label>
-            <input
-              v-model="localConfig.mediaSharing"
-              type="checkbox"
-              id="set-media-sharing-toggle"
-              @change="handleChange"
-            />
-          </div>
+        <div v-else-if="activeTab === 'agentamp'" class="tab-panel media-panel">
           <div class="setting-row">
             <label>AGENTAMP</label>
             <input
@@ -323,7 +293,7 @@
             <span class="range-value">{{ localConfig.spectrumThresholdHigh?.toFixed(2) ?? '0.60' }}</span>
           </div>
         </div>
-        <div v-if="activeTab === 'media'" class="tab-panel media-panel">
+        <div v-else-if="activeTab === 'media'" class="tab-panel media-panel">
           <div class="setting-row">
             <label>System Sounds</label>
             <input
@@ -418,7 +388,7 @@
           </div>
           <hr class="settings-divider" />
         </div>
-        <div v-if="activeTab === 'help'" class="tab-panel help-panel">
+        <div v-else-if="activeTab === 'help'" class="tab-panel help-panel">
           <div class="help-title">SLASH COMMANDS</div>
           <div class="help-row">
             <code>/away</code>
@@ -460,7 +430,7 @@
           </div>
         </div>
 
-        <div v-if="activeTab === 'slash'" class="tab-panel slash-panel">
+        <div v-else-if="activeTab === 'slash'" class="tab-panel slash-panel">
           <div class="help-title">CUSTOM SHORTCUTS</div>
           <div class="slash-note">
             <code>/SHORT</code> TO SEND REUSABLE MESSAGE.

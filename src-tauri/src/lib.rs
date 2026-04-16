@@ -996,6 +996,10 @@ fn handle_agentconf_arguments(args: &[String]) -> Result<AgentConfPayload, Strin
     read_agentconf_file(&file_path)
 }
 
+fn handle_agentconf_arguments_if_present(args: &[String]) -> Option<Result<AgentConfPayload, String>> {
+    parse_agentconf_path(args).map(|_| handle_agentconf_arguments(args))
+}
+
 #[tauri::command]
 fn discover_custom_assets(app: tauri::AppHandle) -> Result<CustomAssetsResult, String> {
     let app_data_dir = app
@@ -1248,9 +1252,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
-                match handle_agentconf_arguments(&args) {
-                    Ok(payload) => emit_agentconf_opened(&window, payload),
-                    Err(error) => emit_agentconf_error(&window, error),
+                if let Some(result) = handle_agentconf_arguments_if_present(&args) {
+                    match result {
+                        Ok(payload) => emit_agentconf_opened(&window, payload),
+                        Err(error) => emit_agentconf_error(&window, error),
+                    }
                 }
             }
         }))
@@ -1315,9 +1321,12 @@ pub fn run() {
                 .inner_size(800.0, 600.0)
                 .build()?;
 
-            match handle_agentconf_arguments(&std::env::args().collect::<Vec<_>>()) {
-                Ok(payload) => emit_agentconf_opened(&main_window, payload),
-                Err(error) => emit_agentconf_error(&main_window, error),
+            let args = std::env::args().collect::<Vec<_>>();
+            if let Some(result) = handle_agentconf_arguments_if_present(&args) {
+                match result {
+                    Ok(payload) => emit_agentconf_opened(&main_window, payload),
+                    Err(error) => emit_agentconf_error(&main_window, error),
+                }
             }
 
             Ok(())

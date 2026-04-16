@@ -59,27 +59,11 @@
           :aria-label="`Mention ${user.username}`"
           @click="emit('mentionRequest', user.username)"
           @mouseenter.stop="showUserDetails(user, $event)"
-          @mouseleave="scheduleHideUserDetails"
+          @mouseleave="scheduleHideUserDetails()"
           @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
         >
           {{ props.isCompact ? getCompactUserLabel(user.username) : user.username }}
         </button>
-        <button
-          v-if="user.dmAvailable && !user.isAway"
-          class="dm-btn"
-          :class="[{ 'compact-dm-btn': props.isCompact }, getDMBubbleClass(user.username)]"
-          :aria-label="getDMBubbleTitle(user.username)"
-          @click="emit('dmRequest', user.username)"
-          @contextmenu.prevent.stop
-        >
-          {{ getDMBubbleIcon(user.username) }}
-        </button>
-        <span
-          v-else-if="!props.isCompact"
-          class="dm-btn-placeholder"
-          :class="{ 'compact-dm-btn-placeholder': props.isCompact }"
-          aria-hidden="true"
-        ></span>
       </div>
     </div>
     <div v-if="contextMenu.visible" class="user-context-tooltip" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @click.stop @mouseleave="hideContextMenu">
@@ -122,6 +106,16 @@
         <div class="user-details-body">
           <div class="user-details-name">{{ hoveredUser.username }}</div>
           <div class="user-details-tagline">{{ hoveredUser.tagline?.trim() || 'No tagline set' }}</div>
+          <button
+            v-if="hoveredUser.dmAvailable && !hoveredUser.isAway"
+            type="button"
+            class="request-tunnel-btn"
+            :class="getDMBubbleClass(hoveredUser.username)"
+            :aria-label="getDMBubbleTitle(hoveredUser.username)"
+            @click.stop="emit('dmRequest', hoveredUser.username)"
+          >
+            REQUEST TUNNEL
+          </button>
         </div>
       </div>
     </div>
@@ -184,12 +178,17 @@ function showUserDetails(user: UserPresence, event: MouseEvent) {
 
   const target = event.currentTarget as HTMLElement | null;
   const rect = target?.getBoundingClientRect();
-  const x = rect ? rect.right + 10 : event.clientX + 10;
-  const y = rect ? rect.top : event.clientY;
+  const width = 280;
+  const x = rect
+    ? props.isCompact
+      ? Math.max(8, rect.left - width - 4)
+      : Math.max(8, rect.left - width + 48)
+    : event.clientX - width + 8;
+  const y = rect ? (props.isCompact ? rect.top - 8 : rect.top - 24) : event.clientY - 18;
 
   hoverPopup.value = {
-    x: Math.min(window.innerWidth - 280, x),
-    y: Math.min(window.innerHeight - 220, y),
+    x: Math.min(window.innerWidth - width, x),
+    y: Math.min(window.innerHeight - 220, Math.max(8, y)),
   };
   hoveredUser.value = user;
 }
@@ -314,10 +313,6 @@ function getDMBubbleClass(user: string) {
     'dm-btn-pending': state === 'pending',
     'dm-btn-denied': state === 'denied',
   };
-}
-
-function getDMBubbleIcon(user: string): string {
-  return getDMBubbleState(user) === 'denied' ? '✕' : '💬';
 }
 
 function getDMBubbleTitle(user: string): string {
@@ -528,22 +523,13 @@ function pinUserMedia() {
 }
 
 .user-node {
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   font-weight: bold;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 0;
-  transition: opacity 0.2s;
-  cursor: default;
-}
-
-.user-node:hover {
-  opacity: 0.8;
-}
-
-.away-user {
-  opacity: 0.55;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 0;
 }
 
 .user-bullet-btn {
@@ -585,7 +571,12 @@ function pinUserMedia() {
   font-weight: inherit;
   cursor: pointer;
   padding: 0;
-  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.away-user {
+  opacity: 0.55;
 }
 
 .compact-user-handle-btn {
@@ -615,6 +606,28 @@ function pinUserMedia() {
   padding: 2px 4px;
   border-radius: 999px;
   min-width: 24px;
+}
+
+.request-tunnel-btn {
+  margin-top: 10px;
+  background: var(--color-input-bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity 0.2s, transform 0.2s, border-color 0.2s;
+}
+
+.request-tunnel-btn:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+  border-color: var(--color-accent);
 }
 
 .compact-dm-btn {

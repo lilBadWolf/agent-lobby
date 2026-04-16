@@ -8,6 +8,7 @@
     "process:allow-restart",
     "dialog:default",
     "fs:default",
+    "fs:allow-open",
     "opener:default",
     "core:default",
     "core:event:allow-emit-to",

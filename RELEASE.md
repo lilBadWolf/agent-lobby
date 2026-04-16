@@ -1,14 +1,14 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.12**
+
+- 📦 **DM file transfers now survive large attachments more reliably**: sender-side transfers stream 8 KB chunks and avoid buffering the entire file in memory.
+- 🧪 **Better RTC backpressure handling**: the sender now waits for `bufferedamountlow` and allows more time for the data channel to drain before failing.
+- 🔧 **Tauri save ACL fix included**: the file save path now allows `fs:open` alongside download-write permissions so incoming file saves can complete.
+
+> This patch hardens DM file transfer and fixes the Tauri save ACL path for large incoming attachments.
+
 🎉 **Release highlights for agent-lobby 0.4.11**
-
-- 📦 **Large DM file transfers now stream safely**: sender-side transfers slice files into 8 KB chunks and avoid buffering the entire file in memory.
-- 🧪 **Improved RTC data-channel backpressure handling**: the sender now waits on `bufferedamountlow` and tolerates longer drain times before failing.
-- 🔧 **Safer save path for received files**: incoming file saves no longer allocate a full in-memory blob before writing to disk.
-
-> This patch hardens DM file transfer for large attachments and reduces sender-side timeout and memory failure risk.
-
-🎉 **Release highlights for agent-lobby 0.4.10**
 
 - 🧑‍💻 **User avatar support**: new avatar URL setting is shared via MQTT presence and rendered next to chat senders when enabled.
 - 🪪 **User taglines**: add a personal tagline in settings and share it through presence updates.

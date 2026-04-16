@@ -1276,6 +1276,7 @@ pub fn run() {
                         .permission("core:event:allow-emit-to")
                         .permission("core:window:allow-set-size")
                         .permission("fs:default")
+                        .permission("fs:allow-open")
                         .permission("fs:allow-download-write")
                         .permission("dialog:default")
                         .permission("opener:default")

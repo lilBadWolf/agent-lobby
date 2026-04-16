@@ -23,16 +23,25 @@
         <div class="avatar-settings-panel">
           <div v-if="activeTab === 'included'" class="included-avatar-panel">
             <div class="pack-selection-row" v-if="avatarPacks.length > 1">
-              <label>PACK</label>
-              <div class="pack-list">
+              <div class="pack-nav-row">
                 <button
-                  v-for="pack in avatarPacks"
-                  :key="pack.id"
                   type="button"
-                  :class="['pack-button', { active: pack.id === activePackId }]"
-                  @click="activePackId = pack.id"
+                  class="pack-nav-button"
+                  @click="prevPack"
+                  :disabled="avatarPacks.length <= 1"
+                  aria-label="Previous pack"
                 >
-                  {{ pack.label }}
+                  ‹
+                </button>
+                <div class="pack-title">{{ activePack?.label }}</div>
+                <button
+                  type="button"
+                  class="pack-nav-button"
+                  @click="nextPack"
+                  :disabled="avatarPacks.length <= 1"
+                  aria-label="Next pack"
+                >
+                  ›
                 </button>
               </div>
             </div>
@@ -197,6 +206,24 @@ watch(
 
 const activePack = computed(() => avatarPacks.find((entry) => entry.id === activePackId.value) ?? avatarPacks[0]);
 
+const activePackIndex = computed(() => avatarPacks.findIndex((entry) => entry.id === activePackId.value));
+
+function prevPack() {
+  if (avatarPacks.length <= 1 || activePackIndex.value < 0) {
+    return;
+  }
+  const nextIndex = (activePackIndex.value - 1 + avatarPacks.length) % avatarPacks.length;
+  activePackId.value = avatarPacks[nextIndex].id;
+}
+
+function nextPack() {
+  if (avatarPacks.length <= 1 || activePackIndex.value < 0) {
+    return;
+  }
+  const nextIndex = (activePackIndex.value + 1) % avatarPacks.length;
+  activePackId.value = avatarPacks[nextIndex].id;
+}
+
 const selectedAvatarIndex = computed<number | null>(() => {
   const selection = findAvatarPackSelection(localConfig.value.avatarUrl);
   return selection ? selection.avatarIndex : null;
@@ -324,24 +351,44 @@ h3 {
   gap: 8px;
 }
 
-.pack-list {
+.pack-nav-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
 }
 
-.pack-button {
+.pack-nav-button {
+  width: 38px;
+  height: 38px;
   border-radius: 999px;
-  padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--color-accent-muted);
   background: rgba(255, 255, 255, 0.04);
   color: var(--color-text-primary);
+  font-size: 18px;
+  font-weight: 700;
   cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
-.pack-button.active {
-  background: rgba(120, 138, 255, 0.18);
+.pack-nav-button:hover:not(:disabled) {
   border-color: var(--color-accent);
+  background: rgba(120, 138, 255, 0.14);
+}
+
+.pack-nav-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pack-title {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-primary);
 }
 
 .avatar-grid {

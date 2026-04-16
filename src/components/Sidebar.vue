@@ -93,10 +93,15 @@
     >
       <div class="user-details-card">
         <div class="user-details-avatar-wrap">
+          <div
+            v-if="getUserDetailsAvatarSpriteStyle(hoveredUser)"
+            class="user-details-avatar-sprite"
+            :style="getUserDetailsAvatarSpriteStyle(hoveredUser)"
+            aria-hidden="true"
+          />
           <img
-            v-if="getUserDetailsAvatarUrl(hoveredUser)"
+            v-else-if="getUserDetailsAvatarUrl(hoveredUser)"
             :src="getUserDetailsAvatarUrl(hoveredUser)"
-            :style="getUserDetailsAvatarStyle(hoveredUser)"
             alt=""
             class="user-details-avatar"
           />
@@ -221,10 +226,15 @@ function getUserDetailsAvatarUrl(user: UserPresence): string | undefined {
     return undefined;
   }
 
+  const parsed = parseAvatarUrl(url);
+  if (parsed?.src?.startsWith('pack://')) {
+    return undefined;
+  }
+
   return resolveAvatarSrc(url);
 }
 
-function getUserDetailsAvatarStyle(user: UserPresence): Record<string, string> | undefined {
+function getUserDetailsAvatarSpriteStyle(user: UserPresence): Record<string, string> | undefined {
   const url = getSafeAvatarUrl(user.avatarUrl);
   if (!url) {
     return undefined;
@@ -235,11 +245,18 @@ function getUserDetailsAvatarStyle(user: UserPresence): Record<string, string> |
     return undefined;
   }
 
+  const resolvedSrc = resolveAvatarSrc(url);
+  if (!resolvedSrc) {
+    return undefined;
+  }
+
   return {
-    width: '120px',
-    height: '120px',
-    objectFit: 'none',
-    objectPosition: getAvatarObjectPosition(parsed.avatarIndex),
+    backgroundImage: `url(${resolvedSrc})`,
+    backgroundSize: '300% 300%',
+    backgroundPosition: getAvatarObjectPosition(parsed.avatarIndex),
+    width: '100%',
+    height: '100%',
+    backgroundRepeat: 'no-repeat',
   };
 }
 
@@ -811,6 +828,13 @@ function pinUserMedia() {
   object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.user-details-avatar-sprite {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .user-details-avatar-placeholder {

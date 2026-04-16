@@ -1,13 +1,15 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.14**
+
+- 🧩 **Avatar packs first pass**: choose built-in avatar sprites or enter an avatar URL in Profile Settings.
+- 👁️ **Live custom avatar preview**: the custom URL tab now shows a preview for both direct image links and selected pack tiles.
+- 🧠 **Chat and sidebar rendering aligned**: built-in avatar pack selections now render correctly across lobby chat and user hover cards.
+- 🤖 **Copilot Kudos**: AI implementation glued the feature flow together with validation and preview behavior.
+
+> This release introduces built-in avatar pack selection, live custom avatar preview, and smoother avatar rendering across the app.
+
 🎉 **Release highlights for agent-lobby 0.4.13**
-
-- 🧭 **Compact sidebar popup reposition**: the compact sidebar hover card now appears slightly closer and higher for better alignment.
-- 🧼 **UI polish for compact mode**: this patch refines the user-hover modal placement without changing compact sidebar behavior.
-
-> This patch fine-tunes compact sidebar hover popup placement for a smoother user experience.
-
-🎉 **Release highlights for agent-lobby 0.4.12**
 
 - 📦 **DM file transfers now survive large attachments more reliably**: sender-side transfers stream 8 KB chunks and avoid buffering the entire file in memory.
 - 🧪 **Better RTC backpressure handling**: the sender now waits for `bufferedamountlow` and allows more time for the data channel to drain before failing.

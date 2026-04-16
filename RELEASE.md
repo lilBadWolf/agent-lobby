@@ -1,5 +1,13 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.17**
+
+- 🧩 **Expanded avatar pack support**: additional built-in avatar packs are now available and selectable from Profile Settings.
+- 🔀 **Pack navigation UI**: users can switch packs with compact prev/next controls while browsing included avatars.
+- 🎨 **Consistent pack preview**: built-in avatar sprites now render consistently across profile preview, chat, and hover cards.
+
+> This release expands built-in avatar pack support with improved pack navigation and consistent rendering throughout the app.
+
 🎉 **Release highlights for agent-lobby 0.4.16**
 
 - 🧩 **Avatar packs first pass**: choose built-in avatar sprites or enter an avatar URL in Profile Settings.

@@ -128,7 +128,7 @@
 import { computed, ref, watch } from 'vue';
 import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
-import { parseAvatarUrl, getAvatarObjectPosition } from '../composables/useAvatarPacks';
+import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
@@ -208,7 +208,7 @@ function getSafeAvatarUrl(value: string | undefined): string | undefined {
   }
 
   const trimmed = value.trim();
-  if (!/^https?:\/\//i.test(trimmed) || /\s/.test(trimmed)) {
+  if ((!/^https?:\/\//i.test(trimmed) && !/^pack:\/\//i.test(trimmed)) || /\s/.test(trimmed)) {
     return undefined;
   }
 
@@ -221,8 +221,7 @@ function getUserDetailsAvatarUrl(user: UserPresence): string | undefined {
     return undefined;
   }
 
-  const parsed = parseAvatarUrl(url);
-  return parsed ? parsed.src : undefined;
+  return resolveAvatarSrc(url);
 }
 
 function getUserDetailsAvatarStyle(user: UserPresence): Record<string, string> | undefined {

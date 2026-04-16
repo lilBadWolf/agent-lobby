@@ -474,7 +474,7 @@ import type { ActiveMedia, ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
-import { parseAvatarUrl, getAvatarObjectPosition } from '../composables/useAvatarPacks';
+import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 import * as nodeEmoji from 'node-emoji';
 
 type YouTubePlayerState = {
@@ -595,7 +595,7 @@ function isSafeAvatarUrl(value: string | undefined): boolean {
   }
 
   const trimmed = value.trim();
-  return /^https?:\/\//i.test(trimmed) && !/\s/.test(trimmed);
+  return (/^https?:\/\//i.test(trimmed) || /^pack:\/\//i.test(trimmed)) && !/\s/.test(trimmed);
 }
 
 function getSenderAvatarUrl(user: string): string | undefined {
@@ -609,8 +609,7 @@ function getSenderAvatarUrl(user: string): string | undefined {
     return undefined;
   }
 
-  const parsed = parseAvatarUrl(url);
-  return parsed ? parsed.src : undefined;
+  return resolveAvatarSrc(url);
 }
 
 function getSenderAvatarPackStyle(user: string): Record<string, string> | undefined {
@@ -629,8 +628,13 @@ function getSenderAvatarPackStyle(user: string): Record<string, string> | undefi
     return undefined;
   }
 
+  const resolvedSrc = resolveAvatarSrc(url);
+  if (!resolvedSrc) {
+    return undefined;
+  }
+
   return {
-    backgroundImage: `url(${parsed.src})`,
+    backgroundImage: `url(${resolvedSrc})`,
     backgroundSize: '300% 300%',
     backgroundPosition: getAvatarObjectPosition(parsed.avatarIndex),
     width: '100%',

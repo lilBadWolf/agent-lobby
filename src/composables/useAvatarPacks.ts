@@ -32,14 +32,8 @@ export function getAvatarPacks(): AvatarPack[] {
   return avatarPacks;
 }
 
-export function buildPackAvatarUrl(packSrc: string, avatarIndex: number): string {
-  try {
-    const parsed = new URL(packSrc, window.location.origin);
-    parsed.searchParams.set('avatarIndex', String(avatarIndex));
-    return parsed.toString();
-  } catch {
-    return `${packSrc}?avatarIndex=${avatarIndex}`;
-  }
+export function buildPackAvatarUrl(packId: string, avatarIndex: number): string {
+  return `pack://${encodeURIComponent(packId)}?avatarIndex=${avatarIndex}`;
 }
 
 export function parseAvatarUrl(value?: string): AvatarUrlSelection | undefined {
@@ -51,8 +45,16 @@ export function parseAvatarUrl(value?: string): AvatarUrlSelection | undefined {
     const parsed = new URL(value, window.location.origin);
     const rawIndex = parsed.searchParams.get('avatarIndex');
     const avatarIndex = rawIndex !== null && rawIndex !== '' ? Number(rawIndex) : null;
-    const sanitizedSrc = `${parsed.origin}${parsed.pathname}`;
 
+    if (parsed.protocol === 'pack:') {
+      const packId = decodeURIComponent(parsed.hostname || parsed.pathname.replace(/^\/?/, ''));
+      if (!packId) {
+        return undefined;
+      }
+      return { src: `pack://${packId}`, avatarIndex };
+    }
+
+    const sanitizedSrc = `${parsed.origin}${parsed.pathname}`;
     if (avatarIndex !== null && (!Number.isFinite(avatarIndex) || avatarIndex < 0 || avatarIndex > 8)) {
       return { src: sanitizedSrc, avatarIndex: null };
     }
@@ -63,23 +65,49 @@ export function parseAvatarUrl(value?: string): AvatarUrlSelection | undefined {
   }
 }
 
+export function resolveAvatarSrc(value?: string): string | undefined {
+  const parsed = parseAvatarUrl(value);
+  if (!parsed) {
+    return undefined;
+  }
+
+  if (parsed.src.startsWith('pack://')) {
+    const packId = parsed.src.slice('pack://'.length);
+    const pack = avatarPacks.find((entry) => entry.id === packId);
+    if (!pack) {
+      return undefined;
+    }
+
+    try {
+      const resolved = new URL(pack.src, window.location.origin);
+      if (resolved.protocol === 'http:' || resolved.protocol === 'https:') {
+        return resolved.pathname + resolved.search + resolved.hash;
+      }
+      return pack.src;
+    } catch {
+      return pack.src;
+    }
+  }
+
+  return parsed.src;
+}
+
 export function findAvatarPackSelection(value?: string): { pack: AvatarPack; avatarIndex: number } | undefined {
   const parsed = parseAvatarUrl(value);
   if (!parsed || parsed.avatarIndex === null) {
     return undefined;
   }
 
-  let urlPath = parsed.src;
-  try {
-    const parsedUrl = new URL(value || '', window.location.origin);
-    urlPath = parsedUrl.pathname;
-  } catch {
-    // ignore
+  if (parsed.src.startsWith('pack://')) {
+    const packId = parsed.src.slice('pack://'.length);
+    const pack = avatarPacks.find((entry) => entry.id === packId);
+    if (!pack) {
+      return undefined;
+    }
+    return { pack, avatarIndex: parsed.avatarIndex };
   }
 
-  const pack = avatarPacks.find(
-    (entry) => entry.src === parsed.src || entry.src === urlPath || entry.src === `/${urlPath.replace(/^\//, '')}`
-  );
+  const pack = avatarPacks.find((entry) => entry.src === parsed.src);
   if (!pack) {
     return undefined;
   }

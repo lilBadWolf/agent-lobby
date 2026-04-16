@@ -207,7 +207,7 @@ function selectBuiltInAvatar(index: number) {
     return;
   }
 
-  localConfig.value.avatarUrl = buildPackAvatarUrl(activePack.value.src, index);
+  localConfig.value.avatarUrl = buildPackAvatarUrl(activePack.value.id, index);
   activeTab.value = 'custom';
   handleChange();
 }

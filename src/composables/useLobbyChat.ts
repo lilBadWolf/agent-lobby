@@ -148,14 +148,21 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   } else {
     const rawUrl = normalized.pageUrl.trim();
     if (rawUrl) {
+      let parsed: URL | null = null;
+
       try {
-        const parsed = new URL(rawUrl);
-        if (/^https?:$/i.test(parsed.protocol)) {
-          normalized.pageUrl = parsed.toString();
-        } else {
-          normalized.pageUrl = '';
-        }
+        parsed = new URL(rawUrl);
       } catch {
+        try {
+          parsed = new URL(`https://${rawUrl}`);
+        } catch {
+          parsed = null;
+        }
+      }
+
+      if (parsed && /^https?:$/i.test(parsed.protocol) && parsed.hostname) {
+        normalized.pageUrl = parsed.toString();
+      } else {
         normalized.pageUrl = '';
       }
     } else {
@@ -488,6 +495,22 @@ export function useLobbyChat() {
   let presencePreviewCooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   const config = ref<AudioConfig>(normalizeAudioConfig());
+  watch(
+    () => config.value.pageText,
+    (next) => {
+      if (typeof next === 'string') {
+        void setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageText, next);
+      }
+    }
+  );
+  watch(
+    () => config.value.pageUrl,
+    (next) => {
+      if (typeof next === 'string') {
+        void setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageUrl, next);
+      }
+    }
+  );
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
   const customSoundpackPathByName = ref<Record<string, string>>({});
   let tauriCoreModulePromise: Promise<typeof import('@tauri-apps/api/core') | null> | null = null;

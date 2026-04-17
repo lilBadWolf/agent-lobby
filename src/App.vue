@@ -1229,8 +1229,14 @@ function teardownAgentAmpStatusBridge() {
   cleanupAgentAmpStorageListener?.();
 }
 
+const handleGlobalContextMenu = (event: Event) => {
+  if (!event.defaultPrevented) {
+    event.preventDefault();
+  }
+};
+
 onMounted(async () => {
-  // window.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('contextmenu', handleGlobalContextMenu);
 
   initializeAgentAmpStatusBridge();
   initializeAgentAmpActionBridge();
@@ -1248,6 +1254,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('contextmenu', handleGlobalContextMenu);
   markAgentAmpStopped();
   teardownAgentAmpStatusBridge();
   teardownPinnedVideoActionBridge();
@@ -1603,16 +1610,6 @@ function handleSettingsUpdate(newConfig: Partial<AudioConfig>) {
   config.value = {
     ...config.value,
     ...newConfig,
-    autoAwayMinutes: newConfig.autoAwayMinutes ?? 10,
-    autoUpdatePulseMinutes: newConfig.autoUpdatePulseMinutes ?? 30,
-    autoScanMediaLibraryMinutes: newConfig.autoScanMediaLibraryMinutes ?? 0,
-    spectrumBarCount: newConfig.spectrumBarCount ?? 64,
-    spectrumFftSize: newConfig.spectrumFftSize ?? 2048,
-    spectrumThresholdLow: newConfig.spectrumThresholdLow ?? config.value.spectrumThresholdLow ?? 0.15,
-    spectrumThresholdMedium: newConfig.spectrumThresholdMedium ?? config.value.spectrumThresholdMedium ?? 0.3,
-    spectrumThresholdHigh: newConfig.spectrumThresholdHigh ?? config.value.spectrumThresholdHigh ?? 0.6,
-    agentAmpDetached: newConfig.agentAmpDetached ?? false,
-    customSlashCommands: newConfig.customSlashCommands ?? [],
   };
 
   applyTheme(config.value.theme);

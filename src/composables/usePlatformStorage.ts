@@ -137,6 +137,18 @@ export async function setPersistedValue<T>(key: string, value: T): Promise<void>
     return;
   }
 
+  if (canUseLocalStorage()) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      //logPlatformStorage('info', 'write.mirror.local_storage', { key, value });
+    } catch (error) {
+      //logPlatformStorage('warn', 'write.mirror.local_storage.failed', {
+      //  key,
+      //  error: error instanceof Error ? error.message : String(error),
+      //});
+    }
+  }
+
   try {
     const store = await getAppStore();
     if (store) {
@@ -154,18 +166,6 @@ export async function setPersistedValue<T>(key: string, value: T): Promise<void>
     //  value,
     //  error: error instanceof Error ? error.message : String(error),
     //});
-  }
-
-  if (canUseLocalStorage()) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      //logPlatformStorage('info', 'write.mirror.local_storage', { key, value });
-    } catch (error) {
-      //logPlatformStorage('warn', 'write.mirror.local_storage.failed', {
-      //  key,
-      //  error: error instanceof Error ? error.message : String(error),
-      //});
-    }
   }
 }
 

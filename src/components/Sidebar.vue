@@ -217,8 +217,8 @@ function showUserDetails(user: UserPresence, event: MouseEvent) {
   clearHoverTimeout();
 
   const width = 320;
-  const x = Math.max(8, event.clientX - width - 12);
-  const y = Math.min(window.innerHeight - 220, Math.max(8, event.clientY - 2));
+  const x = Math.max(8, event.clientX - width - 8);
+  const y = Math.min(window.innerHeight - 220, Math.max(8, event.clientY - 8));
 
   hoverPopup.value = {
     x,
@@ -919,7 +919,7 @@ function pinUserMedia() {
 }
 
 .user-details-card {
-  background: rgba(16, 18, 26, 0.98);
+  background: var(--color-bg-base);
   border: 1px solid rgba(120, 138, 255, 0.28);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
   border-radius: 18px;

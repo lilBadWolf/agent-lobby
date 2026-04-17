@@ -120,7 +120,7 @@
             type="text"
             id="set-profile-tagline"
             placeholder="AGENT ON THE MOVE"
-            @change="handleChange"
+            @input="handleChange"
           />
         </div>
         <div class="setting-row page-field-row">
@@ -130,14 +130,14 @@
             type="text"
             id="set-profile-page-text"
             placeholder="Link text"
-            @change="handleChange"
+            @input="handleChange"
           />
           <input
             v-model="localConfig.pageUrl"
             type="url"
             id="set-profile-page-url"
             placeholder="https://example.com"
-            @change="handleChange"
+            @input="handleChange"
           />
         </div>
         <div class="setting-row">
@@ -305,6 +305,7 @@ function handleChange() {
 }
 
 function handleClose() {
+  handleChange();
   emit('close');
 }
 </script>

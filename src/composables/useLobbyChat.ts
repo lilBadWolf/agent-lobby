@@ -27,7 +27,13 @@ const RESERVED_SLASH_COMMANDS = new Set([
   '/lobby',
 ]);
 
-const AUDIO_CONFIG_STORAGE_KEYS = {
+const APP_CONFIG_GROUP_KEYS = {
+  appSettings: 'agent_app_settings',
+  agentAmpSettings: 'agent_amp_settings',
+  profileSettings: 'agent_profile_settings',
+} as const;
+
+const APP_CONFIG_STORAGE_KEYS = {
   audioEnabled: 'agent_audio_enabled',
   volume: 'agent_volume',
   autoAwayMinutes: 'agent_auto_away_minutes',
@@ -60,7 +66,53 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   customSlashCommands: 'agent_custom_slash_commands',
 } as const;
 
-const DEFAULT_AUDIO_CONFIG: AudioConfig = {
+type AppSettings = Pick<
+  AudioConfig,
+  | 'audioEnabled'
+  | 'volume'
+  | 'autoAwayMinutes'
+  | 'autoUpdatePulseMinutes'
+  | 'dmEnabled'
+  | 'mediaSharing'
+  | 'scanlines'
+  | 'soundpack'
+  | 'theme'
+  | 'dmChatEffect'
+  | 'showJoinPartMessages'
+  | 'audioInputDeviceId'
+  | 'audioOutputDeviceId'
+  | 'videoInputDeviceId'
+  | 'customSlashCommands'
+>;
+
+type AgentAmpSettings = Pick<
+  AudioConfig,
+  | 'agentAmpEnabled'
+  | 'agentAmpDetached'
+  | 'autoScanMediaLibraryMinutes'
+  | 'spectrumBarCount'
+  | 'spectrumFftSize'
+  | 'spectrumSensitivity'
+  | 'spectrumGradientBars'
+  | 'spectrumThresholdLow'
+  | 'spectrumThresholdMedium'
+  | 'spectrumThresholdHigh'
+>;
+
+type ProfileSettings = Pick<
+  AudioConfig,
+  | 'enableAvatars'
+  | 'avatarUrl'
+  | 'tagline'
+  | 'pageText'
+  | 'pageUrl'
+>;
+
+async function cleanupLegacyAudioConfigKeys(): Promise<void> {
+  await Promise.all(Object.values(APP_CONFIG_STORAGE_KEYS).map(removePersistedValue));
+}
+
+const DEFAULT_APP_CONFIG: AudioConfig = {
   dmEnabled: true,
   mediaSharing: true,
   agentAmpEnabled: false,
@@ -95,11 +147,11 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
 
 function normalizeThemeName(theme: unknown): string {
   if (typeof theme !== 'string') {
-    return DEFAULT_AUDIO_CONFIG.theme;
+    return DEFAULT_APP_CONFIG.theme;
   }
 
   const trimmedTheme = theme.trim();
-  return trimmedTheme || DEFAULT_AUDIO_CONFIG.theme;
+  return trimmedTheme || DEFAULT_APP_CONFIG.theme;
 }
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
@@ -109,7 +161,7 @@ let presenceHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioConfig {
   const normalized = {
-    ...DEFAULT_AUDIO_CONFIG,
+    ...DEFAULT_APP_CONFIG,
     ...(savedConfig || {}),
   };
 
@@ -118,33 +170,33 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   normalized.customSlashCommands = sanitizeCustomSlashCommands((savedConfig as Partial<AudioConfig> | null)?.customSlashCommands);
 
   if (typeof normalized.mediaSharing !== 'boolean') {
-    normalized.mediaSharing = DEFAULT_AUDIO_CONFIG.mediaSharing;
+    normalized.mediaSharing = DEFAULT_APP_CONFIG.mediaSharing;
   }
 
   if (typeof normalized.enableAvatars !== 'boolean') {
-    normalized.enableAvatars = DEFAULT_AUDIO_CONFIG.enableAvatars;
+    normalized.enableAvatars = DEFAULT_APP_CONFIG.enableAvatars;
   }
 
   if (typeof normalized.avatarUrl !== 'string') {
-    normalized.avatarUrl = DEFAULT_AUDIO_CONFIG.avatarUrl;
+    normalized.avatarUrl = DEFAULT_APP_CONFIG.avatarUrl;
   } else {
     normalized.avatarUrl = normalized.avatarUrl.trim();
   }
 
   if (typeof normalized.tagline !== 'string') {
-    normalized.tagline = DEFAULT_AUDIO_CONFIG.tagline;
+    normalized.tagline = DEFAULT_APP_CONFIG.tagline;
   } else {
     normalized.tagline = normalized.tagline.trim();
   }
 
   if (typeof normalized.pageText !== 'string') {
-    normalized.pageText = DEFAULT_AUDIO_CONFIG.pageText;
+    normalized.pageText = DEFAULT_APP_CONFIG.pageText;
   } else {
     normalized.pageText = normalized.pageText.trim();
   }
 
   if (typeof normalized.pageUrl !== 'string') {
-    normalized.pageUrl = DEFAULT_AUDIO_CONFIG.pageUrl;
+    normalized.pageUrl = DEFAULT_APP_CONFIG.pageUrl;
   } else {
     const rawUrl = normalized.pageUrl.trim();
     if (rawUrl) {
@@ -171,15 +223,15 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   }
 
   if (typeof normalized.agentAmpEnabled !== 'boolean') {
-    normalized.agentAmpEnabled = DEFAULT_AUDIO_CONFIG.agentAmpEnabled;
+    normalized.agentAmpEnabled = DEFAULT_APP_CONFIG.agentAmpEnabled;
   }
 
   if (typeof normalized.agentAmpDetached !== 'boolean') {
-    normalized.agentAmpDetached = DEFAULT_AUDIO_CONFIG.agentAmpDetached;
+    normalized.agentAmpDetached = DEFAULT_APP_CONFIG.agentAmpDetached;
   }
 
   if (typeof normalized.scanlines !== 'boolean') {
-    normalized.scanlines = DEFAULT_AUDIO_CONFIG.scanlines;
+    normalized.scanlines = DEFAULT_APP_CONFIG.scanlines;
   }
 
   if (![0, 10, 30, 60].includes(normalized.autoAwayMinutes ?? 10)) {
@@ -195,36 +247,36 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   }
 
   if (![32, 48, 64, 96, 128].includes(normalized.spectrumBarCount ?? 64)) {
-    normalized.spectrumBarCount = DEFAULT_AUDIO_CONFIG.spectrumBarCount;
+    normalized.spectrumBarCount = DEFAULT_APP_CONFIG.spectrumBarCount;
   }
 
   if (![1024, 2048, 4096, 8192].includes(normalized.spectrumFftSize ?? 2048)) {
-    normalized.spectrumFftSize = DEFAULT_AUDIO_CONFIG.spectrumFftSize;
+    normalized.spectrumFftSize = DEFAULT_APP_CONFIG.spectrumFftSize;
   }
 
   if (typeof normalized.spectrumSensitivity !== 'number' || normalized.spectrumSensitivity < 0.5 || normalized.spectrumSensitivity > 2) {
-    normalized.spectrumSensitivity = DEFAULT_AUDIO_CONFIG.spectrumSensitivity;
+    normalized.spectrumSensitivity = DEFAULT_APP_CONFIG.spectrumSensitivity;
   }
 
   if (typeof normalized.spectrumGradientBars !== 'boolean') {
-    normalized.spectrumGradientBars = DEFAULT_AUDIO_CONFIG.spectrumGradientBars;
+    normalized.spectrumGradientBars = DEFAULT_APP_CONFIG.spectrumGradientBars;
   }
 
   if (typeof normalized.spectrumThresholdLow !== 'number' || normalized.spectrumThresholdLow < 0 || normalized.spectrumThresholdLow > 1) {
-    normalized.spectrumThresholdLow = DEFAULT_AUDIO_CONFIG.spectrumThresholdLow;
+    normalized.spectrumThresholdLow = DEFAULT_APP_CONFIG.spectrumThresholdLow;
   }
 
   if (typeof normalized.spectrumThresholdMedium !== 'number' || normalized.spectrumThresholdMedium < 0 || normalized.spectrumThresholdMedium > 1) {
-    normalized.spectrumThresholdMedium = DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium;
+    normalized.spectrumThresholdMedium = DEFAULT_APP_CONFIG.spectrumThresholdMedium;
   }
 
   if (typeof normalized.spectrumThresholdHigh !== 'number' || normalized.spectrumThresholdHigh < 0 || normalized.spectrumThresholdHigh > 1) {
-    normalized.spectrumThresholdHigh = DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh;
+    normalized.spectrumThresholdHigh = DEFAULT_APP_CONFIG.spectrumThresholdHigh;
   }
 
-  const spectrumThresholdLow = normalized.spectrumThresholdLow ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdLow ?? 0.15;
-  const spectrumThresholdMedium = normalized.spectrumThresholdMedium ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium ?? 0.3;
-  const spectrumThresholdHigh = normalized.spectrumThresholdHigh ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh ?? 0.6;
+  const spectrumThresholdLow = normalized.spectrumThresholdLow ?? DEFAULT_APP_CONFIG.spectrumThresholdLow ?? 0.15;
+  const spectrumThresholdMedium = normalized.spectrumThresholdMedium ?? DEFAULT_APP_CONFIG.spectrumThresholdMedium ?? 0.3;
+  const spectrumThresholdHigh = normalized.spectrumThresholdHigh ?? DEFAULT_APP_CONFIG.spectrumThresholdHigh ?? 0.6;
 
   if (spectrumThresholdLow >= spectrumThresholdMedium) {
     normalized.spectrumThresholdLow = Math.max(0, Math.min(spectrumThresholdLow, spectrumThresholdMedium - 0.05));
@@ -239,48 +291,61 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
   }
 
   if (typeof normalized.showJoinPartMessages !== 'boolean') {
-    normalized.showJoinPartMessages = DEFAULT_AUDIO_CONFIG.showJoinPartMessages;
+    normalized.showJoinPartMessages = DEFAULT_APP_CONFIG.showJoinPartMessages;
   }
 
   return normalized;
 }
 
 async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
+  const appSettings: AppSettings = {
+    audioEnabled: nextConfig.audioEnabled,
+    volume: nextConfig.volume,
+    autoAwayMinutes: nextConfig.autoAwayMinutes ?? DEFAULT_APP_CONFIG.autoAwayMinutes,
+    autoUpdatePulseMinutes: nextConfig.autoUpdatePulseMinutes ?? DEFAULT_APP_CONFIG.autoUpdatePulseMinutes,
+    dmEnabled: nextConfig.dmEnabled,
+    mediaSharing: nextConfig.mediaSharing,
+    scanlines: nextConfig.scanlines ?? DEFAULT_APP_CONFIG.scanlines,
+    soundpack: nextConfig.soundpack,
+    theme: nextConfig.theme,
+    dmChatEffect: nextConfig.dmChatEffect,
+    showJoinPartMessages: nextConfig.showJoinPartMessages ?? DEFAULT_APP_CONFIG.showJoinPartMessages,
+    audioInputDeviceId: nextConfig.audioInputDeviceId,
+    audioOutputDeviceId: nextConfig.audioOutputDeviceId,
+    videoInputDeviceId: nextConfig.videoInputDeviceId,
+    customSlashCommands: nextConfig.customSlashCommands ?? [],
+  };
+
+  const agentAmpSettings: AgentAmpSettings = {
+    agentAmpEnabled: nextConfig.agentAmpEnabled,
+    agentAmpDetached: nextConfig.agentAmpDetached ?? DEFAULT_APP_CONFIG.agentAmpDetached,
+    autoScanMediaLibraryMinutes: nextConfig.autoScanMediaLibraryMinutes ?? DEFAULT_APP_CONFIG.autoScanMediaLibraryMinutes,
+    spectrumBarCount: nextConfig.spectrumBarCount ?? DEFAULT_APP_CONFIG.spectrumBarCount,
+    spectrumFftSize: nextConfig.spectrumFftSize ?? DEFAULT_APP_CONFIG.spectrumFftSize,
+    spectrumSensitivity: nextConfig.spectrumSensitivity ?? DEFAULT_APP_CONFIG.spectrumSensitivity,
+    spectrumGradientBars: nextConfig.spectrumGradientBars ?? DEFAULT_APP_CONFIG.spectrumGradientBars,
+    spectrumThresholdLow: nextConfig.spectrumThresholdLow ?? DEFAULT_APP_CONFIG.spectrumThresholdLow,
+    spectrumThresholdMedium: nextConfig.spectrumThresholdMedium ?? DEFAULT_APP_CONFIG.spectrumThresholdMedium,
+    spectrumThresholdHigh: nextConfig.spectrumThresholdHigh ?? DEFAULT_APP_CONFIG.spectrumThresholdHigh,
+  };
+
+  const profileSettings: ProfileSettings = {
+    enableAvatars: nextConfig.enableAvatars ?? DEFAULT_APP_CONFIG.enableAvatars,
+    avatarUrl: nextConfig.avatarUrl ?? DEFAULT_APP_CONFIG.avatarUrl,
+    tagline: nextConfig.tagline ?? DEFAULT_APP_CONFIG.tagline,
+    pageText: nextConfig.pageText ?? DEFAULT_APP_CONFIG.pageText,
+    pageUrl: nextConfig.pageUrl ?? DEFAULT_APP_CONFIG.pageUrl,
+  };
+
   await Promise.all([
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioEnabled, nextConfig.audioEnabled),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.volume, nextConfig.volume),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes, nextConfig.autoAwayMinutes ?? DEFAULT_AUDIO_CONFIG.autoAwayMinutes),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes, nextConfig.autoUpdatePulseMinutes ?? DEFAULT_AUDIO_CONFIG.autoUpdatePulseMinutes),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.autoScanMediaLibraryMinutes, nextConfig.autoScanMediaLibraryMinutes ?? DEFAULT_AUDIO_CONFIG.autoScanMediaLibraryMinutes),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount, nextConfig.spectrumBarCount ?? DEFAULT_AUDIO_CONFIG.spectrumBarCount),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize, nextConfig.spectrumFftSize ?? DEFAULT_AUDIO_CONFIG.spectrumFftSize),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity, nextConfig.spectrumSensitivity ?? DEFAULT_AUDIO_CONFIG.spectrumSensitivity),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars, nextConfig.spectrumGradientBars ?? DEFAULT_AUDIO_CONFIG.spectrumGradientBars),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdLow, nextConfig.spectrumThresholdLow ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdLow),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdMedium, nextConfig.spectrumThresholdMedium ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdMedium),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdHigh, nextConfig.spectrumThresholdHigh ?? DEFAULT_AUDIO_CONFIG.spectrumThresholdHigh),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled, nextConfig.dmEnabled),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing, nextConfig.mediaSharing),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled, nextConfig.agentAmpEnabled),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached, nextConfig.agentAmpDetached ?? DEFAULT_AUDIO_CONFIG.agentAmpDetached),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.scanlines, nextConfig.scanlines ?? DEFAULT_AUDIO_CONFIG.scanlines),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.soundpack, nextConfig.soundpack),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.theme, nextConfig.theme),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars, nextConfig.enableAvatars ?? DEFAULT_AUDIO_CONFIG.enableAvatars),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl, nextConfig.avatarUrl ?? DEFAULT_AUDIO_CONFIG.avatarUrl),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.tagline, nextConfig.tagline ?? DEFAULT_AUDIO_CONFIG.tagline),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageText, nextConfig.pageText ?? DEFAULT_AUDIO_CONFIG.pageText),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageUrl, nextConfig.pageUrl ?? DEFAULT_AUDIO_CONFIG.pageUrl),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages, nextConfig.showJoinPartMessages ?? DEFAULT_AUDIO_CONFIG.showJoinPartMessages),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId, nextConfig.audioInputDeviceId),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId, nextConfig.audioOutputDeviceId),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId, nextConfig.videoInputDeviceId),
-    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.customSlashCommands, nextConfig.customSlashCommands ?? []),
+    setPersistedValue(APP_CONFIG_GROUP_KEYS.appSettings, appSettings),
+    setPersistedValue(APP_CONFIG_GROUP_KEYS.agentAmpSettings, agentAmpSettings),
+    setPersistedValue(APP_CONFIG_GROUP_KEYS.profileSettings, profileSettings),
+    cleanupLegacyAudioConfigKeys(),
   ]);
 }
 
-async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> {
+async function loadPersistedLegacyAudioConfig(): Promise<Partial<AudioConfig> | null> {
   const [
     audioEnabled,
     volume,
@@ -299,6 +364,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     enableAvatars,
     avatarUrl,
     tagline,
+    pageText,
+    pageUrl,
     agentAmpEnabled,
     agentAmpDetached,
     scanlines,
@@ -311,36 +378,36 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     videoInputDeviceId,
     customSlashCommands,
   ] = await Promise.all([
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.audioEnabled),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.volume),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoAwayMinutes),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.autoScanMediaLibraryMinutes),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumBarCount),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumFftSize),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumSensitivity),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.spectrumGradientBars),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdLow),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdMedium),
-    getPersistedValue<number>(AUDIO_CONFIG_STORAGE_KEYS.spectrumThresholdHigh),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.dmEnabled),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.mediaSharing),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.tagline),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.pageText),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.pageUrl),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.soundpack),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.theme),
-    getPersistedValue<AudioConfig['dmChatEffect']>(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect),
-    getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.audioOutputDeviceId),
-    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.videoInputDeviceId),
-    getPersistedValue<SlashCommandAlias[]>(AUDIO_CONFIG_STORAGE_KEYS.customSlashCommands),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.audioEnabled),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.volume),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.autoAwayMinutes),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.autoUpdatePulseMinutes),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.autoScanMediaLibraryMinutes),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumBarCount),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumFftSize),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumSensitivity),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.spectrumGradientBars),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumThresholdLow),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumThresholdMedium),
+    getPersistedValue<number>(APP_CONFIG_STORAGE_KEYS.spectrumThresholdHigh),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.dmEnabled),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.mediaSharing),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.enableAvatars),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.avatarUrl),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.tagline),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.pageText),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.pageUrl),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.agentAmpEnabled),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.agentAmpDetached),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.scanlines),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.soundpack),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.theme),
+    getPersistedValue<AudioConfig['dmChatEffect']>(APP_CONFIG_STORAGE_KEYS.dmChatEffect),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.showJoinPartMessages),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.audioInputDeviceId),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.audioOutputDeviceId),
+    getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.videoInputDeviceId),
+    getPersistedValue<SlashCommandAlias[]>(APP_CONFIG_STORAGE_KEYS.customSlashCommands),
   ]);
 
   const saved: Partial<AudioConfig> = {};
@@ -391,14 +458,35 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     saved.dmChatEffect = dmChatEffect;
   }
   if (typeof showJoinPartMessages === 'boolean') saved.showJoinPartMessages = showJoinPartMessages;
-  if (typeof avatarUrl === 'string') saved.avatarUrl = avatarUrl;
-  if (typeof tagline === 'string') saved.tagline = tagline;
   if (typeof audioInputDeviceId === 'string') saved.audioInputDeviceId = audioInputDeviceId;
   if (typeof audioOutputDeviceId === 'string') saved.audioOutputDeviceId = audioOutputDeviceId;
   if (typeof videoInputDeviceId === 'string') saved.videoInputDeviceId = videoInputDeviceId;
   if (customSlashCommands !== undefined) saved.customSlashCommands = sanitizeCustomSlashCommands(customSlashCommands);
 
   return Object.keys(saved).length > 0 ? saved : null;
+}
+
+async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> {
+  const [
+    appSettings,
+    agentAmpSettings,
+    profileSettings,
+    legacySettings,
+  ] = await Promise.all([
+    getPersistedValue<Partial<AppSettings>>(APP_CONFIG_GROUP_KEYS.appSettings),
+    getPersistedValue<Partial<AgentAmpSettings>>(APP_CONFIG_GROUP_KEYS.agentAmpSettings),
+    getPersistedValue<Partial<ProfileSettings>>(APP_CONFIG_GROUP_KEYS.profileSettings),
+    loadPersistedLegacyAudioConfig(),
+  ]);
+
+  const merged: Partial<AudioConfig> = {
+    ...(legacySettings ?? {}),
+    ...(appSettings ?? {}),
+    ...(agentAmpSettings ?? {}),
+    ...(profileSettings ?? {}),
+  };
+
+  return Object.keys(merged).length > 0 ? merged : null;
 }
 
 function normalizeSlashAliasCommand(value: string): string {
@@ -496,19 +584,9 @@ export function useLobbyChat() {
 
   const config = ref<AudioConfig>(normalizeAudioConfig());
   watch(
-    () => config.value.pageText,
-    (next) => {
-      if (typeof next === 'string') {
-        void setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageText, next);
-      }
-    }
-  );
-  watch(
-    () => config.value.pageUrl,
-    (next) => {
-      if (typeof next === 'string') {
-        void setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageUrl, next);
-      }
+    () => ({ pageText: config.value.pageText, pageUrl: config.value.pageUrl }),
+    () => {
+      void persistAudioConfig(config.value);
     }
   );
   const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});

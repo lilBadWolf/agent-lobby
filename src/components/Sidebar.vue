@@ -39,7 +39,6 @@
           v-if="!props.isCompact"
           type="button"
           class="user-bullet-btn"
-          :class="{ 'user-bullet-clickable': user.mediaSharing && user.activeMedia?.label }"
           :aria-label="`Show presence menu for ${user.username}`"
         >
           <span v-if="user.isBot" aria-hidden="true">🤖</span>
@@ -217,19 +216,13 @@ function clearHoverTimeout() {
 function showUserDetails(user: UserPresence, event: MouseEvent) {
   clearHoverTimeout();
 
-  const target = event.currentTarget as HTMLElement | null;
-  const rect = target?.getBoundingClientRect();
-  const width = 280;
-  const x = rect
-    ? props.isCompact
-      ? Math.max(8, rect.left - width - 4)
-      : Math.max(8, rect.left - width + 48)
-    : event.clientX - width + 8;
-  const y = rect ? (props.isCompact ? rect.top - 8 : rect.top - 24) : event.clientY - 18;
+  const width = 320;
+  const x = Math.max(8, event.clientX - width - 12);
+  const y = Math.min(window.innerHeight - 220, Math.max(8, event.clientY - 2));
 
   hoverPopup.value = {
-    x: Math.min(window.innerWidth - width, x),
-    y: Math.min(window.innerHeight - 220, Math.max(8, y)),
+    x,
+    y,
   };
   hoveredUser.value = user;
 }
@@ -718,10 +711,6 @@ function pinUserMedia() {
   text-align: center;
 }
 
-.user-bullet-clickable {
-  cursor: pointer;
-}
-
 #sidebar.compact .user-node {
   margin-bottom: 3px;
   padding: 1px 2px;
@@ -924,8 +913,8 @@ function pinUserMedia() {
 .user-details-popup {
   position: fixed;
   z-index: 1003;
-  width: min(260px, calc(100vw - 24px));
-  max-width: 260px;
+  width: min(320px, calc(100vw - 24px));
+  max-width: 320px;
   pointer-events: auto;
 }
 
@@ -967,8 +956,8 @@ function pinUserMedia() {
 }
 
 .user-details-avatar-wrap {
-  width: 72px;
-  height: 72px;
+  width: 90px;
+  height: 90px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -976,8 +965,8 @@ function pinUserMedia() {
 }
 
 .user-details-avatar {
-  width: 72px;
-  height: 72px;
+  width: 90px;
+  height: 90px;
   border-radius: 18px;
   object-fit: cover;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -985,15 +974,15 @@ function pinUserMedia() {
 }
 
 .user-details-avatar-sprite {
-  width: 72px;
-  height: 72px;
+  width: 90px;
+  height: 90px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .user-details-avatar-placeholder {
-  width: 72px;
-  height: 72px;
+  width: 90px;
+  height: 90px;
   border-radius: 18px;
   display: inline-flex;
   align-items: center;

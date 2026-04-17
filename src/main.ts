@@ -6,6 +6,7 @@ import PinnedVideoWindowApp from "./PinnedVideoWindowApp.vue";
 import MediaLibraryWindowApp from "./MediaLibraryWindowApp.vue";
 import "./styles/global.css";
 import { runAutoUpdater } from "./composables/useAutoUpdater";
+import { resolvePersistedThemeSync } from "./composables/useTheme";
 
 const params = new URLSearchParams(window.location.search);
 const isDMWindow = params.get('view') === 'dm';
@@ -17,6 +18,11 @@ if (typeof document !== 'undefined') {
 	const viewName = isDMWindow ? 'dm' : isAgentAmpWindow ? 'agentamp' : isPinnedVideoWindow ? 'pinned-video' : isMediaLibraryWindow ? 'media-library' : 'main';
 	document.documentElement.setAttribute('data-app-view', viewName);
 	document.body.setAttribute('data-app-view', viewName);
+
+	const persistedTheme = resolvePersistedThemeSync();
+	if (persistedTheme) {
+		document.documentElement.setAttribute('data-theme', persistedTheme);
+	}
 }
 
 createApp(

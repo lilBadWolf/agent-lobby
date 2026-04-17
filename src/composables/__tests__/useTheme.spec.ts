@@ -56,4 +56,13 @@ describe('useTheme', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('light-blue');
     expect(getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim()).toBe('#0066cc');
   });
+
+  it('prefers theme from agent_app_settings when present', () => {
+    localStorage.setItem('agent_app_settings', JSON.stringify({ theme: 'soft-pink' }));
+
+    const { currentTheme } = useTheme();
+
+    expect(currentTheme.value).toBe('soft-pink');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('soft-pink');
+  });
 });

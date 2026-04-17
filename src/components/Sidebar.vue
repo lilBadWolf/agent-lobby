@@ -459,6 +459,10 @@ const hoveredUserMediaWatcherLine = computed(() => {
 
   const currentUsername = props.currentUsername;
   if (currentUsername && otherWatchers.includes(currentUsername)) {
+    // When the hovered user and current user are the only watchers, the title already says BOTH WATCHING.
+    if (otherWatchers.length === 1) {
+      return '';
+    }
     return ['You', ...otherWatchers.filter((username) => username !== currentUsername)].join(', ');
   }
   return otherWatchers.join(', ');

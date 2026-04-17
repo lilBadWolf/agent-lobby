@@ -5,6 +5,7 @@ import { getPersistedValue, setPersistedValue } from './usePlatformStorage';
 const DEFAULT_THEME = 'retro-terminal';
 const DEFAULT_USER_COLORS = ['#39ff14', '#00ff00', '#00ffaa'];
 const THEME_STORAGE_KEY = 'agent_theme';
+const APP_SETTINGS_STORAGE_KEY = 'agent_app_settings';
 const LEGACY_THEME_STORAGE_KEY = 'agent_settings';
 const THEME_SYNC_CHANNEL = 'agent-lobby-theme-sync';
 const BUILTIN_THEMES = Object.keys(THEMES);
@@ -140,25 +141,62 @@ function parseLocalStorageValue<T>(rawValue: string): T {
   }
 }
 
+export function resolvePersistedThemeSync(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (raw !== null) {
+      const parsed = parseLocalStorageValue<string>(raw);
+      if (typeof parsed === 'string' && parsed.trim()) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  try {
+    const legacyRaw = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw) as { theme?: unknown };
+      if (legacy && typeof legacy.theme === 'string' && legacy.theme.trim()) {
+        return legacy.theme;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  try {
+    const appSettingsRaw = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+    if (appSettingsRaw) {
+      const appSettings = parseLocalStorageValue<Record<string, unknown>>(appSettingsRaw);
+      if (appSettings && typeof appSettings.theme === 'string' && appSettings.theme.trim()) {
+        return appSettings.theme;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  return undefined;
+}
+
 export async function resolvePersistedTheme(): Promise<string | undefined> {
   const persistedTheme = await getPersistedValue<string>(THEME_STORAGE_KEY);
   if (typeof persistedTheme === 'string' && persistedTheme.trim()) {
     return persistedTheme;
   }
 
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-      if (raw !== null) {
-        const parsed = parseLocalStorageValue<string>(raw);
-        if (typeof parsed === 'string' && parsed.trim()) {
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignore
-    }
+  const syncTheme = resolvePersistedThemeSync();
+  if (syncTheme) {
+    return syncTheme;
+  }
 
+  if (typeof window !== 'undefined') {
     try {
       const legacyRaw = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
       if (legacyRaw) {
@@ -170,12 +208,33 @@ export async function resolvePersistedTheme(): Promise<string | undefined> {
     } catch {
       // Ignore
     }
+
+    try {
+      const appSettingsRaw = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+      if (appSettingsRaw) {
+        const appSettings = parseLocalStorageValue<Record<string, unknown>>(appSettingsRaw);
+        if (appSettings && typeof appSettings.theme === 'string' && appSettings.theme.trim()) {
+          return appSettings.theme;
+        }
+      }
+    } catch {
+      // Ignore
+    }
   }
 
   try {
     const legacyStore = await getPersistedValue<Record<string, unknown>>(LEGACY_THEME_STORAGE_KEY);
     if (legacyStore && typeof legacyStore.theme === 'string' && legacyStore.theme.trim()) {
       return legacyStore.theme;
+    }
+  } catch {
+    // Ignore
+  }
+
+  try {
+    const appSettingsStore = await getPersistedValue<Record<string, unknown>>(APP_SETTINGS_STORAGE_KEY);
+    if (appSettingsStore && typeof appSettingsStore.theme === 'string' && appSettingsStore.theme.trim()) {
+      return appSettingsStore.theme;
     }
   } catch {
     // Ignore

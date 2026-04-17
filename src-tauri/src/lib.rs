@@ -1280,6 +1280,7 @@ pub fn run() {
                         .windows(["main", "dm-window-*", "agentamp-window", "media-library"])
                         .permission("core:default")
                         .permission("core:event:allow-emit-to")
+                        .permission("core:event:allow-listen")
                         .permission("core:window:allow-set-size")
                         .permission("fs:default")
                         .permission("fs:allow-open")

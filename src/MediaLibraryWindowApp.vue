@@ -141,7 +141,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { useTheme } from './composables/useTheme';
+import { resolvePersistedTheme, useTheme } from './composables/useTheme';
 
 interface MediaLibraryFolder {
   path: string;
@@ -731,26 +731,35 @@ onMounted(async () => {
   if (hasTauriWindow) {
     const eventModule = await import('@tauri-apps/api/event').catch(() => null);
     if (eventModule?.listen) {
-      scanProgressUnlisten = await eventModule.listen('media-library-scan-progress', (event) => {
-        const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number; currentPath: string };
-        libraryStatusMessage.value = `Scanning ${payload.currentPath} (${payload.matchedFiles} tracks found)`;
-      });
+      try {
+        scanProgressUnlisten = await eventModule.listen('media-library-scan-progress', (event) => {
+          const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number; currentPath: string };
+          libraryStatusMessage.value = `Scanning ${payload.currentPath} (${payload.matchedFiles} tracks found)`;
+        });
 
-      scanCompleteUnlisten = await eventModule.listen('media-library-scan-complete', async (event) => {
-        const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number };
-        pendingScans.value = Math.max(0, pendingScans.value - 1);
-        libraryStatusMessage.value = `Finished scanning ${payload.folderPath}: ${payload.matchedFiles} tracks found.`;
-        await loadLibraryState();
-        if (pendingScans.value === 0) {
-          scanInProgress.value = false;
-        }
-      });
+        scanCompleteUnlisten = await eventModule.listen('media-library-scan-complete', async (event) => {
+          const payload = event.payload as { folderPath: string; scannedFiles: number; matchedFiles: number };
+          pendingScans.value = Math.max(0, pendingScans.value - 1);
+          libraryStatusMessage.value = `Finished scanning ${payload.folderPath}: ${payload.matchedFiles} tracks found.`;
+          await loadLibraryState();
+          if (pendingScans.value === 0) {
+            scanInProgress.value = false;
+          }
+        });
+      } catch (error) {
+        console.warn('Unable to set up media-library event listeners:', error);
+      }
     }
   }
 
   await loadLibraryState();
 
   if (hasTauriWindow) {
+    const persistedTheme = await resolvePersistedTheme().catch(() => undefined);
+    if (persistedTheme && document.documentElement.getAttribute('data-theme') !== persistedTheme) {
+      applyTheme(persistedTheme, { persist: false });
+    }
+
     const { getCurrentWindow } = await import('@tauri-apps/api/window').catch(() => ({ getCurrentWindow: null }));
     if (getCurrentWindow) {
       try {

@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "dm-window-*", "agentamp-window"],
+  "windows": ["main", "dm-window-*", "agentamp-window", "media-library"],
   "permissions": [
     "process:allow-exit",
     "process:allow-restart",
@@ -12,6 +12,7 @@
     "opener:default",
     "core:default",
     "core:event:allow-emit-to",
+    "core:event:allow-listen",
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-create",

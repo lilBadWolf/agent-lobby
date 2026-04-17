@@ -1,5 +1,15 @@
 # Release Notes
 
+🎉 **Release highlights for agent-lobby 0.4.18**
+
+- 🔧 **Persistence wiring fixes**: corrected the persistence key flow so profile settings and saved state restore reliably.
+- 🧠 **Persistence key refactor**: cleaned up storage key naming for more stable settings behavior.
+- 🧑‍💻 **Profile settings polish**: UI refinements make editing profile details faster and more intuitive.
+- 🪟 **Sidebar tweaks**: improved sidebar layout and interaction consistency.
+- ⚙️ **Profile UI enhancements**: profile controls now behave more consistently when switching avatar and presence settings.
+
+> This patch tightens persistence behavior, refines profile settings, and polishes sidebar UI consistency.
+
 🎉 **Release highlights for agent-lobby 0.4.17**
 
 - 🧩 **Expanded avatar pack support**: additional built-in avatar packs are now available and selectable from Profile Settings.

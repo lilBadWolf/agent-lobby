@@ -50,6 +50,8 @@ const AUDIO_CONFIG_STORAGE_KEYS = {
   scanlines: 'agent_scanlines',
   soundpack: 'agent_soundpack',
   theme: 'agent_theme',
+  pageText: 'agent_page_text',
+  pageUrl: 'agent_page_url',
   dmChatEffect: 'agent_dm_chat_effect',
   showJoinPartMessages: 'agent_show_join_part_messages',
   audioInputDeviceId: 'agent_audio_input_device_id',
@@ -81,6 +83,8 @@ const DEFAULT_AUDIO_CONFIG: AudioConfig = {
   enableAvatars: false,
   avatarUrl: '',
   tagline: '',
+  pageText: '',
+  pageUrl: '',
   dmChatEffect: 'codex',
   showJoinPartMessages: true,
   audioInputDeviceId: '',
@@ -131,6 +135,32 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.tagline = DEFAULT_AUDIO_CONFIG.tagline;
   } else {
     normalized.tagline = normalized.tagline.trim();
+  }
+
+  if (typeof normalized.pageText !== 'string') {
+    normalized.pageText = DEFAULT_AUDIO_CONFIG.pageText;
+  } else {
+    normalized.pageText = normalized.pageText.trim();
+  }
+
+  if (typeof normalized.pageUrl !== 'string') {
+    normalized.pageUrl = DEFAULT_AUDIO_CONFIG.pageUrl;
+  } else {
+    const rawUrl = normalized.pageUrl.trim();
+    if (rawUrl) {
+      try {
+        const parsed = new URL(rawUrl);
+        if (/^https?:$/i.test(parsed.protocol)) {
+          normalized.pageUrl = parsed.toString();
+        } else {
+          normalized.pageUrl = '';
+        }
+      } catch {
+        normalized.pageUrl = '';
+      }
+    } else {
+      normalized.pageUrl = '';
+    }
   }
 
   if (typeof normalized.agentAmpEnabled !== 'boolean') {
@@ -232,6 +262,8 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars, nextConfig.enableAvatars ?? DEFAULT_AUDIO_CONFIG.enableAvatars),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl, nextConfig.avatarUrl ?? DEFAULT_AUDIO_CONFIG.avatarUrl),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.tagline, nextConfig.tagline ?? DEFAULT_AUDIO_CONFIG.tagline),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageText, nextConfig.pageText ?? DEFAULT_AUDIO_CONFIG.pageText),
+    setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.pageUrl, nextConfig.pageUrl ?? DEFAULT_AUDIO_CONFIG.pageUrl),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.dmChatEffect, nextConfig.dmChatEffect),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.showJoinPartMessages, nextConfig.showJoinPartMessages ?? DEFAULT_AUDIO_CONFIG.showJoinPartMessages),
     setPersistedValue(AUDIO_CONFIG_STORAGE_KEYS.audioInputDeviceId, nextConfig.audioInputDeviceId),
@@ -289,6 +321,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.enableAvatars),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.avatarUrl),
     getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.tagline),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.pageText),
+    getPersistedValue<string>(AUDIO_CONFIG_STORAGE_KEYS.pageUrl),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpEnabled),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.agentAmpDetached),
     getPersistedValue<boolean>(AUDIO_CONFIG_STORAGE_KEYS.scanlines),
@@ -320,6 +354,8 @@ async function loadPersistedAudioConfig(): Promise<Partial<AudioConfig> | null> 
   if (typeof enableAvatars === 'boolean') saved.enableAvatars = enableAvatars;
   if (typeof avatarUrl === 'string') saved.avatarUrl = avatarUrl;
   if (typeof tagline === 'string') saved.tagline = tagline;
+  if (typeof pageText === 'string') saved.pageText = pageText;
+  if (typeof pageUrl === 'string') saved.pageUrl = pageUrl;
   if (typeof agentAmpEnabled === 'boolean') {
     saved.agentAmpEnabled = agentAmpEnabled;
   }
@@ -576,6 +612,13 @@ export function useLobbyChat() {
 
     if (typeof config.value.tagline === 'string' && config.value.tagline.trim()) {
       payload.tagline = config.value.tagline.trim();
+    }
+
+    if (typeof config.value.pageText === 'string' && config.value.pageText.trim()) {
+      payload.pageText = config.value.pageText.trim();
+    }
+    if (typeof config.value.pageUrl === 'string' && config.value.pageUrl.trim()) {
+      payload.pageUrl = config.value.pageUrl.trim();
     }
 
     if (config.value.mediaSharing && activeMedia.value) {

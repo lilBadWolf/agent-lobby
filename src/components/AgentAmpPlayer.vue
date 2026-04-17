@@ -787,7 +787,7 @@ const playlistStyle = computed<CSSProperties>(() => {
   if (props.detached && !isCompact.value) {
     return {
       height: 'auto',
-      minHeight: 'var(--agentamp-detached-playlist-min-height, 216px)',
+      minHeight: 'var(--agentamp-detached-playlist-min-height, 120px)',
       maxHeight: 'var(--agentamp-detached-playlist-max-height, 999px)',
       overflowY: 'auto',
       flex: '0 0 auto',
@@ -4038,6 +4038,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  padding-right: 24px;
 }
 .agentamp-now-inline-title {
   display: flex;

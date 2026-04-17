@@ -15,6 +15,8 @@ export interface UserPresence {
   activeMedia?: ActiveMedia | null;
   avatarUrl?: string;
   tagline?: string;
+  pageText?: string;
+  pageUrl?: string;
 }
 
 export interface ChatMessage {
@@ -49,6 +51,8 @@ export interface AudioConfig {
   enableAvatars?: boolean;
   avatarUrl?: string;
   tagline?: string;
+  pageText?: string;
+  pageUrl?: string;
   agentAmpEnabled: boolean;
   agentAmpDetached?: boolean;
   scanlines?: boolean;

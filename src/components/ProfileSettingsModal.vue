@@ -123,6 +123,23 @@
             @change="handleChange"
           />
         </div>
+        <div class="setting-row page-field-row">
+          <label>PAGE</label>
+          <input
+            v-model="localConfig.pageText"
+            type="text"
+            id="set-profile-page-text"
+            placeholder="Link text"
+            @change="handleChange"
+          />
+          <input
+            v-model="localConfig.pageUrl"
+            type="url"
+            id="set-profile-page-url"
+            placeholder="https://example.com"
+            @change="handleChange"
+          />
+        </div>
         <div class="setting-row">
           <label>MEDIA SHARING</label>
           <input
@@ -168,6 +185,8 @@ const activePackId = ref(avatarPacks[0]?.id ?? '');
 const localConfig = ref({
   avatarUrl: '',
   tagline: '',
+  pageText: '',
+  pageUrl: '',
   mediaSharing: true,
 });
 
@@ -175,6 +194,8 @@ function syncLocalConfig() {
   localConfig.value = {
     avatarUrl: typeof props.config.avatarUrl === 'string' ? props.config.avatarUrl.trim() : '',
     tagline: typeof props.config.tagline === 'string' ? props.config.tagline.trim() : '',
+    pageText: typeof props.config.pageText === 'string' ? props.config.pageText.trim() : '',
+    pageUrl: typeof props.config.pageUrl === 'string' ? props.config.pageUrl.trim() : '',
     mediaSharing: props.config.mediaSharing ?? true,
   };
 
@@ -277,6 +298,8 @@ function handleChange() {
   emit('update', {
     avatarUrl: localConfig.value.avatarUrl,
     tagline: localConfig.value.tagline,
+    pageText: localConfig.value.pageText,
+    pageUrl: localConfig.value.pageUrl,
     mediaSharing: localConfig.value.mediaSharing,
   });
 }
@@ -471,6 +494,24 @@ h3 {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-primary);
+}
+
+.page-field-row {
+  gap: 8px;
+}
+
+.page-field-row label {
+  flex: 0 0 auto;
+}
+
+.page-field-row input[type='text'] {
+  flex: 1 0 36%;
+  min-width: 0;
+}
+
+.page-field-row input[type='url'] {
+  flex: 1 0 64%;
+  min-width: 0;
 }
 
 .setting-row input[type='url'],

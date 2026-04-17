@@ -1,5 +1,5 @@
 <template>
-  <aside id="sidebar" :class="{ compact: props.isCompact }" @contextmenu.prevent>
+  <aside id="sidebar" :class="{ compact: props.isCompact }">
     <div v-if="!props.isCompact" class="sidebar-header">
       <div class="agent-header-title">
         <span>[{{ onlineCount }}] AGENTS</span>
@@ -41,7 +41,6 @@
           class="user-bullet-btn"
           :class="{ 'user-bullet-clickable': user.mediaSharing && user.activeMedia?.label }"
           :aria-label="`Show presence menu for ${user.username}`"
-          @mouseenter.stop="showUserContextMenu(user, $event)"
         >
           <span v-if="user.isBot" aria-hidden="true">🤖</span>
           <span v-else-if="user.isAway" aria-hidden="true">💤</span>
@@ -60,7 +59,6 @@
           @click="emit('mentionRequest', user.username)"
           @mouseenter.stop="showUserDetails(user, $event)"
           @mouseleave="scheduleHideUserDetails()"
-          @contextmenu.prevent.stop="showUserContextMenu(user, $event)"
         >
           {{ props.isCompact ? getCompactUserLabel(user.username) : user.username }}
         </button>
@@ -81,7 +79,7 @@
         class="user-context-action"
         @click="pinUserMedia"
       >
-        PIN SAME VIDEO
+        WATCH WITH
       </button>
     </div>
     <div
@@ -92,26 +90,34 @@
       @mouseleave="scheduleHideUserDetails"
     >
       <div class="user-details-card">
-        <div class="user-details-avatar-wrap">
-          <div
-            v-if="getUserDetailsAvatarSpriteStyle(hoveredUser)"
-            class="user-details-avatar-sprite"
-            :style="getUserDetailsAvatarSpriteStyle(hoveredUser)"
-            aria-hidden="true"
-          />
-          <img
-            v-else-if="getUserDetailsAvatarUrl(hoveredUser)"
-            :src="getUserDetailsAvatarUrl(hoveredUser)"
-            alt=""
-            class="user-details-avatar"
-          />
-          <div v-else class="user-details-avatar-placeholder">
-            {{ hoveredUser.username.slice(0, 1) }}
+        <div class="user-details-username-row">
+          <div class="user-details-name">{{ hoveredUser.username }}</div>
+        </div>
+        <div class="user-details-avatar-col">
+          <div class="user-details-avatar-wrap">
+            <div
+              v-if="getUserDetailsAvatarSpriteStyle(hoveredUser)"
+              class="user-details-avatar-sprite"
+              :style="getUserDetailsAvatarSpriteStyle(hoveredUser)"
+              aria-hidden="true"
+            />
+            <img
+              v-else-if="getUserDetailsAvatarUrl(hoveredUser)"
+              :src="getUserDetailsAvatarUrl(hoveredUser)"
+              alt=""
+              class="user-details-avatar"
+            />
+            <div v-else class="user-details-avatar-placeholder">
+              {{ hoveredUser.username.slice(0, 1) }}
+            </div>
           </div>
         </div>
-        <div class="user-details-body">
-          <div class="user-details-name">{{ hoveredUser.username }}</div>
-          <div class="user-details-tagline">{{ hoveredUser.tagline?.trim() || 'No tagline set' }}</div>
+        <div class="user-details-main">
+          <div class="user-details-tagline-row">
+            <div class="user-details-tagline">{{ hoveredUser.tagline?.trim() || 'No tagline set' }}</div>
+          </div>
+        </div>
+        <div class="user-details-action-row">
           <button
             v-if="hoveredUser.dmAvailable && !hoveredUser.isAway"
             type="button"
@@ -121,6 +127,34 @@
             @click.stop="emit('dmRequest', hoveredUser.username)"
           >
             REQUEST TUNNEL
+          </button>
+        </div>
+        <div v-if="hoveredUserMediaActive" class="user-details-media-section">
+          <hr class="user-details-divider" />
+          <div class="user-details-media">
+            <div class="user-context-title">{{ hoveredUserMediaTitle }}</div>
+            <div class="user-context-label">{{ hoveredUser.activeMedia?.label }}</div>
+            <div v-if="hoveredUserMediaWatcherLine" class="user-context-watcher-line">
+              {{ hoveredUserMediaWatcherLine }}
+            </div>
+            <button
+              v-if="hoveredUserMediaActive.url && !hoveredUserMediaIsCurrentUserPinnedSameVideo"
+              type="button"
+              class="user-context-action user-details-watch-with"
+              @click.stop="pinHoveredUserMedia"
+            >
+              WATCH WITH
+            </button>
+          </div>
+        </div>
+        <div v-if="hoveredUser.pageUrl" class="user-details-page-section">
+          <hr class="user-details-divider" />
+          <button
+            type="button"
+            class="user-context-action user-details-page-link"
+            @click.stop.prevent="openUserPage(hoveredUser.pageUrl)"
+          >
+            {{ hoveredUser.pageText?.trim() || hoveredUser.pageUrl }}
           </button>
         </div>
       </div>
@@ -202,9 +236,45 @@ function showUserDetails(user: UserPresence, event: MouseEvent) {
 
 function scheduleHideUserDetails() {
   clearHoverTimeout();
+
+  if (hoveredUser.value && getDMBubbleState(hoveredUser.value.username) !== 'idle') {
+    return;
+  }
+
   hoverTimeout = window.setTimeout(() => {
     hoveredUser.value = null;
   }, 100);
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+async function getTauriOpener() {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  try {
+    const opener = await import('@tauri-apps/plugin-opener');
+    return opener;
+  } catch {
+    return null;
+  }
+}
+
+async function openUserPage(url: string) {
+  try {
+    const opener = await getTauriOpener();
+    if (opener?.openUrl) {
+      await opener.openUrl(url);
+      return;
+    }
+  } catch {
+    // Fall through to the browser fallback.
+  }
+
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function getSafeAvatarUrl(value: string | undefined): string | undefined {
@@ -329,6 +399,78 @@ const contextMenuWatcherLine = computed(() => {
 });
 const contextMenuActionVisible = computed(() => Boolean(contextMenuUrl.value && !contextMenuIsCurrentUserPinnedSameVideo.value));
 
+const hoveredUserMediaActive = computed(() => {
+  if (!hoveredUser.value?.mediaSharing || !hoveredUser.value?.activeMedia?.label) {
+    return null;
+  }
+  return hoveredUser.value.activeMedia;
+});
+
+const hoveredUserMediaIsCurrentUserPinnedSameVideo = computed(() => {
+  const currentPresence = props.currentUsername ? props.users?.[props.currentUsername] : undefined;
+  return Boolean(hoveredUserMediaActive.value?.url && currentPresence?.activeMedia?.url === hoveredUserMediaActive.value?.url);
+});
+
+function pinHoveredUserMedia() {
+  const activeMedia = hoveredUserMediaActive.value;
+  if (!activeMedia?.url) {
+    return;
+  }
+
+  emit('pinUserMedia', {
+    url: activeMedia.url,
+    currentTime: activeMedia.currentTime,
+  });
+}
+
+const hoveredUserMediaTitle = computed(() => {
+  const activeMedia = hoveredUserMediaActive.value;
+  if (!activeMedia) {
+    return '';
+  }
+  if (!activeMedia.url) {
+    return 'LISTENING TO';
+  }
+
+  const count = Object.values(props.users || {}).filter((user) => user.activeMedia?.url === activeMedia.url).length;
+  const currentPresence = props.currentUsername ? props.users?.[props.currentUsername] : undefined;
+  const isCurrentUserPinnedSameVideo = Boolean(activeMedia.url && currentPresence?.activeMedia?.url === activeMedia.url);
+
+  if (count > 2 && isCurrentUserPinnedSameVideo) {
+    return `${count} AGENTS WATCHING`;
+  }
+  if (count === 2 && isCurrentUserPinnedSameVideo) {
+    return 'BOTH WATCHING';
+  }
+  if (count > 1) {
+    return 'WATCHING WITH';
+  }
+  return 'WATCHING';
+});
+
+const hoveredUserMediaWatcherLine = computed(() => {
+  const activeMedia = hoveredUserMediaActive.value;
+  if (!activeMedia?.url) {
+    return '';
+  }
+
+  const otherWatchers = Object.values(props.users || {})
+    .filter((user) => user.activeMedia?.url === activeMedia.url && user.username !== hoveredUser.value?.username)
+    .map((user) => user.username)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (otherWatchers.length === 0) {
+    return '';
+  }
+
+  const currentUsername = props.currentUsername;
+  if (currentUsername && otherWatchers.includes(currentUsername)) {
+    return ['You', ...otherWatchers.filter((username) => username !== currentUsername)].join(', ');
+  }
+  return otherWatchers.join(', ');
+});
+
 watch(contextMenuActiveMedia, (next) => {
   if (contextMenu.value.visible && !next) {
     hideContextMenu();
@@ -373,20 +515,6 @@ function getCompactUserLabel(user: string): string {
 function hideContextMenu() {
   contextMenu.value.visible = false;
   contextMenu.value.username = null;
-}
-
-function showUserContextMenu(user: UserPresence, event: MouseEvent) {
-  const presence = props.users?.[user.username];
-  if (!presence?.mediaSharing || !presence.activeMedia?.label) {
-    return;
-  }
-
-  contextMenu.value = {
-    visible: true,
-    x: Math.min(window.innerWidth - 280, event.clientX + 6),
-    y: Math.min(window.innerHeight - 120, event.clientY + 6),
-    username: user.username,
-  };
 }
 
 function pinUserMedia() {
@@ -652,25 +780,23 @@ function pinUserMedia() {
 }
 
 .request-tunnel-btn {
-  margin-top: 10px;
-  background: var(--color-input-bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--color-text-primary);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: bold;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 1px solid rgba(120, 138, 255, 0.4);
+  background: transparent;
+  color: var(--color-accent);
   cursor: pointer;
-  opacity: 0.9;
-  transition: opacity 0.2s, transform 0.2s, border-color 0.2s;
+  padding: 8px 0;
+  border-radius: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 
 .request-tunnel-btn:hover {
-  opacity: 1;
-  transform: translateY(-1px);
-  border-color: var(--color-accent);
+  background: rgba(120, 138, 255, 0.12);
 }
 
 .compact-dm-btn {
@@ -809,12 +935,40 @@ function pinUserMedia() {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
   border-radius: 18px;
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 88px 1fr;
+  grid-template-rows: auto auto auto;
   gap: 12px;
   padding: 14px;
 }
 
+.user-details-username-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  text-align: center;
+  padding-bottom: 2px;
+}
+
+.user-details-action-row {
+  grid-column: 1 / -1;
+}
+
+.user-details-avatar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-details-media-section {
+  grid-column: 1 / -1;
+}
+
 .user-details-avatar-wrap {
+  width: 72px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -850,10 +1004,49 @@ function pinUserMedia() {
   text-transform: uppercase;
 }
 
-.user-details-body {
+.user-details-main {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  gap: 12px;
+}
+
+.user-details-tagline-row {
+  display: flex;
+  align-items: center;
+  min-height: 100%;
+}
+
+.user-details-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 10px 0 8px;
+}
+
+.user-details-media {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.user-details-page-section {
+  grid-column: 1 / -1;
+}
+
+.user-details-page-link {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.user-details-watch-with {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
 }
 
 .user-details-name {
@@ -883,7 +1076,7 @@ function pinUserMedia() {
 }
 
 .user-context-title {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-accent);

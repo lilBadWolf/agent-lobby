@@ -142,7 +142,7 @@
               class="user-context-action user-details-watch-with"
               @click.stop="pinHoveredUserMedia"
             >
-              WATCH WITH
+              join
             </button>
           </div>
         </div>
@@ -416,6 +416,28 @@ function pinHoveredUserMedia() {
   });
 }
 
+const hoveredUserMediaWatcherNames = computed(() => {
+  const activeMedia = hoveredUserMediaActive.value;
+  if (!activeMedia?.url) {
+    return '';
+  }
+
+  const otherWatchers = Object.values(props.users || {})
+    .filter((user) => user.activeMedia?.url === activeMedia.url && user.username !== hoveredUser.value?.username)
+    .map((user) => user.username)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  const currentUsername = props.currentUsername;
+  if (currentUsername && otherWatchers.includes(currentUsername)) {
+    if (otherWatchers.length === 1) {
+      return '';
+    }
+    return ['You', ...otherWatchers.filter((username) => username !== currentUsername)].join(', ');
+  }
+  return otherWatchers.join(', ');
+});
+
 const hoveredUserMediaTitle = computed(() => {
   const activeMedia = hoveredUserMediaActive.value;
   if (!activeMedia) {
@@ -428,12 +450,16 @@ const hoveredUserMediaTitle = computed(() => {
   const count = Object.values(props.users || {}).filter((user) => user.activeMedia?.url === activeMedia.url).length;
   const currentPresence = props.currentUsername ? props.users?.[props.currentUsername] : undefined;
   const isCurrentUserPinnedSameVideo = Boolean(activeMedia.url && currentPresence?.activeMedia?.url === activeMedia.url);
+  const watcherNames = hoveredUserMediaWatcherNames.value;
 
   if (count > 2 && isCurrentUserPinnedSameVideo) {
     return `${count} AGENTS WATCHING`;
   }
   if (count === 2 && isCurrentUserPinnedSameVideo) {
     return 'BOTH WATCHING';
+  }
+  if (count > 1 && watcherNames) {
+    return `WATCHING WITH ${watcherNames}`;
   }
   if (count > 1) {
     return 'WATCHING WITH';
@@ -442,8 +468,11 @@ const hoveredUserMediaTitle = computed(() => {
 });
 
 const hoveredUserMediaWatcherLine = computed(() => {
-  const activeMedia = hoveredUserMediaActive.value;
+  const activeMedia = hoveredUser.value?.activeMedia;
   if (!activeMedia?.url) {
+    return '';
+  }
+  if (hoveredUserMediaTitle.value.startsWith('WATCHING WITH ')) {
     return '';
   }
 

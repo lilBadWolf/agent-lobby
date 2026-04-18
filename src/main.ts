@@ -4,6 +4,7 @@ import DMWindowApp from "./DMWindowApp.vue";
 import AgentAmpWindowApp from "./AgentAmpWindowApp.vue";
 import PinnedVideoWindowApp from "./PinnedVideoWindowApp.vue";
 import MediaLibraryWindowApp from "./MediaLibraryWindowApp.vue";
+import ThemeEditorWindowApp from "./ThemeEditorWindowApp.vue";
 import "./styles/global.css";
 import { runAutoUpdater } from "./composables/useAutoUpdater";
 import { resolvePersistedThemeSync } from "./composables/useTheme";
@@ -13,9 +14,10 @@ const isDMWindow = params.get('view') === 'dm';
 const isAgentAmpWindow = params.get('view') === 'agentamp';
 const isPinnedVideoWindow = params.get('view') === 'pinned-video';
 const isMediaLibraryWindow = params.get('view') === 'media-library';
+const isThemeEditorWindow = params.get('view') === 'theme-editor';
 
 if (typeof document !== 'undefined') {
-	const viewName = isDMWindow ? 'dm' : isAgentAmpWindow ? 'agentamp' : isPinnedVideoWindow ? 'pinned-video' : isMediaLibraryWindow ? 'media-library' : 'main';
+	const viewName = isDMWindow ? 'dm' : isAgentAmpWindow ? 'agentamp' : isPinnedVideoWindow ? 'pinned-video' : isMediaLibraryWindow ? 'media-library' : isThemeEditorWindow ? 'theme-editor' : 'main';
 	document.documentElement.setAttribute('data-app-view', viewName);
 	document.body.setAttribute('data-app-view', viewName);
 
@@ -30,6 +32,7 @@ createApp(
 	: isAgentAmpWindow ? AgentAmpWindowApp
 	: isPinnedVideoWindow ? PinnedVideoWindowApp
 	: isMediaLibraryWindow ? MediaLibraryWindowApp
+	: isThemeEditorWindow ? ThemeEditorWindowApp
 	: App
 ).mount("#app");
 

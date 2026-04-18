@@ -1016,6 +1016,57 @@ fn discover_custom_assets(app: tauri::AppHandle) -> Result<CustomAssetsResult, S
 }
 
 #[tauri::command]
+fn save_custom_theme(app: tauri::AppHandle, theme_name: String, css_content: String, overwrite: bool) -> Result<String, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+
+    ensure_custom_asset_folders(&app_data_dir)?;
+    let mut safe_name = theme_name.trim().to_lowercase();
+    for replacement in [' ', '\\', '/', ':', '*', '?', '"', '<', '>', '|'].iter() {
+        safe_name = safe_name.replace(*replacement, "-");
+    }
+    if safe_name.is_empty() {
+        return Err("Theme name cannot be empty.".to_string());
+    }
+
+    let css_file_name = format!("{}.css", safe_name);
+    let theme_path = app_data_dir.join("themes").join(css_file_name);
+
+    if theme_path.exists() && !overwrite {
+        return Err(format!("Theme '{}' already exists.", safe_name));
+    }
+
+    fs::write(&theme_path, css_content)
+        .map_err(|error| format!("Failed to save theme '{}': {}", safe_name, error))?;
+
+    Ok(theme_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_theme_source(app: tauri::AppHandle, theme_name: String) -> Result<String, String> {
+    let theme_name = theme_name.trim();
+    if theme_name.is_empty() {
+        return Err("Theme name cannot be empty.".to_string());
+    }
+
+    if let Some(content) = get_builtin_theme_source(theme_name) {
+        return Ok(content.to_string());
+    }
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to get app data directory: {}", error))?;
+    let theme_path = app_data_dir.join("themes").join(format!("{}.css", theme_name));
+
+    let content = fs::read_to_string(&theme_path)
+        .map_err(|error| format!("Failed to read custom theme '{}': {}", theme_name, error))?;
+    Ok(content)
+}
+
+#[tauri::command]
 fn open_themes_folder(app: tauri::AppHandle) -> Result<(), String> {
     let app_data_dir = app
         .path()
@@ -1024,6 +1075,19 @@ fn open_themes_folder(app: tauri::AppHandle) -> Result<(), String> {
 
     ensure_custom_asset_folders(&app_data_dir)?;
     open_folder_in_os(&app_data_dir.join("themes"))
+}
+
+fn get_builtin_theme_source(theme_name: &str) -> Option<&'static str> {
+    match theme_name {
+        "blue-sheets" => Some(include_str!("../../src/themes/presets/blue-sheets.css")),
+        "mint-chocolate" => Some(include_str!("../../src/themes/presets/mint-chocolate.css")),
+        "neon-night" => Some(include_str!("../../src/themes/presets/neon-night.css")),
+        "retro-terminal" => Some(include_str!("../../src/themes/presets/retro-terminal.css")),
+        "soft-plum" => Some(include_str!("../../src/themes/presets/soft-plum.css")),
+        "sun-rise" => Some(include_str!("../../src/themes/presets/sun-rise.css")),
+        "sun-set" => Some(include_str!("../../src/themes/presets/sun-set.css")),
+        _ => None,
+    }
 }
 
 #[tauri::command]
@@ -1341,6 +1405,8 @@ pub fn run() {
             discover_custom_assets,
             open_themes_folder,
             open_soundpacks_folder,
+            save_custom_theme,
+            get_theme_source,
             save_agentamp_metadata,
             load_media_library_state,
             scan_media_library_folder,

@@ -86,14 +86,17 @@ async function loadCustomThemes() {
     const convertFileSrc = tauriCore.convertFileSrc;
     for (const [themeName, themePath] of customThemePathByName.entries()) {
       const styleId = `custom-theme-${themeName}`;
-      if (document.getElementById(styleId)) {
+      const existingLink = document.getElementById(styleId) as HTMLLinkElement | null;
+      const themeHref = `${convertFileSrc(themePath)}?r=${Date.now()}`;
+      if (existingLink) {
+        existingLink.href = themeHref;
         continue;
       }
 
       const link = document.createElement('link');
       link.id = styleId;
       link.rel = 'stylesheet';
-      link.href = convertFileSrc(themePath);
+      link.href = themeHref;
       document.head.appendChild(link);
     }
   } catch {
@@ -108,6 +111,10 @@ function ensureCustomThemesLoaded() {
 
   return customThemeLoadPromise;
 }
+
+const customThemes = computed(() => {
+  return Array.from(customThemePathByName.keys()).sort((a, b) => a.localeCompare(b));
+});
 
 async function persistTheme(themeName: string) {
   await setPersistedValue(THEME_STORAGE_KEY, themeName);
@@ -347,6 +354,11 @@ export function useTheme() {
     })();
   }
 
+  const refreshCustomThemes = async () => {
+    customThemeLoadPromise = null;
+    await ensureCustomThemesLoaded();
+  };
+
   void ensureCustomThemesLoaded();
 
   const getUserColor = computed(() => {
@@ -366,7 +378,9 @@ export function useTheme() {
   return {
     currentTheme,
     availableThemes,
+    customThemes,
     applyTheme,
+    refreshCustomThemes,
     getUserColor,
     getThemeUserColors,
     getThemeTokenValue,

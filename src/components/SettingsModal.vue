@@ -60,6 +60,12 @@
               </option>
             </select>
           </div>
+          <div class="setting-row theme-editor-toggle-row">
+            <label>THEME EDITOR</label>
+            <button class="preview-btn" type="button" @click="openThemeEditorWindow">
+              OPEN EDITOR
+            </button>
+          </div>
           <div class="setting-row">
             <label>SCANLINES</label>
             <input
@@ -484,6 +490,7 @@ import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../composables/useMediaDevices';
+import { useTheme } from '../composables/useTheme';
 
 const DEFAULT_THEME = 'retro-terminal';
 
@@ -604,13 +611,15 @@ let scanCompleteUnlisten: (() => void) | null = null;
 const { playAnimation } = useMessageAnimations();
 
 const { audioInputDevices, audioOutputDevices, videoInputDevices, requestMediaPermission } = useMediaDevices();
+const { refreshCustomThemes } = useTheme();
 
 watch(
   () => props.showModal,
-  (isOpen) => {
+  async (isOpen) => {
     if (isOpen) {
       activeTab.value = 'general';
       hasInitializedMediaForOpen.value = false;
+      await refreshCustomThemes().catch(() => undefined);
     }
   }
 );
@@ -690,6 +699,67 @@ watch(
 function handleClose() {
   stopVideoPreview();
   emit('close');
+}
+
+async function openThemeEditorWindow() {
+  if (isTauriRuntime()) {
+    try {
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      const existingWindow = await WebviewWindow.getByLabel('theme-editor-window').catch(() => null);
+      if (existingWindow) {
+        if (await existingWindow.isMinimized()) {
+          await existingWindow.unminimize();
+        }
+        await existingWindow.show();
+        await existingWindow.setFocus();
+        return;
+      }
+
+      const themeEditorUrl = new URL(window.location.href);
+      themeEditorUrl.searchParams.set('view', 'theme-editor');
+
+      const windowHandle = new WebviewWindow('theme-editor-window', {
+        url: themeEditorUrl.toString(),
+        title: 'THEME EDITOR',
+        width: 840,
+        height: 680,
+        minWidth: 560,
+        minHeight: 460,
+        center: true,
+        resizable: true,
+        decorations: true,
+        transparent: false,
+        useHttpsScheme: true,
+        dragDropEnabled: false,
+      });
+
+      windowHandle.once('tauri://created', () => {
+        void windowHandle.setFocus();
+      });
+      windowHandle.once('tauri://error', (error) => {
+        console.error('Failed to create theme editor window:', error);
+      });
+      return;
+    } catch (error) {
+      console.warn('Unable to open theme editor window with Tauri:', error);
+    }
+  }
+
+  const popupUrl = new URL(window.location.href);
+  popupUrl.searchParams.set('view', 'theme-editor');
+  const popupFeatures = [
+    'popup=yes',
+    'toolbar=no',
+    'menubar=no',
+    'location=no',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+    'width=840',
+    'height=680',
+  ].join(',');
+
+  window.open(popupUrl.toString(), 'agent-lobby-theme-editor', popupFeatures);
 }
 
 function handleChange() {
@@ -1051,6 +1121,15 @@ watch(
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+}
+
+.theme-editor-toggle-row {
+  align-items: flex-start;
+}
+
+.theme-editor-panel {
+  width: 100%;
+  padding-top: 8px;
 }
 
 .settings-action-buttons {

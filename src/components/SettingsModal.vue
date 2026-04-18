@@ -711,7 +711,7 @@ async function openThemeEditorWindow() {
           await existingWindow.unminimize();
         }
         await existingWindow.show();
-        const [{ LogicalSize }] = await import('@tauri-apps/api/window');
+        const { LogicalSize } = await import('@tauri-apps/api/window');
         const currentSize = await existingWindow.innerSize();
         if (currentSize.width < 1150) {
           await existingWindow.setSize(new LogicalSize(1150, currentSize.height));
@@ -739,7 +739,7 @@ async function openThemeEditorWindow() {
       });
 
       windowHandle.once('tauri://created', async () => {
-        const [{ LogicalSize }] = await import('@tauri-apps/api/window');
+        const { LogicalSize } = await import('@tauri-apps/api/window');
         await windowHandle.setSize(new LogicalSize(1150, 680));
         void windowHandle.setFocus();
       });

@@ -711,6 +711,11 @@ async function openThemeEditorWindow() {
           await existingWindow.unminimize();
         }
         await existingWindow.show();
+        const [{ LogicalSize }] = await import('@tauri-apps/api/window');
+        const currentSize = await existingWindow.innerSize();
+        if (currentSize.width < 1150) {
+          await existingWindow.setSize(new LogicalSize(1150, currentSize.height));
+        }
         await existingWindow.setFocus();
         return;
       }
@@ -721,9 +726,9 @@ async function openThemeEditorWindow() {
       const windowHandle = new WebviewWindow('theme-editor-window', {
         url: themeEditorUrl.toString(),
         title: 'THEME EDITOR',
-        width: 840,
+        width: 1150,
         height: 680,
-        minWidth: 560,
+        minWidth: 1150,
         minHeight: 460,
         center: true,
         resizable: true,
@@ -733,7 +738,9 @@ async function openThemeEditorWindow() {
         dragDropEnabled: false,
       });
 
-      windowHandle.once('tauri://created', () => {
+      windowHandle.once('tauri://created', async () => {
+        const [{ LogicalSize }] = await import('@tauri-apps/api/window');
+        await windowHandle.setSize(new LogicalSize(1150, 680));
         void windowHandle.setFocus();
       });
       windowHandle.once('tauri://error', (error) => {

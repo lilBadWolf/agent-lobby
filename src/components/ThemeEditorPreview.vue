@@ -15,8 +15,13 @@
             <span class="theme-editor-category-title">{{ category.label }}</span>
           </button>
           <div v-show="isCategoryExpanded(category.label)">
-            <div v-for="token in category.tokens" :key="token.name" class="theme-editor-control-row">
+            <div
+              v-for="token in category.tokens"
+              :key="token.name"
+              :class="['theme-editor-control-row', { 'no-label': !token.label }]"
+            >
               <component
+                v-if="token.label"
                 :is="isColorToken(values[token.name]) ? 'div' : 'label'"
                 :for="isColorToken(values[token.name]) ? undefined : `${tokenId(token)}-text`"
                 class="theme-editor-control-label"
@@ -46,6 +51,24 @@
                     @input="updateTokenValue(token.name, ($event.target as HTMLInputElement).value)"
                     class="theme-editor-text-input"
                   />
+                </div>
+              </template>
+              <template v-else-if="token.name === '--theme-user-colors'">
+                <div class="theme-editor-user-colors">
+                  <div
+                    v-for="(color, index) in previewPalette"
+                    :key="index"
+                    class="theme-editor-user-color-row"
+                  >
+                    <label :for="`${tokenId(token)}-color-${index}`">Color {{ index + 1 }}</label>
+                    <input
+                      :id="`${tokenId(token)}-color-${index}`"
+                      type="color"
+                      :value="color"
+                      @input="updateUserColorPalette(index, ($event.target as HTMLInputElement).value)"
+                      class="theme-editor-color-input"
+                    />
+                  </div>
                 </div>
               </template>
               <template v-else-if="isColorToken(values[token.name])">
@@ -131,7 +154,7 @@
                       ></div>
                     </div>
                     <div class="message-body">
-                      <span class="sender" :style="{ color: getUserColor('otter') }">otter:</span>
+                      <span class="sender" :style="{ color: getPreviewUserColor('otter') }">otter:</span>
                       <span class="text" style="color: var(--color-text-primary)">Nice. The sidebar should reflect presence colors too.</span>
                     </div>
                   </div>
@@ -159,7 +182,7 @@
                     <button class="user-bullet-btn" type="button" aria-label="Online status">
                       <span class="theme-preview-status-dot"></span>
                     </button>
-                    <button class="user-handle-btn" type="button" :style="{ color: getUserColor('fox') }">
+                    <button class="user-handle-btn" type="button" :style="{ color: getPreviewUserColor('fox') }">
                       fox
                     </button>
                   </div>
@@ -167,7 +190,7 @@
                     <button class="user-bullet-btn" type="button" aria-label="Away">
                       <span aria-hidden="true">💤</span>
                     </button>
-                    <button class="user-handle-btn" type="button" :style="{ color: getUserColor('sunbird') }">
+                    <button class="user-handle-btn" type="button" :style="{ color: getPreviewUserColor('sunbird') }">
                       sunbird
                     </button>
                   </div>
@@ -175,7 +198,7 @@
                     <button class="user-bullet-btn" type="button" aria-label="Media active">
                       <span aria-hidden="true">⚡</span>
                     </button>
-                    <button class="user-handle-btn" type="button" :style="{ color: getUserColor('otter') }">
+                    <button class="user-handle-btn" type="button" :style="{ color: getPreviewUserColor('otter') }">
                       otter
                     </button>
                   </div>
@@ -183,7 +206,7 @@
                     <button class="user-bullet-btn" type="button" aria-label="Offline">
                       <span aria-hidden="true">•</span>
                     </button>
-                    <button class="user-handle-btn" type="button" :style="{ color: getUserColor('raven') }">
+                    <button class="user-handle-btn" type="button" :style="{ color: getPreviewUserColor('raven') }">
                       raven
                     </button>
                   </div>
@@ -273,7 +296,24 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { getAvatarPacks, getAvatarObjectPosition } from '../composables/useAvatarPacks';
-import { useTheme } from '../composables/useTheme';
+
+const DEFAULT_USER_COLOR_PALETTE = [
+  '#39ff14',
+  '#00ff00',
+  '#00ffaa',
+  '#00ffff',
+  '#00aaff',
+  '#0055ff',
+  '#aa00ff',
+  '#ff00ff',
+  '#ff0055',
+  '#ff5500',
+  '#ffff00',
+  '#55ff00',
+  '#00ff55',
+  '#55ffff',
+  '#ff55ff',
+];
 
 const props = defineProps<{
   themeName?: string;
@@ -298,8 +338,54 @@ const profileAvatarStyle = computed(() => {
     backgroundSize: '300% 300%',
   };
 });
-const { getUserColor } = useTheme();
 const expandedCategories = ref(new Set<string>());
+const values = reactive<Record<string, string>>({});
+
+const previewPalette = computed(() => {
+  const rawValue = values['--theme-user-colors'] || themeSourceValues.value['--theme-user-colors'] || '';
+  const palette = parseUserColors(rawValue);
+  const normalized = palette.length > 0 ? palette : DEFAULT_USER_COLOR_PALETTE;
+
+  if (normalized.length >= DEFAULT_USER_COLOR_PALETTE.length) {
+    return normalized;
+  }
+
+  return [
+    ...normalized,
+    ...DEFAULT_USER_COLOR_PALETTE.slice(normalized.length),
+  ];
+});
+
+function getPreviewUserColor(str: string) {
+  const palette = previewPalette.value;
+  if (palette.length === 0) {
+    return '#39ff14';
+  }
+
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function parseUserColors(raw: string | undefined | null) {
+  return String(raw ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function updateUserColorPalette(index: number, nextColor: string) {
+  const palette = parseUserColors(values['--theme-user-colors'] || themeSourceValues.value['--theme-user-colors'] || '');
+  const normalized = [...palette];
+  while (normalized.length < DEFAULT_USER_COLOR_PALETTE.length) {
+    normalized.push(DEFAULT_USER_COLOR_PALETTE[normalized.length]);
+  }
+  normalized[index] = nextColor;
+  values['--theme-user-colors'] = normalized.join(', ');
+}
 
 const tokenCategories = [
   {
@@ -335,6 +421,12 @@ const tokenCategories = [
       { name: '--color-sidebar-bg', label: 'Background' },
       { name: '--color-sidebar-status-dot', label: 'Status dot' },
       { name: '--color-sidebar-status-dot-glow', label: 'Status dot glow' },
+    ],
+  },
+  {
+    label: 'User colors',
+    tokens: [
+      { name: '--theme-user-colors', label: '' },
     ],
   },
   {
@@ -383,7 +475,6 @@ const tokenCategories = [
 ];
 
 const allTokens = computed(() => tokenCategories.flatMap((category) => category.tokens));
-const values = reactive<Record<string, string>>({});
 
 function isCategoryExpanded(categoryLabel: string) {
   return expandedCategories.value.has(categoryLabel);
@@ -765,6 +856,14 @@ watch(
   align-items: start;
 }
 
+.theme-editor-control-row.no-label {
+  grid-template-columns: 1fr;
+}
+
+.theme-editor-control-row.no-label .theme-editor-control-inputs {
+  grid-column: 1 / -1;
+}
+
 .theme-editor-control-label,
 .theme-editor-control-row label {
   font-size: 0.78rem;
@@ -813,6 +912,23 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.theme-editor-user-colors {
+  display: grid;
+  gap: 10px;
+}
+
+.theme-editor-user-color-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-editor-user-colors-text {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .theme-editor-gradient-editor {

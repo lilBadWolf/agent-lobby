@@ -115,8 +115,10 @@
           :key="pinnedTwitchEmbed.channel"
           :src="getTwitchEmbedSrc(pinnedTwitchEmbed.channel)"
           sandbox="allow-scripts allow-same-origin allow-presentation"
-          allow="autoplay; fullscreen; picture-in-picture"
+          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
           allowfullscreen
+          webkitallowfullscreen
+          mozallowfullscreen
           referrerpolicy="strict-origin"
         ></iframe>
       </div>

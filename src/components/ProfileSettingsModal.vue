@@ -192,10 +192,10 @@ const localConfig = ref({
 
 function syncLocalConfig() {
   localConfig.value = {
-    avatarUrl: typeof props.config.avatarUrl === 'string' ? props.config.avatarUrl.trim() : '',
-    tagline: typeof props.config.tagline === 'string' ? props.config.tagline.trim() : '',
-    pageText: typeof props.config.pageText === 'string' ? props.config.pageText.trim() : '',
-    pageUrl: typeof props.config.pageUrl === 'string' ? props.config.pageUrl.trim() : '',
+    avatarUrl: typeof props.config.avatarUrl === 'string' ? props.config.avatarUrl : '',
+    tagline: typeof props.config.tagline === 'string' ? props.config.tagline : '',
+    pageText: typeof props.config.pageText === 'string' ? props.config.pageText : '',
+    pageUrl: typeof props.config.pageUrl === 'string' ? props.config.pageUrl : '',
     mediaSharing: props.config.mediaSharing ?? true,
   };
 
@@ -212,7 +212,11 @@ function syncLocalConfig() {
 
 watch(
   () => props.config,
-  syncLocalConfig,
+  () => {
+    if (!props.showModal) {
+      syncLocalConfig();
+    }
+  },
   { immediate: true }
 );
 

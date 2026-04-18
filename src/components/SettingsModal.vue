@@ -1425,6 +1425,13 @@ label {
 }
 
 .preview-text {
+  width: min(92vw, 960px);
+  max-width: 100%;
+  min-width: 320px;
+  height: min(72vh, 640px);
+  max-height: 92vh;
+  padding: 1rem;
+  box-sizing: border-box;
   font-size: 48px;
   font-weight: bold;
   text-transform: uppercase;
@@ -1432,7 +1439,6 @@ label {
   letter-spacing: 3px;
   text-align: center;
   color: var(--color-accent);
-  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -895,6 +895,8 @@ async function processPendingMessage(): Promise<void> {
 
   const textContainer = document.createElement('span');
   textContainer.className = 'animation-text';
+  textContainer.style.display = 'block';
+  textContainer.style.width = '100%';
   textContainer.style.color = 'var(--color-accent, #39ff14)';
   textContainer.style.fontSize = 'clamp(2rem, 8vw, 8rem)';
   textContainer.style.fontWeight = 'bold';

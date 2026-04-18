@@ -1,7 +1,14 @@
 <template>
   <div class="dm-window-root">
     <div data-tauri-drag-region class="custom-titlebar">
-      <span class="titlebar-text">{{ pageTitle }}</span>
+      <span class="titlebar-text">
+        {{ pageTitle }}
+        <span v-if="activeDMChat?.isTyping" class="titlebar-typing" aria-label="typing">
+          <span class="titlebar-typing-dot"></span>
+          <span class="titlebar-typing-dot"></span>
+          <span class="titlebar-typing-dot"></span>
+        </span>
+      </span>
       <div v-if="activeDMUser" class="titlebar-call-controls">
         <span v-if="hasActiveCall" class="titlebar-call-duration">⏱ {{ activeCallDurationLabel }}</span>
         <button
@@ -874,6 +881,45 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.titlebar-typing {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 10px;
+  align-items: center;
+  color: var(--color-accent-muted);
+}
+
+.titlebar-typing-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: titlebar-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.titlebar-typing-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.titlebar-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.titlebar-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes titlebar-typing-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }
 
 .titlebar-call-controls {

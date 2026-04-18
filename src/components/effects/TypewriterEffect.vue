@@ -90,7 +90,9 @@ onBeforeUnmount(clearTimers);
 
 <style scoped>
 .effect-root {
-  display: inline-block;
+  display: block;
+  width: 100%;
   white-space: pre-wrap;
+  text-align: center;
 }
 </style>

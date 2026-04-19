@@ -1071,13 +1071,17 @@ async function closePinnedVideoWindow() {
   cleanupPinnedVideoPopupHeartbeat();
 }
 
-function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | 'direct' {
+function getPinnedVideoSourceType(url: string): 'youtube' | 'twitch' | 'iframe' | 'direct' {
   if (/\b(?:youtube\.com|youtu\.be)\b/i.test(url)) {
     return 'youtube';
   }
 
   if (/\b(?:twitch\.tv)\b/i.test(url)) {
     return 'twitch';
+  }
+
+  if (/\b(?:vsembed\.su)\b/i.test(url) && /\/embed\/tv\b/i.test(url)) {
+    return 'iframe';
   }
 
   return 'direct';
@@ -1108,7 +1112,14 @@ async function getLocalPinnedVideoProxyUrl(url: string): Promise<string> {
   return `${proxyBaseUrl}/local-video?path=${encodeURIComponent(normalizedPath)}`;
 }
 
-async function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch' | 'direct', url: string, title: string | undefined, currentTime?: number) {
+async function getLocalVsembedProxyUrl(url: string): Promise<string> {
+  const proxyBaseUrl = await invoke<string>('get_local_video_proxy_base_url');
+  const proxyUrl = new URL(`${proxyBaseUrl}/vsembed-proxy`);
+  proxyUrl.searchParams.set('url', url);
+  return proxyUrl.toString();
+}
+
+async function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch' | 'iframe' | 'direct', url: string, title: string | undefined, currentTime?: number) {
   const popupUrl = new URL(window.location.href);
   popupUrl.searchParams.set('view', 'pinned-video');
   popupUrl.searchParams.set('sourceType', sourceType);
@@ -1123,6 +1134,16 @@ async function getPinnedVideoPopupUrl(sourceType: 'youtube' | 'twitch' | 'direct
       }
     }
     popupUrl.searchParams.set('url', directUrl);
+  } else if (sourceType === 'iframe') {
+    let proxiedUrl = url;
+    if (hasTauriWindow) {
+      try {
+        proxiedUrl = await getLocalVsembedProxyUrl(url);
+      } catch {
+        proxiedUrl = url;
+      }
+    }
+    popupUrl.searchParams.set('url', proxiedUrl);
   } else {
     popupUrl.searchParams.set('url', url);
   }

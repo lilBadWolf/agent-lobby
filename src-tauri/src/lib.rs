@@ -3,6 +3,7 @@ use rodio::{Decoder, OutputStream, Sink, Source};
 use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::BufReader;
+use std::time::Duration;
 
 // Only store Sink globally; OutputStream must be local (not Send/Sync)
 static NUMBERS_STATION_SINK: Lazy<Arc<Mutex<Option<Arc<Sink>>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -856,6 +857,52 @@ fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), Stri
         (raw_target, "")
     };
 
+    let query_params = parse_query_params(query);
+
+    if path == "/vsembed-proxy" {
+        let target_url = match query_params.get("url") {
+            Some(url) => url,
+            None => {
+                let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nMissing url";
+                stream.write_all(response.as_bytes()).ok();
+                return Ok(());
+            }
+        };
+
+        if !target_url.starts_with("https://vsembed.su/") && !target_url.starts_with("https://www.vsembed.su/") {
+            let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nUnsupported embed host";
+            stream.write_all(response.as_bytes()).ok();
+            return Ok(());
+        }
+
+        let html = match fetch_remote_html(target_url) {
+            Ok(html) => html,
+            Err(error) => {
+                let response = format!("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n{}", error);
+                stream.write_all(response.as_bytes()).ok();
+                return Ok(());
+            }
+        };
+
+        let player_src = match extract_player_iframe_src(&html) {
+            Some(src) => src,
+            None => {
+                let response = "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nFailed to extract player iframe";
+                stream.write_all(response.as_bytes()).ok();
+                return Ok(());
+            }
+        };
+
+        let body = build_vsembed_proxy_html(&player_src, target_url);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body,
+        );
+        stream.write_all(response.as_bytes()).ok();
+        return Ok(());
+    }
+
     if path != "/local-video" {
         let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
         stream.write_all(response.as_bytes()).ok();
@@ -863,7 +910,6 @@ fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), Stri
     }
 
     let headers = parse_http_headers(lines);
-    let query_params = parse_query_params(query);
     let raw_path = match query_params.get("path") {
         Some(path) => path,
         None => {
@@ -961,6 +1007,46 @@ where
         }
     }
     headers
+}
+
+fn fetch_remote_html(url: &str) -> Result<String, String> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(10))
+        .timeout_read(Duration::from_secs(20))
+        .build();
+
+    agent
+        .get(url)
+        .set("User-Agent", "AgentLobby/1.0")
+        .call()
+        .map_err(|e| format!("Failed to fetch remote embed page: {}", e))?
+        .into_string()
+        .map_err(|e| format!("Failed to read remote embed page body: {}", e))
+}
+
+fn extract_player_iframe_src(html: &str) -> Option<String> {
+    let marker = "id=\"player_iframe\"";
+    let idx = html.find(marker)?;
+    let src_attr = "src=\"";
+    let src_start = html[..idx].rfind(src_attr)? + src_attr.len();
+    let src_end = html[src_start..].find('"')?;
+    let raw_src = &html[src_start..src_start + src_end];
+    Some(if raw_src.starts_with("//") {
+        format!("https:{}", raw_src)
+    } else if raw_src.starts_with('/') {
+        format!("https://vsembed.su{}", raw_src)
+    } else {
+        raw_src.to_string()
+    })
+}
+
+fn build_vsembed_proxy_html(player_src: &str, original_url: &str) -> String {
+    let source_url_literal = format!("{:?}", original_url);
+    format!(
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>VSEmbed Player</title><style>html,body{{margin:0;padding:0;height:100%;background:#000}}iframe{{border:0;width:100%;height:100%;}}</style><script>const VSEMBED_SOURCE_URL={};const VSEMBED_START_MS=Date.now();function postVsembedCurrentTime(){{if(window.parent&&window.parent!==window){{window.parent.postMessage({{type:'vsembed-current-time',url:VSEMBED_SOURCE_URL,currentTime:Math.max(0,Math.floor((Date.now()-VSEMBED_START_MS)/1000))}},'*');}}}}window.addEventListener('load',()=>{{postVsembedCurrentTime();setInterval(postVsembedCurrentTime,1000);}});</script></head><body><iframe src=\"{}\" allow=\"autoplay; fullscreen; picture-in-picture\" allowfullscreen></iframe></body></html>",
+        source_url_literal,
+        player_src
+    )
 }
 
 fn parse_query_params(query: &str) -> std::collections::HashMap<String, String> {

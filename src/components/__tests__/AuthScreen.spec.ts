@@ -22,7 +22,7 @@ describe('AuthScreen', () => {
       },
       global: {
         stubs: {
-          SinewaveBackground: true,
+          AuthBackground: true,
         },
       },
     });
@@ -44,7 +44,7 @@ describe('AuthScreen', () => {
       },
       global: {
         stubs: {
-          SinewaveBackground: true,
+          AuthBackground: true,
         },
       },
     });
@@ -70,7 +70,7 @@ describe('AuthScreen', () => {
       },
       global: {
         stubs: {
-          SinewaveBackground: true,
+          AuthBackground: true,
         },
       },
     });
@@ -95,7 +95,7 @@ describe('AuthScreen', () => {
       },
       global: {
         stubs: {
-          SinewaveBackground: true,
+          AuthBackground: true,
         },
       },
     });

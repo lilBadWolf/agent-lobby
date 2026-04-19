@@ -1,3 +1,9 @@
+// Add global flag for signal-station audio block
+declare global {
+  interface Window {
+    __NO_SIGNAL_STATION__?: boolean;
+  }
+}
 <template>
   <div data-tauri-drag-region class="custom-titlebar">
     {{ pageTitle }}
@@ -75,8 +81,10 @@
       :presence-ready="isPresencePreviewReady"
       :presence-status="presencePreviewStatus"
       :presence-status-message="presencePreviewStatusMessage"
+      :soundpack="config.soundpack"
+      :soundpack-background-js-url="soundpackBackgroundJsUrl"
+      :soundpack-background-css-url="soundpackBackgroundCssUrl"
       @login="handleLogin"
-      @ambience="handleAmbience"
       @config-clicked="toggleNetworkConfig"
       @quit="quit"
     />
@@ -350,12 +358,13 @@ const {
   availableSoundpacks,
   boot,
   joinLobby,
+  getSoundpackAssetUrl,
   leaveLobby,
   switchLobby,
   sendMessage,
   disconnect,
   updateSettings,
-  tryPlayAmbience,
+  // tryPlayAmbience, // removed, not defined
   playAlert,
   stopAlert,
   setNetworkConfig,
@@ -369,7 +378,15 @@ const {
   toggleAway,
   isAway,
   setActiveMedia,
+  customSoundpackPathByName,
 } = useLobbyChat();
+const soundpackBackgroundJsUrl = computed(() =>
+  getSoundpackAssetUrl(config.value.soundpack, 'auth-background.js')
+);
+const soundpackBackgroundCssUrl = computed(() =>
+  getSoundpackAssetUrl(config.value.soundpack, 'auth-background.css')
+);
+
 const { availableThemes, applyTheme } = useTheme();
 const {
   isUpdateAvailable,
@@ -723,6 +740,47 @@ watch(isConnected, (connected) => {
 
 const showAuth = computed(() => !isConnected.value);
 const showSettings = ref(false);
+// Stop numbers-station playback when settings modal opens
+// Stop numbers-station playback when settings modal opens; resume correct soundpack when closed
+watch(showSettings, async (val, oldVal) => {
+  if (val) {
+    try {
+      await invoke('stop_numbers_station_audio');
+    } catch {}
+  } else if (!val && oldVal) {
+    // Only play numbers-station if AuthScreen is visible (ChatArea NOT shown)
+    if (showAuth.value && config.value.audioEnabled) {
+      let numbersPath = '';
+      const soundpack = config.value.soundpack;
+      const customBasePath = customSoundpackPathByName.value[soundpack];
+      if (customBasePath) {
+        numbersPath = `${customBasePath}/signal-station.mp3`;
+      } else if (window.__TAURI__?.path?.resolveResource) {
+        numbersPath = window.__TAURI__.path.resolveResource(`public/sounds/${soundpack}/signal-station.mp3`);
+      }
+      if (!numbersPath && window.__TAURI__?.path?.resolveResource) {
+        numbersPath = window.__TAURI__.path.resolveResource('public/sounds/default/signal-station.mp3');
+      }
+      try {
+        await invoke('play_numbers_station_audio', { path: numbersPath });
+      } catch {}
+    }
+  }
+});
+
+// Stop numbers-station audio when AuthScreen disappears (user logs in)
+watch(showAuth, async (val, oldVal) => {
+  if (oldVal && !val) {
+    try {
+      await invoke('stop_numbers_station_audio');
+    } catch {}
+    // Block signal-station from playing while ChatArea is loaded
+    window.__NO_SIGNAL_STATION__ = true;
+  } else if (val && !oldVal) {
+    // Allow signal-station again when AuthScreen is shown
+    window.__NO_SIGNAL_STATION__ = false;
+  }
+});
 const showProfileSettings = ref(false);
 const showNetworkConfig = ref(false);
 const showShutdownAnim = ref(false);
@@ -1600,9 +1658,7 @@ function handleToggleAgentAmpDock() {
   updateSettings();
 }
 
-function handleAmbience() {
-  tryPlayAmbience();
-}
+// Removed handleAmbience and tryPlayAmbience usage (not defined)
 
 function handleSettingsUpdate(newConfig: Partial<AudioConfig>) {
   const previousSoundpack = config.value.soundpack;

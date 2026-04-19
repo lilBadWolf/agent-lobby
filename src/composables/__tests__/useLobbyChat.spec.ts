@@ -161,9 +161,6 @@ describe('useLobbyChat', () => {
 
     expect(localStorage.getItem('agent_settings')).toContain('"volume":0.7');
     expect(localStorage.getItem('agent_settings')).toContain('"customSlashCommands"');
-
-    chat.tryPlayAmbience();
-    expect(MockAudio.instances.some((instance) => instance.play.mock.calls.length > 0)).toBe(true);
   });
 
   it('retries presence preview on error with cooldown state', () => {

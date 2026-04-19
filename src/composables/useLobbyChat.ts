@@ -1,4 +1,21 @@
+// Add global flag for signal-station audio block
+declare global {
+  interface Window {
+    __NO_SIGNAL_STATION__?: boolean;
+  }
+}
+// TypeScript: declare window.__TAURI__ for Tauri global
+declare global {
+  interface Window {
+    __TAURI__?: {
+      path?: {
+        resolveResource?: (path: string) => string;
+      };
+    };
+  }
+}
 import { ref, reactive, computed, watch } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import type { ActiveMedia, UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from './usePlatformStorage';
@@ -152,6 +169,11 @@ function normalizeThemeName(theme: unknown): string {
 
   const trimmedTheme = theme.trim();
   return trimmedTheme || DEFAULT_APP_CONFIG.theme;
+}
+
+function normalizeSoundpackName(rawSoundpack?: unknown): string {
+  const packName = typeof rawSoundpack === 'string' ? rawSoundpack.trim().toLowerCase() : '';
+  return packName || 'default';
 }
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
@@ -589,10 +611,25 @@ export function useLobbyChat() {
       void persistAudioConfig(config.value);
     }
   );
-  const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({});
+  const audio = ref<Record<string, HTMLAudioElement | Record<string, HTMLAudioElement>>>({}); // Alerts only; numbers-station is backend
   const customSoundpackPathByName = ref<Record<string, string>>({});
   let tauriCoreModulePromise: Promise<typeof import('@tauri-apps/api/core') | null> | null = null;
   let tauriConvertFileSrc: ((filePath: string) => string) | null = null;
+
+  function getSoundpackAssetUrl(soundpack: string, fileName: string): string {
+    const packName = normalizeSoundpackName(soundpack);
+    const customBasePath = customSoundpackPathByName.value[packName];
+
+    if (!customBasePath) {
+      return getPublicAssetUrl(`sounds/${packName}/${fileName}`);
+    }
+
+    if (!tauriConvertFileSrc) {
+      return getPublicAssetUrl(`sounds/default/${fileName}`);
+    }
+
+    return toAssetAudioUrl(customBasePath, fileName, tauriConvertFileSrc);
+  }
 
   const isAway = ref(false);
   let awaySource: 'auto' | 'manual' | null = null;
@@ -1128,68 +1165,95 @@ export function useLobbyChat() {
   }
 
   function stopCurrentAudio(): void {
-    const stopElement = (element: HTMLAudioElement | undefined | null) => {
-      if (!element) return;
-      try {
-        element.pause();
-        element.currentTime = 0;
-        element.onended = null;
-      } catch {
-        // Ignore playback cleanup failures.
+    const stopElement = (element: unknown) => {
+      if (!element || typeof element !== 'object') {
+        return;
+      }
+
+      const maybeAudio = element as { pause?: unknown; currentTime?: unknown; onended?: unknown };
+      if (typeof maybeAudio.pause === 'function' && typeof maybeAudio.currentTime === 'number') {
+        try {
+          (maybeAudio.pause as () => void)();
+          (maybeAudio as { currentTime: number }).currentTime = 0;
+          if ('onended' in maybeAudio) {
+            (maybeAudio as { onended: ((this: unknown, ev: Event) => unknown) | null }).onended = null;
+          }
+        } catch {
+          // Ignore playback cleanup failures.
+        }
+        return;
+      }
+
+      for (const value of Object.values(element as Record<string, unknown>)) {
+        stopElement(value);
       }
     };
 
-    const previousNumberStation = audio.value.numberStation as HTMLAudioElement | undefined;
-    const previousWombatStation = audio.value.wombatStation as HTMLAudioElement | undefined;
-    stopElement(previousNumberStation);
-    stopElement(previousWombatStation);
+    const numberStation = audio.value.numberStation as unknown;
+    const wombatStation = audio.value.wombatStation as unknown;
+    const alerts = audio.value.alerts as Record<string, unknown> | undefined;
 
-    const previousAlerts = audio.value.alerts as Record<string, HTMLAudioElement> | undefined;
-    if (previousAlerts) {
-      Object.values(previousAlerts).forEach((alert) => stopElement(alert));
+    if (numberStation) {
+      stopElement(numberStation);
+    }
+    if (wombatStation) {
+      stopElement(wombatStation);
+    }
+    if (alerts) {
+      Object.values(alerts).forEach(stopElement);
     }
 
+    stopElement(audio.value);
     audio.value = {};
   }
 
-  function initAudio() {
-    const soundpack = config.value.soundpack;
-    const previousNumberStation = audio.value.numberStation as HTMLAudioElement | undefined;
-    const shouldRestartNumberStation = previousNumberStation ? !previousNumberStation.paused : false;
+  function shouldPlayNumbersStation() {
+    // Only play if NOT connected (i.e., AuthScreen is visible)
+    return !isConnected.value;
+  }
 
+  async function initAudio() {
+    const soundpack = normalizeSoundpackName(config.value.soundpack);
     stopCurrentAudio();
 
-    const getSoundUrl = (fileName: string): string => {
-      const customBasePath = customSoundpackPathByName.value[soundpack];
-      if (!customBasePath) {
-        return getPublicAssetUrl(`sounds/${soundpack}/${fileName}`);
-      }
-
-      if (!tauriConvertFileSrc) {
-        return getPublicAssetUrl(`sounds/default/${fileName}`);
-      }
-
-      return toAssetAudioUrl(customBasePath, fileName, tauriConvertFileSrc);
-    };
-
-    audio.value.numberStation = new Audio(getSoundUrl('signal-station.mp3'));
-    (audio.value.numberStation as HTMLAudioElement).loop = true;
+    // Alerts (still frontend)
+    // Add cache-busting query param to force reload
+    const cacheBust = `?v=${Date.now()}`;
     audio.value.alerts = {
-      startup: new Audio(getSoundUrl('startup-sound.mp3')),
-      system: new Audio(getSoundUrl('system-sound.mp3')),
-      join: new Audio(getSoundUrl('join-sound.mp3')),
-      part: new Audio(getSoundUrl('part-sound.mp3')),
-      message: new Audio(getSoundUrl('message-sound.mp3')),
-      shutdown: new Audio(getSoundUrl('shutdown-sound.mp3')),
-      secret: new Audio(getSoundUrl('secret.mp3')),
-      rejected: new Audio(getSoundUrl('rejected.mp3')),
-      ringback: new Audio(getSoundUrl('ringback-tone.mp3')),
+      startup: new Audio(getSoundpackAssetUrl(soundpack, 'startup-sound.mp3') + cacheBust),
+      system: new Audio(getSoundpackAssetUrl(soundpack, 'system-sound.mp3') + cacheBust),
+      join: new Audio(getSoundpackAssetUrl(soundpack, 'join-sound.mp3') + cacheBust),
+      part: new Audio(getSoundpackAssetUrl(soundpack, 'part-sound.mp3') + cacheBust),
+      message: new Audio(getSoundpackAssetUrl(soundpack, 'message-sound.mp3') + cacheBust),
+      shutdown: new Audio(getSoundpackAssetUrl(soundpack, 'shutdown-sound.mp3') + cacheBust),
+      secret: new Audio(getSoundpackAssetUrl(soundpack, 'secret.mp3') + cacheBust),
+      rejected: new Audio(getSoundpackAssetUrl(soundpack, 'rejected.mp3') + cacheBust),
+      ringback: new Audio(getSoundpackAssetUrl(soundpack, 'ringback-tone.mp3') + cacheBust),
     };
     ((audio.value.alerts as any).ringback as HTMLAudioElement).loop = true;
     applyAudioSettings();
 
-    if (shouldRestartNumberStation && config.value.audioEnabled) {
-      (audio.value.numberStation as HTMLAudioElement).play().catch(() => {});
+    // Play numbers-station via backend if enabled and user is NOT connected
+    if (
+      isTauriRuntime() &&
+      config.value.audioEnabled &&
+      shouldPlayNumbersStation() &&
+      !(typeof window !== 'undefined' && window.__NO_SIGNAL_STATION__)
+    ) {
+      let numbersPath = '';
+      const customBasePath = customSoundpackPathByName.value[soundpack];
+      if (customBasePath) {
+        numbersPath = `${customBasePath}/signal-station.mp3`;
+      } else {
+        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/' + soundpack + '/signal-station.mp3') || ''}`;
+      }
+      // Fallback to default if not found
+      if (!numbersPath) {
+        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/default/signal-station.mp3') || ''}`;
+      }
+      try {
+        await invoke('play_numbers_station_audio', { path: numbersPath });
+      } catch {}
     }
   }
 
@@ -1536,14 +1600,27 @@ export function useLobbyChat() {
     config.value = normalizeAudioConfig();
   }
 
-  function tryPlayAmbience() {
-    const numberStation = audio.value.numberStation as HTMLAudioElement;
-    if (config.value.audioEnabled && numberStation) {
-      numberStation.play().catch(() => {});
-    }
-  }
+  // tryPlayAmbience removed: numbers-station now plays on startup via backend
 
   function setSoundpack(newSoundpack: string) {
+    if (config.value.soundpack === newSoundpack) {
+      return;
+    }
+
+    // Forcefully stop and unload previous numbers-station audio if present
+    const prevNumberStation = audio.value.numberStation as HTMLAudioElement | undefined;
+    if (prevNumberStation) {
+      try {
+        prevNumberStation.pause();
+        prevNumberStation.currentTime = 0;
+        prevNumberStation.loop = false;
+        prevNumberStation.src = '';
+        prevNumberStation.removeAttribute('src');
+        prevNumberStation.load();
+      } catch {}
+    }
+
+    stopCurrentAudio();
     config.value.soundpack = newSoundpack;
     initAudio();
     updateSettings();
@@ -1577,13 +1654,15 @@ export function useLobbyChat() {
   }
 
   async function loadAvailableSoundpacks() {
-    const builtinPacks: string[] = ['default'];
+    const isValidSoundpackName = (name: string): boolean => /^[A-Za-z0-9_-]+$/.test(name);
+    // Add new built-in packs here manually if import.meta.glob cannot see them
+    const builtinPacks: string[] = ['default', 'simulation'];
 
     try {
       const soundModules = import.meta.glob('/public/sounds/*/');
       const packs = Object.keys(soundModules)
         .map((path) => path.replace('/public/sounds/', '').replace(/\/$/, ''))
-        .filter((pack) => /^[^/]+$/.test(pack));
+        .filter((pack) => isValidSoundpackName(pack));
 
       if (packs.length > 0) {
         builtinPacks.push(...packs);
@@ -1604,9 +1683,9 @@ export function useLobbyChat() {
           : [];
 
         for (const pack of discovered) {
-          const packName = pack.name.trim();
+          const packName = normalizeSoundpackName(pack.name);
           const packPath = pack.path.trim();
-          if (!packName || !packPath) {
+          if (!packName || !packPath || !isValidSoundpackName(packName)) {
             continue;
           }
 
@@ -1736,12 +1815,12 @@ export function useLobbyChat() {
     sendMessage,
     disconnect,
     updateSettings,
-    tryPlayAmbience,
     playAlert,
     stopAlert,
     setNetworkConfig,
     restoreNetworkConfigDefaults,
     setSoundpack,
+    getSoundpackAssetUrl,
     clearMessages,
     addSystemMessage,
     getMqttClient: () => client,
@@ -1752,5 +1831,6 @@ export function useLobbyChat() {
     isTyping: computed(() => lobbyTyping[activeLobbyId.value] || false),
     isAway,
     setActiveMedia,
+    customSoundpackPathByName,
   };
 }

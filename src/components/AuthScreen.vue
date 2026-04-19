@@ -1,6 +1,10 @@
 <template>
   <div v-if="showAuth" id="auth-screen">
-    <SinewaveBackground />
+    <AuthBackground
+      :soundpack="soundpack"
+      :soundpack-background-js-url="soundpackBackgroundJsUrl"
+      :soundpack-background-css-url="soundpackBackgroundCssUrl"
+    />
     <div
       class="login-box"
       :class="systemStatusClass"
@@ -44,7 +48,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import SinewaveBackground from './SinewaveBackground.vue';
+import AuthBackground from './AuthBackground.vue';
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
@@ -58,6 +62,9 @@ const props = defineProps<{
   presenceReady: boolean;
   presenceStatus: 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
   presenceStatusMessage: string;
+  soundpack?: string;
+  soundpackBackgroundJsUrl?: string;
+  soundpackBackgroundCssUrl?: string;
 }>();
 
 const emit = defineEmits<{

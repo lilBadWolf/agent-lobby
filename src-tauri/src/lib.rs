@@ -1,3 +1,105 @@
+use std::sync::{Arc, Mutex};
+use rodio::{Decoder, OutputStream, Sink, Source};
+use once_cell::sync::Lazy;
+use std::fs::File;
+use std::io::BufReader;
+
+// Only store Sink globally; OutputStream must be local (not Send/Sync)
+static NUMBERS_STATION_SINK: Lazy<Arc<Mutex<Option<Arc<Sink>>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+
+/// Play the numbers-station audio from the given path (should be signal-station.mp3 in a soundpack)
+#[tauri::command]
+fn play_numbers_station_audio(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    #[cfg(dev)]
+    let _ = &app;
+
+    // Stop any previous playback
+    stop_numbers_station_audio()?;
+
+    // Try to open the file directly
+    let file = match File::open(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            // If not found, try to resolve relative to resource or asset dir (for built-in soundpacks)
+            // Try resource dir first
+            #[cfg(not(dev))]
+            {
+                match app.path().resource_dir() {
+                    Ok(res_dir) => {
+                        let rel_path = if path.starts_with("public/") {
+                            &path[7..]
+                        } else {
+                            &path
+                        };
+                        let candidate = res_dir.join(rel_path);
+                        if candidate.exists() {
+                            match File::open(&candidate) {
+                                Ok(f) => f,
+                                Err(e2) => return Err(format!("Failed to open audio file (resource dir fallback): {}", e2)),
+                            }
+                        } else {
+                            return Err(format!("Failed to open audio file: {} (also tried resource dir: {:?})", e, candidate));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(format!("Failed to open audio file: {} (resource dir unavailable)", e));
+                    }
+                }
+            }
+            #[cfg(dev)]
+            {
+                // In dev, try relative to project root (for vite/tauri dev)
+                let candidate = std::env::current_dir().unwrap_or_default().join(&path);
+                if candidate.exists() {
+                    match File::open(&candidate) {
+                        Ok(f) => f,
+                        Err(e2) => return Err(format!("Failed to open audio file (dev fallback): {}", e2)),
+                    }
+                } else {
+                    return Err(format!("Failed to open audio file: {} (also tried dev fallback: {:?})", e, candidate));
+                }
+            }
+        }
+    };
+    let source = Decoder::new(BufReader::new(file)).map_err(|e| format!("Failed to decode audio: {}", e))?;
+
+    // OutputStream must be kept alive as long as Sink is alive, so spawn a thread
+    let sink_arc = NUMBERS_STATION_SINK.clone();
+    std::thread::spawn(move || {
+        let (_stream, handle) = match OutputStream::try_default() {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        let sink = match Sink::try_new(&handle) {
+            Ok(s) => Arc::new(s),
+            Err(_) => return,
+        };
+        sink.append(source.repeat_infinite()); // Loop playback (Source trait)
+        // Store Arc<Sink> so stop can pause it
+        {
+            let mut s = sink_arc.lock().unwrap();
+            *s = Some(sink.clone());
+        }
+        sink.sleep_until_end();
+        // Remove sink after playback ends
+        {
+            let mut s = sink_arc.lock().unwrap();
+            *s = None;
+        }
+    });
+    Ok(())
+}
+
+/// Stop the numbers-station audio if playing
+#[tauri::command]
+fn stop_numbers_station_audio() -> Result<(), String> {
+    let mut s = NUMBERS_STATION_SINK.lock().unwrap();
+    if let Some(sink) = s.take() {
+        sink.pause();
+        // Dropping the Arc<Sink> will stop playback and release resources
+    }
+    Ok(())
+}
 use audiotags::Tag;
 use rustfft::{FftPlanner, num_complex::Complex};
 use tauri::{Emitter, Manager, UserAttentionType};
@@ -494,7 +596,10 @@ fn remove_media_library_folder(app: tauri::AppHandle, folder_path: String) -> Re
     Ok(true)
 }
 
-fn ensure_custom_asset_folders(app_data_dir: &Path) -> Result<(), String> {
+fn ensure_custom_asset_folders(app: &tauri::AppHandle, app_data_dir: &Path) -> Result<(), String> {
+    #[cfg(dev)]
+    let _ = app;
+
     let themes_dir = app_data_dir.join("themes");
     fs::create_dir_all(&themes_dir)
         .map_err(|error| format!("Failed to create themes directory: {}", error))?;
@@ -510,11 +615,58 @@ fn ensure_custom_asset_folders(app_data_dir: &Path) -> Result<(), String> {
             .map_err(|error| format!("Failed to write mint-cream.css template: {}", error))?;
     }
 
+    // --- Built-in soundpacks migration ---
+    // List of built-in packs (keep in sync with frontend)
+    let builtin_packs = ["default", "simulation", "outer-rim"];
+    for pack in &builtin_packs {
+        let dest_pack_dir = soundpacks_dir.join(pack);
+        if !dest_pack_dir.exists() {
+            // Try to copy from resources (production) or /public (dev)
+            #[cfg(not(dev))]
+            {
+                if let Ok(res_dir) = app.path().resource_dir() {
+                    let src_pack_dir = res_dir.join(format!("sounds/{}", pack));
+                    if src_pack_dir.exists() {
+                        copy_dir_recursive(&src_pack_dir, &dest_pack_dir)?;
+                    }
+                }
+            }
+            #[cfg(dev)]
+            {
+                // In dev, copy from project /public/sounds/[pack]
+                let src_pack_dir = std::env::current_dir().unwrap_or_default().join("public").join("sounds").join(pack);
+                if src_pack_dir.exists() {
+                    copy_dir_recursive(&src_pack_dir, &dest_pack_dir)?;
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
-fn init_custom_folders(app_data_dir: &PathBuf) {
-    if let Err(error) = ensure_custom_asset_folders(app_data_dir) {
+// Recursively copy a directory (files only, no symlinks)
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.is_dir() {
+        return Err(format!("Source directory does not exist: {:?}", src));
+    }
+    fs::create_dir_all(dst).map_err(|e| format!("Failed to create destination dir: {:?}: {}", dst, e))?;
+    for entry in fs::read_dir(src).map_err(|e| format!("Failed to read dir {:?}: {}", src, e))? {
+        let entry = entry.map_err(|e| format!("Failed to read entry in {:?}: {}", src, e))?;
+        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {}", e))?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&src_path, &dst_path).map_err(|e| format!("Failed to copy file {:?} to {:?}: {}", src_path, dst_path, e))?;
+        }
+    }
+    Ok(())
+}
+
+fn init_custom_folders(app: &tauri::AppHandle, app_data_dir: &PathBuf) {
+    if let Err(error) = ensure_custom_asset_folders(app, app_data_dir) {
         eprintln!("Warning: {}", error);
     }
 }
@@ -897,7 +1049,7 @@ fn setup_custom_folders(app: tauri::AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|error| format!("Failed to get app data directory: {}", error))?;
 
-    ensure_custom_asset_folders(&app_data_dir)
+    ensure_custom_asset_folders(&app, &app_data_dir)
 }
 
 fn parse_agentconf_path(args: &[String]) -> Option<String> {
@@ -1007,7 +1159,7 @@ fn discover_custom_assets(app: tauri::AppHandle) -> Result<CustomAssetsResult, S
         .app_data_dir()
         .map_err(|error| format!("Failed to get app data directory: {}", error))?;
 
-    ensure_custom_asset_folders(&app_data_dir)?;
+    ensure_custom_asset_folders(&app, &app_data_dir)?;
 
     Ok(CustomAssetsResult {
         themes: discover_custom_themes(&app_data_dir),
@@ -1022,7 +1174,7 @@ fn save_custom_theme(app: tauri::AppHandle, theme_name: String, css_content: Str
         .app_data_dir()
         .map_err(|error| format!("Failed to get app data directory: {}", error))?;
 
-    ensure_custom_asset_folders(&app_data_dir)?;
+    ensure_custom_asset_folders(&app, &app_data_dir)?;
     let mut safe_name = theme_name.trim().to_lowercase();
     for replacement in [' ', '\\', '/', ':', '*', '?', '"', '<', '>', '|'].iter() {
         safe_name = safe_name.replace(*replacement, "-");
@@ -1073,7 +1225,7 @@ fn open_themes_folder(app: tauri::AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|error| format!("Failed to get app data directory: {}", error))?;
 
-    ensure_custom_asset_folders(&app_data_dir)?;
+    ensure_custom_asset_folders(&app, &app_data_dir)?;
     open_folder_in_os(&app_data_dir.join("themes"))
 }
 
@@ -1097,7 +1249,7 @@ fn open_soundpacks_folder(app: tauri::AppHandle) -> Result<(), String> {
         .app_data_dir()
         .map_err(|error| format!("Failed to get app data directory: {}", error))?;
 
-    ensure_custom_asset_folders(&app_data_dir)?;
+    ensure_custom_asset_folders(&app, &app_data_dir)?;
     open_folder_in_os(&app_data_dir.join("soundpacks"))
 }
 
@@ -1328,7 +1480,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             if let Ok(app_data_dir) = app.path().app_data_dir() {
-                init_custom_folders(&app_data_dir);
+                init_custom_folders(&app.handle(), &app_data_dir);
             }
 
             #[cfg(dev)]
@@ -1416,6 +1568,8 @@ pub fn run() {
             remove_media_library_folder,
             read_agentamp_metadata,
             get_local_video_proxy_base_url
+            ,play_numbers_station_audio
+            ,stop_numbers_station_audio
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

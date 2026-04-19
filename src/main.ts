@@ -1,4 +1,5 @@
 import { createApp } from "vue";
+import * as THREE from 'three';
 import App from "./App.vue";
 import DMWindowApp from "./DMWindowApp.vue";
 import AgentAmpWindowApp from "./AgentAmpWindowApp.vue";
@@ -8,6 +9,14 @@ import ThemeEditorWindowApp from "./ThemeEditorWindowApp.vue";
 import "./styles/global.css";
 import { runAutoUpdater } from "./composables/useAutoUpdater";
 import { resolvePersistedThemeSync } from "./composables/useTheme";
+
+declare global {
+  interface Window {
+    THREE?: typeof THREE;
+  }
+}
+
+window.THREE = THREE;
 
 const params = new URLSearchParams(window.location.search);
 const isDMWindow = params.get('view') === 'dm';

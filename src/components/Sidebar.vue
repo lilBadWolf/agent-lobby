@@ -123,7 +123,7 @@
             class="request-tunnel-btn"
             :class="getDMBubbleClass(hoveredUser.username)"
             :aria-label="getDMBubbleTitle(hoveredUser.username)"
-            @click.stop="emit('dmRequest', hoveredUser.username)"
+            @click.stop="handleDmRequest(hoveredUser.username)"
           >
             REQUEST TUNNEL
           </button>
@@ -167,6 +167,8 @@ import { computed, ref, watch } from 'vue';
 import type { UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
+import { useLobbyChat } from '../composables/useLobbyChat';
+const { stopAlert } = useLobbyChat();
 
 const props = withDefaults(defineProps<{
   users: Record<string, UserPresence>;
@@ -560,6 +562,27 @@ function pinUserMedia() {
   });
   hideContextMenu();
 }
+
+function handleDmRequest(username: string) {
+  emit('dmRequest', username);
+}
+
+// Watch for DM bubble state changes to stop ringback-tone
+watch(
+  () => props.dmBubbleStates,
+  (newStates, oldStates) => {
+    if (!oldStates) return;
+    for (const user in oldStates) {
+      if (
+        oldStates[user] === 'pending' &&
+        newStates[user] && newStates[user] !== 'pending'
+      ) {
+        stopAlert('ringback');
+      }
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <style scoped>

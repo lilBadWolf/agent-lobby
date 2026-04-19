@@ -48,6 +48,19 @@
 
         <div v-if="activeTab === 'general'" class="tab-panel">
           <div class="setting-row">
+            <label>SOUNDPACK</label>
+            <button class="preview-btn" @click="openSoundpacksFolder">📁</button>
+            <select
+              v-model="localConfig.soundpack"
+              id="set-soundpack"
+              @change="handleChange"
+            >
+              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
+                {{ pack }}
+              </option>
+            </select>
+          </div>
+          <div class="setting-row">
             <label>COLOR THEME</label>
             <button class="preview-btn" @click="openThemesFolder">📁</button>
             <select
@@ -320,19 +333,6 @@
               step="0.1"
               @change="handleChange"
             />
-          </div>
-          <div class="setting-row">
-            <label>SOUNDPACK</label>
-            <button class="preview-btn" @click="openSoundpacksFolder">📁</button>
-            <select
-              v-model="localConfig.soundpack"
-              id="set-soundpack"
-              @change="handleChange"
-            >
-              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
-                {{ pack }}
-              </option>
-            </select>
           </div>
           <hr class="settings-divider" />
           <div class="setting-row">

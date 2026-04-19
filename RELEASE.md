@@ -1,6 +1,6 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.21**
+🎉 **Release highlights for agent-lobby 0.4.22**
 
 - � **Soundpack overhaul**: the authentication + lobby experience now supports richer soundpack audio and custom soundpack visuals.
 - ✨ Added a new `AuthBackground` component to load soundpack-specific background CSS/JS and better align auth visuals with soundpack themes.

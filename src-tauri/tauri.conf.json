@@ -36,7 +36,8 @@
     "publisher": "The Company of Wolves",
     "resources": [
       "icons/agentamp.ico",
-      "icons/agentamp-256x256.png"
+      "icons/agentamp-256x256.png",
+      "../public/sounds"
     ],
     "fileAssociations": [
       {

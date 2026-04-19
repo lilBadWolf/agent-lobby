@@ -756,10 +756,13 @@ watch(showSettings, async (val, oldVal) => {
       if (customBasePath) {
         numbersPath = `${customBasePath}/signal-station.mp3`;
       } else if (window.__TAURI__?.path?.resolveResource) {
-        numbersPath = window.__TAURI__.path.resolveResource(`public/sounds/${soundpack}/signal-station.mp3`);
+        numbersPath = window.__TAURI__.path.resolveResource(`sounds/${soundpack}/signal-station.mp3`);
+        if (!numbersPath) {
+          numbersPath = window.__TAURI__.path.resolveResource(`public/sounds/${soundpack}/signal-station.mp3`);
+        }
       }
       if (!numbersPath && window.__TAURI__?.path?.resolveResource) {
-        numbersPath = window.__TAURI__.path.resolveResource('public/sounds/default/signal-station.mp3');
+        numbersPath = window.__TAURI__.path.resolveResource('sounds/default/signal-station.mp3') || window.__TAURI__.path.resolveResource('public/sounds/default/signal-station.mp3');
       }
       try {
         await invoke('play_numbers_station_audio', { path: numbersPath });

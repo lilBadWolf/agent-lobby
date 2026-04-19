@@ -1245,11 +1245,17 @@ export function useLobbyChat() {
       if (customBasePath) {
         numbersPath = `${customBasePath}/signal-station.mp3`;
       } else {
-        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/' + soundpack + '/signal-station.mp3') || ''}`;
+        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('sounds/' + soundpack + '/signal-station.mp3') || ''}`;
+        if (!numbersPath) {
+          numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/' + soundpack + '/signal-station.mp3') || ''}`;
+        }
       }
       // Fallback to default if not found
       if (!numbersPath) {
-        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/default/signal-station.mp3') || ''}`;
+        numbersPath = `${window.__TAURI__?.path?.resolveResource?.('sounds/default/signal-station.mp3') || ''}`;
+        if (!numbersPath) {
+          numbersPath = `${window.__TAURI__?.path?.resolveResource?.('public/sounds/default/signal-station.mp3') || ''}`;
+        }
       }
       try {
         await invoke('play_numbers_station_audio', { path: numbersPath });

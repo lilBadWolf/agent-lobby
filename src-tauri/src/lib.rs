@@ -625,9 +625,15 @@ fn ensure_custom_asset_folders(app: &tauri::AppHandle, app_data_dir: &Path) -> R
             #[cfg(not(dev))]
             {
                 if let Ok(res_dir) = app.path().resource_dir() {
-                    let src_pack_dir = res_dir.join(format!("sounds/{}", pack));
-                    if src_pack_dir.exists() {
-                        copy_dir_recursive(&src_pack_dir, &dest_pack_dir)?;
+                    let candidate_paths = [
+                        res_dir.join(format!("sounds/{}", pack)),
+                        res_dir.join(format!("public/sounds/{}", pack)),
+                    ];
+                    for src_pack_dir in &candidate_paths {
+                        if src_pack_dir.exists() {
+                            copy_dir_recursive(src_pack_dir, &dest_pack_dir)?;
+                            break;
+                        }
                     }
                 }
             }

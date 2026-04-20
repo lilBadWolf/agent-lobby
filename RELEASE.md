@@ -1,12 +1,10 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.24**
+🎉 **Release highlights for agent-lobby 0.4.25**
 
-- � **Soundpack overhaul**: the authentication + lobby experience now supports richer soundpack audio and custom soundpack visuals.
-- ✨ Added a new `AuthBackground` component to load soundpack-specific background CSS/JS and better align auth visuals with soundpack themes.
-- 🎧 Added the `simulation` soundpack audio library with new startup, join, message, part, rejected, ringback, shutdown, system, secret, and signal-station sounds.
-- 🌌 Improved the `starfield` and simulation code rain animations for smoother visuals and more responsive motion across the lobby experience.
-- 📴 Improved audio handling during settings and auth transitions, including stopping numbers-station playback while the settings modal or chat area is visible.
-- 🧩 Added a new VSEmbed proxy/hack so `https://vsembed.su/embed/tv?...` embeds can pin and report playback time correctly through the app.
+- 🔊 Added the new `bubbles` soundpack with fresh audio for startup, join, message, part, rejected, ringback, shutdown, system, secret, and signal-station events.
+- 💨 Added new bubbles-themed animation polish across lobby backgrounds and soundpack transitions for a more immersive chat experience.
+- 🧹 Removed VSEmbed pin support entirely: the required external scripts exposed the app to too much tracking and spyware risk, so VSEmbed content is now treated as a normal external link.
+- 🛠️ Continued cleanup of pinned media handling and security hardening around external content.
 
-> This release refocuses the app's soundpack system on immersive audio and background presentation instead of a simple config change, while polishing the visual ambiance of starfield and rain effects.
+> This release focuses on safer media handling and richer soundpack presentation, with dedicated bubbles audio/animation and a cleaner, safer approach to external links.

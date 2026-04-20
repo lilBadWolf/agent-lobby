@@ -1,6 +1,6 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.25**
+🎉 **Release highlights for agent-lobby 0.4.26**
 
 - 🔊 Added the new `bubbles` soundpack with fresh audio for startup, join, message, part, rejected, ringback, shutdown, system, secret, and signal-station events.
 - 💨 Added new bubbles-themed animation polish across lobby backgrounds and soundpack transitions for a more immersive chat experience.

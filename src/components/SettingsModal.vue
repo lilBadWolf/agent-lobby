@@ -48,21 +48,13 @@
 
         <div v-if="activeTab === 'general'" class="tab-panel">
           <div class="setting-row">
-            <label>SOUNDPACK</label>
-            <button class="preview-btn" @click="openSoundpacksFolder">📁</button>
-            <select
-              v-model="localConfig.soundpack"
-              id="set-soundpack"
-              @change="handleChange"
-            >
-              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
-                {{ pack }}
-              </option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <label>COLOR THEME</label>
-            <button class="preview-btn" @click="openThemesFolder">📁</button>
+            <label>
+              COLOR THEME
+              <button class="preview-btn" @click="openThemesFolder">📁</button>
+              -> <button class="preview-btn" @click="openThemeEditorWindow">
+              EDITOR
+            </button>
+            </label>
             <select
               v-model="localConfig.theme"
               id="set-theme"
@@ -73,11 +65,17 @@
               </option>
             </select>
           </div>
-          <div class="setting-row theme-editor-toggle-row">
-            <label>THEME EDITOR</label>
-            <button class="preview-btn" type="button" @click="openThemeEditorWindow">
-              OPEN EDITOR
-            </button>
+          <div class="setting-row">
+            <label>SOUNDPACK <button class="preview-btn" @click="openSoundpacksFolder">📁</button></label>
+            <select
+              v-model="localConfig.soundpack"
+              id="set-soundpack"
+              @change="handleChange"
+            >
+              <option v-for="pack in availableSoundpacks" :key="pack" :value="pack">
+                {{ pack }}
+              </option>
+            </select>
           </div>
           <div class="setting-row">
             <label>SCANLINES</label>

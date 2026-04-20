@@ -40,17 +40,6 @@
           @loadedmetadata="syncDirectVideoTime"
         ></video>
       </template>
-      <template v-else-if="sourceType === 'iframe' && url">
-        <iframe
-          class="pinned-video-frame"
-          :src="url"
-          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-          allowfullscreen
-          webkitallowfullscreen
-          mozallowfullscreen
-          referrerpolicy="strict-origin"
-        ></iframe>
-      </template>
       <template v-else>
         <div class="pinned-video-empty">
           <p>Unsupported pinned video source.</p>
@@ -65,7 +54,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const params = new URLSearchParams(window.location.search);
-const sourceType = (params.get('sourceType') as 'youtube' | 'twitch' | 'iframe' | 'direct' | null) ?? null;
+const sourceType = (params.get('sourceType') as 'youtube' | 'twitch' | 'direct' | null) ?? null;
 const url = params.get('url') ?? '';
 const title = params.get('title') ?? 'Pinned Video';
 const currentTime = Number(params.get('currentTime'));

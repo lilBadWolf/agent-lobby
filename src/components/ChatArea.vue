@@ -123,34 +123,6 @@
         ></iframe>
       </div>
     </div>
-    <div v-else-if="pinnedIframeEmbed && !props.pinnedVideoDetached" class="pinned-video-panel">
-      <div class="pinned-video-header">
-        <span class="pinned-video-title">{{ getVsembedEmbedHeader(pinnedIframeEmbed.url) }}</span>
-        <div class="pinned-video-actions">
-          <button class="video-control-btn" type="button" @click="emit('togglePinnedVideoPopup')">
-            {{ props.pinnedVideoDetached ? 'REPIN' : 'POP OUT' }}
-          </button>
-          <button class="video-control-btn" type="button" @click="unpinPinnedEmbed">UNPIN</button>
-        </div>
-      </div>
-      <div class="video-player-shell pinned-video-shell"
-        :style="{
-          height: `${pinnedVideoHeight}px`,
-          '--pinned-video-height': `${pinnedVideoHeight}px`,
-          '--pinned-control-scale': pinnedControlScale.toString(),
-        }"
-      >
-        <iframe
-          class="pinned-video-frame"
-          :src="getVsembedEmbedSrc(pinnedIframeEmbed.url)"
-          allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-          allowfullscreen
-          webkitallowfullscreen
-          mozallowfullscreen
-          referrerpolicy="strict-origin"
-        ></iframe>
-      </div>
-    </div>
     <div v-else-if="props.agentAmpPinnedVideo && !props.pinnedVideoDetached" class="pinned-video-panel">
       <div class="pinned-video-header">
         <span class="pinned-video-title">{{ props.agentAmpPinnedVideo.title }}</span>
@@ -293,45 +265,6 @@
               </template>
               <span v-if="isTyping(index)" class="cursor">█</span>
             </span>
-          </div>
-          <div v-if="getMessageVsembedEmbeds(index).length > 0" class="message-videos">
-            <div
-              v-for="(embed, embedIndex) in getMessageVsembedEmbeds(index)"
-              :key="`${embed.url}-${embedIndex}`"
-              class="video-container"
-            >
-              <details
-                class="video-expandable"
-                :class="{ 'is-pinned-in-feed': isVsembedEmbedPinned(index, embed.url, embedIndex) }"
-              >
-                <summary class="video-header">
-                  <span class="video-header-title">{{ getVsembedEmbedHeader(embed.url) }}</span>
-                  <span class="video-header-control">
-                    <button
-                      class="video-pin-btn"
-                      type="button"
-                      :aria-pressed="isVsembedEmbedPinned(index, embed.url, embedIndex)"
-                      @click.stop="togglePinVsembedEmbed(index, embed.url, embedIndex, $event)"
-                    >
-                      {{ isVsembedEmbedPinned(index, embed.url, embedIndex) ? 'UNPIN' : 'PIN' }}
-                    </button>
-                    <span class="video-control-show">SHOW</span>
-                    <span class="video-control-hide">HIDE</span>
-                    <span class="video-control-indicator"></span>
-                  </span>
-                </summary>
-                <div class="video-player-shell">
-                  <div class="twitch-player-host">
-                    <iframe
-                      class="twitch-player-frame"
-                      :src="getVsembedEmbedSrc(embed.url)"
-                      allow="autoplay; fullscreen; picture-in-picture"
-                      scrolling="no"
-                    ></iframe>
-                  </div>
-                </div>
-              </details>
-            </div>
           </div>
           <div v-if="getMessageImages(index).length > 0" class="message-images">
             <div v-for="imageUri in getMessageImages(index)" :key="imageUri" class="image-container">
@@ -881,87 +814,6 @@ function getTwitchEmbedSrc(channel: string): string {
   return `https://player.twitch.tv/?${params.toString()}`;
 }
 
-function extractVsembedUrls(text: string): string[] {
-  const regex = /https?:\/\/(?:www\.)?vsembed\.su\/embed\/tv\?[^\s]*/gi;
-  const matches = [] as string[];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    matches.push(match[0]);
-  }
-  return matches.map(normalizeUrlToken);
-}
-
-function getVsembedEmbedHeader(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const season = parsed.searchParams.get('season');
-    const episode = parsed.searchParams.get('episode');
-    const tmdb = parsed.searchParams.get('tmdb');
-    const parts = ['VSEmbed'];
-    if (season && episode) {
-      parts.push(`S${season}E${episode}`);
-    }
-    if (tmdb) {
-      parts.push(`#${tmdb}`);
-    }
-    return parts.join(' ');
-  } catch {
-    return url;
-  }
-}
-
-function getMessageVsembedUrls(messageIndex: number): string[] {
-  const message = props.messages[messageIndex];
-  if (!message) return [];
-  return extractVsembedUrls(message.message);
-}
-
-function getMessageVsembedEmbeds(messageIndex: number): Array<{ url: string }> {
-  return getMessageVsembedUrls(messageIndex).map((url) => ({ url }));
-}
-
-function isVsembedEmbedPinned(messageIndex: number, embedUrl: string, embedIndex: number): boolean {
-  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
-  return pinnedIframeEmbed.value?.sourceKey === sourceKey;
-}
-
-function findSourceKeyForVsembedUrl(url: string): string | null {
-  const normalizedTarget = normalizeUrlToken(url);
-
-  for (let messageIndex = 0; messageIndex < props.messages.length; messageIndex++) {
-    const message = props.messages[messageIndex];
-    const urls = extractVsembedUrls(message.message);
-
-    for (let embedIndex = 0; embedIndex < urls.length; embedIndex++) {
-      if (normalizeUrlToken(urls[embedIndex]) === normalizedTarget) {
-        return getEmbedKey(messageIndex, urls[embedIndex], embedIndex);
-      }
-    }
-  }
-
-  return null;
-}
-
-function pinIframeEmbedBySource(sourceKey: string, url: string) {
-  if (pinnedYouTubeEmbed.value) {
-    unpinYouTubeEmbed();
-  }
-  if (pinnedTwitchEmbed.value) {
-    unpinTwitchEmbed();
-  }
-
-  pinnedIframeEmbed.value = {
-    sourceKey,
-    url,
-  };
-  pinnedIframeCurrentTime.value = 0;
-}
-
-function unpinIframeEmbed() {
-  pinnedIframeEmbed.value = null;
-  pinnedIframeCurrentTime.value = null;
-}
-
 async function ensureLocalVideoProxyBaseUrl(): Promise<void> {
   if (localVideoProxyBaseUrl.value || typeof window === 'undefined' || !('__TAURI__' in window)) {
     return;
@@ -974,54 +826,6 @@ async function ensureLocalVideoProxyBaseUrl(): Promise<void> {
   }
 }
 
-function getVsembedProxyUrl(url: string): string {
-  if (!localVideoProxyBaseUrl.value) {
-    return url;
-  }
-
-  const proxyUrl = new URL(`${localVideoProxyBaseUrl.value}/vsembed-proxy`);
-  proxyUrl.searchParams.set('url', url);
-  return proxyUrl.toString();
-}
-
-function getVsembedEmbedSrc(url: string): string {
-  return getVsembedProxyUrl(url);
-}
-
-function handleVsembedCurrentTimeMessage(event: MessageEvent) {
-  if (!event?.data || event.data.type !== 'vsembed-current-time') {
-    return;
-  }
-
-  const url = typeof event.data.url === 'string' ? event.data.url : '';
-  const currentTime = Number(event.data.currentTime);
-  if (!Number.isFinite(currentTime) || currentTime < 0) {
-    return;
-  }
-
-  const sourceKey = findSourceKeyForVsembedUrl(url);
-  if (!sourceKey || pinnedIframeEmbed.value?.sourceKey !== sourceKey) {
-    return;
-  }
-
-  pinnedIframeCurrentTime.value = currentTime;
-}
-
-function togglePinVsembedEmbed(messageIndex: number, embedUrl: string, embedIndex: number, event?: Event) {
-  const sourceKey = getEmbedKey(messageIndex, embedUrl, embedIndex);
-
-  if (pinnedIframeEmbed.value?.sourceKey === sourceKey) {
-    unpinIframeEmbed();
-    return;
-  }
-
-  const shouldStickToBottom = isMessagesNearBottom();
-  emit('agentAmpStop');
-  collapsePinButtonDetails(event);
-  pinIframeEmbedBySource(sourceKey, embedUrl);
-  resetPinnedSplitToHalf();
-  scrollMessagesToBottomAfterLayout(shouldStickToBottom);
-}
 
 const chatInput = ref('');
 const messagesContainer = ref<HTMLElement>();
@@ -1035,7 +839,7 @@ const externalLinkTitleRequests = new Set<string>();
 const youtubePlayers = new Map<string, YouTubePlayerLike>();
 const youtubePlayerVideoIds = new Map<string, string>();
 const youtubeContainers = new Map<string, HTMLElement>();
-const youtubeShells = new Map<string, HTMLElement>();
+const youtubeShells = new Map<string, HTMLDetailsElement>();
 const youtubeDetails = new Map<string, HTMLDetailsElement>();
 const youtubePlayerStates = ref<Record<string, YouTubePlayerState>>({});
 let youtubeApiPromise: Promise<YouTubeApiLike> | null = null;
@@ -1043,7 +847,6 @@ let tauriOpenerPromise: Promise<TauriOpenerModule | null> | null = null;
 let youtubeSyncInterval: ReturnType<typeof setInterval> | null = null;
 const fullscreenChangeTick = ref(0);
 const pinnedVideoElement = ref<HTMLVideoElement | null>(null);
-const pinnedIframeCurrentTime = ref<number | null>(null);
 const fullscreenOverlayVisible = ref<Record<string, boolean>>({});
 const fullscreenOverlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const localVideoProxyBaseUrl = ref<string | null>(null);
@@ -1063,19 +866,17 @@ let restoredPinnedYouTubeTime: number | null = null;
 type PersistedPinnedVideoState =
   | { type: 'youtube'; url: string; height: number; currentTime?: number }
   | { type: 'twitch'; url: string; height: number }
-  | { type: 'iframe'; url: string; height: number }
   | { type: 'agentAmp'; height: number };
 
 let pinnedStateHydrated = false;
 const pinnedYouTubeEmbed = ref<{ sourceKey: string; url: string; videoId: string } | null>(null);
 const pinnedTwitchEmbed = ref<{ sourceKey: string; url: string; channel: string } | null>(null);
-const pinnedIframeEmbed = ref<{ sourceKey: string; url: string } | null>(null);
 const pinnedVideoHeight = ref(PINNED_VIDEO_DEFAULT_HEIGHT);
 const shouldAutoplayPinnedOnReady = ref(false);
-const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value || pinnedIframeEmbed.value || props.agentAmpPinnedVideo));
+const hasPinnedVideo = computed(() => Boolean(pinnedYouTubeEmbed.value || pinnedTwitchEmbed.value || props.agentAmpPinnedVideo));
 
 watch(
-  [pinnedYouTubeEmbed, pinnedTwitchEmbed, pinnedIframeEmbed, youtubeTitleCache, twitchTitleCache],
+  [pinnedYouTubeEmbed, pinnedTwitchEmbed, youtubeTitleCache, twitchTitleCache],
   () => {
     if (pinnedYouTubeEmbed.value) {
       emit('pinnedVideoChange', {
@@ -1096,40 +897,12 @@ watch(
       return;
     }
 
-    if (pinnedIframeEmbed.value) {
-      const payload: { label: string; url: string; mediaType: 'video'; currentTime?: number } = {
-        label: getVsembedEmbedHeader(pinnedIframeEmbed.value.url),
-        url: pinnedIframeEmbed.value.url,
-        mediaType: 'video',
-      };
-      if (Number.isFinite(pinnedIframeCurrentTime.value ?? NaN)) {
-        payload.currentTime = pinnedIframeCurrentTime.value as number;
-      }
-      emit('pinnedVideoChange', payload);
-      return;
-    }
 
     emit('pinnedVideoChange', null);
   },
   { immediate: true }
 );
 
-watch(pinnedIframeCurrentTime, (next) => {
-  if (!pinnedIframeEmbed.value) {
-    return;
-  }
-
-  if (!Number.isFinite(next ?? NaN)) {
-    return;
-  }
-
-  emit('pinnedVideoChange', {
-    label: getVsembedEmbedHeader(pinnedIframeEmbed.value.url),
-    url: pinnedIframeEmbed.value.url,
-    mediaType: 'video',
-    currentTime: next as number,
-  });
-});
 
 const lastPinnedYouTubeTimeSent = ref<number>(0);
 
@@ -1426,11 +1199,6 @@ function pinMediaUrl(payload: PinMediaPayload) {
     return;
   }
 
-  const vsembedUrls = extractVsembedUrls(normalizedUrl);
-  if (vsembedUrls.length > 0) {
-    pinIframeEmbedBySource(`remote:${normalizedUrl}`, normalizedUrl);
-    return;
-  }
 }
 
 defineExpose({ pinMediaUrl });
@@ -1524,11 +1292,6 @@ async function restorePersistedPinnedVideoState(): Promise<void> {
         url: persisted.url,
         channel,
       };
-    } else if (persisted.type === 'iframe') {
-      pinnedIframeEmbed.value = {
-        sourceKey: findSourceKeyForVsembedUrl(persisted.url) ?? `${RESTORED_PINNED_SOURCE_KEY_PREFIX}${persisted.url}`,
-        url: persisted.url,
-      };
     } else if (persisted.type === 'agentAmp') {
       // Local agentAMP videos are not persisted as a URL.
       // We still restore the last pinned height when available.
@@ -1563,8 +1326,6 @@ function persistPinnedVideoState() {
     ? { type: 'youtube', url: pinnedYouTubeEmbed.value.url, height, currentTime: youtubeCurrentTime }
     : pinnedTwitchEmbed.value
     ? { type: 'twitch', url: pinnedTwitchEmbed.value.url, height }
-    : pinnedIframeEmbed.value
-    ? { type: 'iframe', url: pinnedIframeEmbed.value.url, height }
     : { type: 'agentAmp', height };
 
   void setPersistedValue(PINNED_VIDEO_STATE_STORAGE_KEY, persisted);
@@ -1755,11 +1516,6 @@ function unpinTwitchEmbed() {
 }
 
 function unpinPinnedEmbed() {
-  if (pinnedIframeEmbed.value) {
-    unpinIframeEmbed();
-    return;
-  }
-
   if (pinnedTwitchEmbed.value) {
     unpinTwitchEmbed();
     return;
@@ -2473,7 +2229,7 @@ watch(
   { immediate: true }
 );
 
-watch([pinnedYouTubeEmbed, pinnedTwitchEmbed, pinnedIframeEmbed, pinnedVideoHeight], persistPinnedVideoState);
+watch([pinnedYouTubeEmbed, pinnedTwitchEmbed, pinnedVideoHeight], persistPinnedVideoState);
 
 watch(
   () => props.messages.length,
@@ -2971,7 +2727,6 @@ onMounted(() => {
     chatAreaResizeObserver.observe(chatAreaEl.value);
   }
 
-  window.addEventListener('message', handleVsembedCurrentTimeMessage);
 });
 
 onBeforeUnmount(() => {
@@ -2984,7 +2739,6 @@ onBeforeUnmount(() => {
     chatAreaResizeObserver = null;
   }
 
-  window.removeEventListener('message', handleVsembedCurrentTimeMessage);
   stopPinnedResize();
   destroyAllYouTubePlayers();
 });

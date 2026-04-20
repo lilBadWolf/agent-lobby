@@ -1662,7 +1662,7 @@ export function useLobbyChat() {
   async function loadAvailableSoundpacks() {
     const isValidSoundpackName = (name: string): boolean => /^[A-Za-z0-9_-]+$/.test(name);
     // Add new built-in packs here manually if import.meta.glob cannot see them
-    const builtinPacks: string[] = ['default', 'simulation'];
+    const builtinPacks: string[] = ['default', 'simulation', 'outer-rim', 'bubbles'];
 
     try {
       const soundModules = import.meta.glob('/public/sounds/*/');

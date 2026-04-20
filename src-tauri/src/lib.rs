@@ -3,7 +3,6 @@ use rodio::{Decoder, OutputStream, Sink, Source};
 use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::BufReader;
-use std::time::Duration;
 
 // Only store Sink globally; OutputStream must be local (not Send/Sync)
 static NUMBERS_STATION_SINK: Lazy<Arc<Mutex<Option<Arc<Sink>>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -128,6 +127,85 @@ const REQUIRED_SOUNDPACK_FILES: [&str; 7] = [
     "system-sound.mp3",
     "signal-station.mp3",
 ];
+
+const BUILTIN_SOUNDPACK_NAMES: [&str; 4] = ["default", "simulation", "outer-rim", "bubbles"];
+const BUILTIN_SOUNDPACK_FILES: [&str; 10] = [
+    "join-sound.mp3",
+    "message-sound.mp3",
+    "part-sound.mp3",
+    "rejected.mp3",
+    "ringback-tone.mp3",
+    "secret.mp3",
+    "shutdown-sound.mp3",
+    "signal-station.mp3",
+    "startup-sound.mp3",
+    "system-sound.mp3",
+];
+
+fn builtin_soundpack_file_bytes(pack_name: &str, file_name: &str) -> Option<&'static [u8]> {
+    match (pack_name, file_name) {
+        ("default", "join-sound.mp3") => Some(include_bytes!("../../public/sounds/default/join-sound.mp3")),
+        ("default", "message-sound.mp3") => Some(include_bytes!("../../public/sounds/default/message-sound.mp3")),
+        ("default", "part-sound.mp3") => Some(include_bytes!("../../public/sounds/default/part-sound.mp3")),
+        ("default", "rejected.mp3") => Some(include_bytes!("../../public/sounds/default/rejected.mp3")),
+        ("default", "ringback-tone.mp3") => Some(include_bytes!("../../public/sounds/default/ringback-tone.mp3")),
+        ("default", "secret.mp3") => Some(include_bytes!("../../public/sounds/default/secret.mp3")),
+        ("default", "shutdown-sound.mp3") => Some(include_bytes!("../../public/sounds/default/shutdown-sound.mp3")),
+        ("default", "signal-station.mp3") => Some(include_bytes!("../../public/sounds/default/signal-station.mp3")),
+        ("default", "startup-sound.mp3") => Some(include_bytes!("../../public/sounds/default/startup-sound.mp3")),
+        ("default", "system-sound.mp3") => Some(include_bytes!("../../public/sounds/default/system-sound.mp3")),
+        ("simulation", "join-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/join-sound.mp3")),
+        ("simulation", "message-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/message-sound.mp3")),
+        ("simulation", "part-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/part-sound.mp3")),
+        ("simulation", "rejected.mp3") => Some(include_bytes!("../../public/sounds/simulation/rejected.mp3")),
+        ("simulation", "ringback-tone.mp3") => Some(include_bytes!("../../public/sounds/simulation/ringback-tone.mp3")),
+        ("simulation", "secret.mp3") => Some(include_bytes!("../../public/sounds/simulation/secret.mp3")),
+        ("simulation", "shutdown-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/shutdown-sound.mp3")),
+        ("simulation", "signal-station.mp3") => Some(include_bytes!("../../public/sounds/simulation/signal-station.mp3")),
+        ("simulation", "startup-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/startup-sound.mp3")),
+        ("simulation", "system-sound.mp3") => Some(include_bytes!("../../public/sounds/simulation/system-sound.mp3")),
+        ("outer-rim", "join-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/join-sound.mp3")),
+        ("outer-rim", "message-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/message-sound.mp3")),
+        ("outer-rim", "part-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/part-sound.mp3")),
+        ("outer-rim", "rejected.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/rejected.mp3")),
+        ("outer-rim", "ringback-tone.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/ringback-tone.mp3")),
+        ("outer-rim", "secret.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/secret.mp3")),
+        ("outer-rim", "shutdown-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/shutdown-sound.mp3")),
+        ("outer-rim", "signal-station.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/signal-station.mp3")),
+        ("outer-rim", "startup-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/startup-sound.mp3")),
+        ("outer-rim", "system-sound.mp3") => Some(include_bytes!("../../public/sounds/outer-rim/system-sound.mp3")),
+        ("bubbles", "join-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/join-sound.mp3")),
+        ("bubbles", "message-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/message-sound.mp3")),
+        ("bubbles", "part-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/part-sound.mp3")),
+        ("bubbles", "rejected.mp3") => Some(include_bytes!("../../public/sounds/bubbles/rejected.mp3")),
+        ("bubbles", "ringback-tone.mp3") => Some(include_bytes!("../../public/sounds/bubbles/ringback-tone.mp3")),
+        ("bubbles", "secret.mp3") => Some(include_bytes!("../../public/sounds/bubbles/secret.mp3")),
+        ("bubbles", "shutdown-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/shutdown-sound.mp3")),
+        ("bubbles", "signal-station.mp3") => Some(include_bytes!("../../public/sounds/bubbles/signal-station.mp3")),
+        ("bubbles", "startup-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/startup-sound.mp3")),
+        ("bubbles", "system-sound.mp3") => Some(include_bytes!("../../public/sounds/bubbles/system-sound.mp3")),
+        _ => None,
+    }
+}
+
+fn copy_builtin_soundpacks_from_embedded(soundpacks_dir: &Path) -> Result<(), String> {
+    for pack_name in BUILTIN_SOUNDPACK_NAMES {
+        let dest_pack_dir = soundpacks_dir.join(pack_name);
+        if dest_pack_dir.exists() {
+            continue;
+        }
+        fs::create_dir_all(&dest_pack_dir)
+            .map_err(|e| format!("Failed to create built-in soundpack dir {:?}: {}", dest_pack_dir, e))?;
+        for file_name in BUILTIN_SOUNDPACK_FILES {
+            let bytes = builtin_soundpack_file_bytes(pack_name, file_name)
+                .ok_or_else(|| format!("Missing embedded built-in soundpack file: {}/{}", pack_name, file_name))?;
+            let dest_file = dest_pack_dir.join(file_name);
+            fs::write(&dest_file, bytes)
+                .map_err(|e| format!("Failed to write built-in soundpack file {:?}: {}", dest_file, e))?;
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -617,36 +695,51 @@ fn ensure_custom_asset_folders(app: &tauri::AppHandle, app_data_dir: &Path) -> R
     }
 
     // --- Built-in soundpacks migration ---
-    // List of built-in packs (keep in sync with frontend)
-    let builtin_packs = ["default", "simulation", "outer-rim"];
-    for pack in &builtin_packs {
-        let dest_pack_dir = soundpacks_dir.join(pack);
-        if !dest_pack_dir.exists() {
-            // Try to copy from resources (production) or /public (dev)
-            #[cfg(not(dev))]
-            {
-                if let Ok(res_dir) = app.path().resource_dir() {
-                    let candidate_paths = [
-                        res_dir.join(format!("sounds/{}", pack)),
-                        res_dir.join(format!("public/sounds/{}", pack)),
-                    ];
-                    for src_pack_dir in &candidate_paths {
-                        if src_pack_dir.exists() {
-                            copy_dir_recursive(src_pack_dir, &dest_pack_dir)?;
-                            break;
-                        }
-                    }
-                }
-            }
-            #[cfg(dev)]
-            {
-                // In dev, copy from project /public/sounds/[pack]
-                let src_pack_dir = std::env::current_dir().unwrap_or_default().join("public").join("sounds").join(pack);
-                if src_pack_dir.exists() {
-                    copy_dir_recursive(&src_pack_dir, &dest_pack_dir)?;
+    #[cfg(not(dev))]
+    {
+        if let Ok(res_dir) = app.path().resource_dir() {
+            let candidate_dirs = [res_dir.join("sounds"), res_dir.join("public/sounds")];
+            for candidate_dir in &candidate_dirs {
+                if candidate_dir.is_dir() {
+                    copy_builtin_soundpacks_from_dir(candidate_dir, &soundpacks_dir)?;
                 }
             }
         }
+    }
+    #[cfg(dev)]
+    {
+        let src_sounds_dir = std::env::current_dir().unwrap_or_default().join("public").join("sounds");
+        if src_sounds_dir.is_dir() {
+            copy_builtin_soundpacks_from_dir(&src_sounds_dir, &soundpacks_dir)?;
+        }
+    }
+
+    // If the app bundle resources are not available at runtime, fall back to embedded built-in soundpacks.
+    copy_builtin_soundpacks_from_embedded(&soundpacks_dir)?;
+
+    Ok(())
+}
+
+fn copy_builtin_soundpacks_from_dir(src_sounds_dir: &Path, soundpacks_dir: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(src_sounds_dir).map_err(|e| format!("Failed to read dir {:?}: {}", src_sounds_dir, e))? {
+        let entry = entry.map_err(|e| format!("Failed to read entry in {:?}: {}", src_sounds_dir, e))?;
+        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {}", e))?;
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let pack_name = entry.file_name();
+        let pack_name_str = pack_name.to_string_lossy().trim().to_string();
+        if pack_name_str.is_empty() {
+            continue;
+        }
+
+        let dest_pack_dir = soundpacks_dir.join(&pack_name_str);
+        if dest_pack_dir.exists() {
+            continue;
+        }
+
+        copy_dir_recursive(&entry.path(), &dest_pack_dir)?;
     }
 
     Ok(())
@@ -859,50 +952,6 @@ fn handle_local_video_proxy_connection(mut stream: TcpStream) -> Result<(), Stri
 
     let query_params = parse_query_params(query);
 
-    if path == "/vsembed-proxy" {
-        let target_url = match query_params.get("url") {
-            Some(url) => url,
-            None => {
-                let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nMissing url";
-                stream.write_all(response.as_bytes()).ok();
-                return Ok(());
-            }
-        };
-
-        if !target_url.starts_with("https://vsembed.su/") && !target_url.starts_with("https://www.vsembed.su/") {
-            let response = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nUnsupported embed host";
-            stream.write_all(response.as_bytes()).ok();
-            return Ok(());
-        }
-
-        let html = match fetch_remote_html(target_url) {
-            Ok(html) => html,
-            Err(error) => {
-                let response = format!("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n{}", error);
-                stream.write_all(response.as_bytes()).ok();
-                return Ok(());
-            }
-        };
-
-        let player_src = match extract_player_iframe_src(&html) {
-            Some(src) => src,
-            None => {
-                let response = "HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nFailed to extract player iframe";
-                stream.write_all(response.as_bytes()).ok();
-                return Ok(());
-            }
-        };
-
-        let body = build_vsembed_proxy_html(&player_src, target_url);
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body,
-        );
-        stream.write_all(response.as_bytes()).ok();
-        return Ok(());
-    }
-
     if path != "/local-video" {
         let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
         stream.write_all(response.as_bytes()).ok();
@@ -1007,46 +1056,6 @@ where
         }
     }
     headers
-}
-
-fn fetch_remote_html(url: &str) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(20))
-        .build();
-
-    agent
-        .get(url)
-        .set("User-Agent", "AgentLobby/1.0")
-        .call()
-        .map_err(|e| format!("Failed to fetch remote embed page: {}", e))?
-        .into_string()
-        .map_err(|e| format!("Failed to read remote embed page body: {}", e))
-}
-
-fn extract_player_iframe_src(html: &str) -> Option<String> {
-    let marker = "id=\"player_iframe\"";
-    let idx = html.find(marker)?;
-    let src_attr = "src=\"";
-    let src_start = html[..idx].rfind(src_attr)? + src_attr.len();
-    let src_end = html[src_start..].find('"')?;
-    let raw_src = &html[src_start..src_start + src_end];
-    Some(if raw_src.starts_with("//") {
-        format!("https:{}", raw_src)
-    } else if raw_src.starts_with('/') {
-        format!("https://vsembed.su{}", raw_src)
-    } else {
-        raw_src.to_string()
-    })
-}
-
-fn build_vsembed_proxy_html(player_src: &str, original_url: &str) -> String {
-    let source_url_literal = format!("{:?}", original_url);
-    format!(
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>VSEmbed Player</title><style>html,body{{margin:0;padding:0;height:100%;background:#000}}iframe{{border:0;width:100%;height:100%;}}</style><script>const VSEMBED_SOURCE_URL={};const VSEMBED_START_MS=Date.now();function postVsembedCurrentTime(){{if(window.parent&&window.parent!==window){{window.parent.postMessage({{type:'vsembed-current-time',url:VSEMBED_SOURCE_URL,currentTime:Math.max(0,Math.floor((Date.now()-VSEMBED_START_MS)/1000))}},'*');}}}}window.addEventListener('load',()=>{{postVsembedCurrentTime();setInterval(postVsembedCurrentTime,1000);}});</script></head><body><iframe src=\"{}\" allow=\"autoplay; fullscreen; picture-in-picture\" allowfullscreen></iframe></body></html>",
-        source_url_literal,
-        player_src
-    )
 }
 
 fn parse_query_params(query: &str) -> std::collections::HashMap<String, String> {

@@ -1,10 +1,6 @@
 <template>
   <div v-if="showAuth" id="auth-screen">
-    <AuthBackground
-      :soundpack="soundpack"
-      :soundpack-background-js-url="soundpackBackgroundJsUrl"
-      :soundpack-background-css-url="soundpackBackgroundCssUrl"
-    />
+    <AuthBackground :soundpack="soundpack" />
     <div
       class="login-box"
       :class="systemStatusClass"
@@ -63,8 +59,6 @@ const props = defineProps<{
   presenceStatus: 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
   presenceStatusMessage: string;
   soundpack?: string;
-  soundpackBackgroundJsUrl?: string;
-  soundpackBackgroundCssUrl?: string;
 }>();
 
 const emit = defineEmits<{

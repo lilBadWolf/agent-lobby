@@ -6,6 +6,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import * as THREE from 'three';
 import { useTheme } from '../composables/useTheme';
 
 const props = defineProps<{
@@ -28,6 +29,14 @@ let analyserNode: AnalyserNode | null = null;
 let sourceNode: MediaElementAudioSourceNode | null = null;
 let currentAudioEl: HTMLAudioElement | null = null;
 let frameId: number | null = null;
+
+let renderer: THREE.WebGLRenderer | null = null;
+let scene: THREE.Scene | null = null;
+let camera: THREE.OrthographicCamera | null = null;
+let barGroup: THREE.Group | null = null;
+let barMeshes: Array<THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>> = [];
+let canvasWidth = 0;
+let canvasHeight = 0;
 
 const DEFAULT_BAR_COUNT = 64;
 const DEFAULT_FFT_SIZE = 2048;
@@ -133,31 +142,143 @@ function getBarColor(value: number) {
   return colors.accentMuted;
 }
 
-function drawSpectrum(bars: number[]) {
+function updateRendererSize() {
+  if (!canvasRef.value || !renderer || !camera) {
+    return;
+  }
+
+  ensureCanvasSize();
+
+  const width = canvasRef.value.width;
+  const height = canvasRef.value.height;
+  if (width === canvasWidth && height === canvasHeight) {
+    return;
+  }
+
+  canvasWidth = width;
+  canvasHeight = height;
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(width, height, false);
+  camera.left = 0;
+  camera.right = width;
+  camera.top = height;
+  camera.bottom = 0;
+  camera.updateProjectionMatrix();
+
+  if (barMeshes.length) {
+    const barCount = resolveBarCount(props.barCount);
+    const spacing = width / barCount;
+    const barWidth = Math.max(1, spacing * 0.72);
+
+    barMeshes.forEach((mesh, index) => {
+      mesh.scale.x = barWidth;
+      mesh.position.x = index * spacing + spacing / 2;
+    });
+  }
+}
+
+function createThreeRenderer() {
   const canvas = canvasRef.value;
-  if (!canvas) {
+  if (!canvas || renderer) {
     return;
   }
 
-  const context = canvas.getContext('2d');
-  if (!context) {
+  renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+  scene = new THREE.Scene();
+  camera = new THREE.OrthographicCamera(0, 1, 1, 0, -1000, 1000);
+  camera.position.set(0, 0, 5);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(camera);
+  updateRendererSize();
+}
+
+function disposeThreeRenderer() {
+  if (barGroup && scene) {
+    scene.remove(barGroup);
+    barGroup = null;
+  }
+
+  for (const mesh of barMeshes) {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  barMeshes = [];
+
+  if (renderer) {
+    renderer.dispose();
+    renderer = null;
+  }
+
+  scene = null;
+  camera = null;
+  canvasWidth = 0;
+  canvasHeight = 0;
+}
+
+function buildSpectrumBars(requestedCount: number) {
+  createThreeRenderer();
+  if (!renderer || !scene || !camera) {
     return;
   }
 
-  const width = canvas.width;
-  const height = canvas.height;
-  context.clearRect(0, 0, width, height);
+  const barCount = resolveBarCount(requestedCount);
+  if (barGroup && scene) {
+    scene.remove(barGroup);
+  }
 
-  const barWidth = width / bars.length;
+  for (const mesh of barMeshes) {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  barMeshes = [];
 
-  for (let index = 0; index < bars.length; index += 1) {
+  barGroup = new THREE.Group();
+  scene.add(barGroup);
+
+  const width = Math.max(1, canvasWidth);
+  const spacing = width / barCount;
+  const barWidth = Math.max(1, spacing * 0.72);
+
+  for (let index = 0; index < barCount; index += 1) {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial({
+      color: getThemeTokenValue('--color-accent', '#39ff14'),
+      transparent: true,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.scale.set(barWidth, 1, 1);
+    mesh.position.set(index * spacing + spacing / 2, 0.5, 0);
+    barGroup.add(mesh);
+    barMeshes.push(mesh);
+  }
+
+  renderer.render(scene, camera);
+}
+
+function drawSpectrum(bars: number[]) {
+  if (!renderer || !scene || !camera || !barMeshes.length) {
+    return;
+  }
+
+  updateRendererSize();
+
+  const height = Math.max(1, canvasHeight);
+
+  for (let index = 0; index < Math.min(bars.length, barMeshes.length); index += 1) {
     const value = Math.max(0, Math.min(1, bars[index]));
-    const barHeight = value * height;
-    const x = index * barWidth;
-    const y = height - barHeight;
-    context.fillStyle = getBarColor(value);
-    context.fillRect(x, y, Math.max(1, barWidth * 0.8), barHeight);
+    const mesh = barMeshes[index];
+    const barHeight = Math.max(1, value * height);
+
+    mesh.scale.y = barHeight;
+    mesh.position.y = barHeight * 0.5;
+    mesh.material.color.setStyle(getBarColor(value));
   }
+
+  renderer.render(scene, camera);
 }
 
 function reduceSpectrumToBarCount(spectrum: number[], barCount: number): number[] {
@@ -257,7 +378,6 @@ function stopAnalyzer() {
     analyserNode = null;
   }
 
-  // Restore audio output: reconnect source directly to destination
   if (sourceNode && audioContext) {
     try {
       sourceNode.disconnect();
@@ -301,20 +421,22 @@ async function createAnalyzer() {
 
   analyserNode = analyser;
 
-  ensureCanvasSize();
+  updateRendererSize();
+  buildSpectrumBars(resolveBarCount(props.barCount));
   frameId = requestAnimationFrame(updateFrame);
+}
+
+function handleResize() {
+  updateRendererSize();
+  if (renderer && scene && camera) {
+    renderer.render(scene, camera);
+  }
 }
 
 watch([
   () => props.audioEl,
   () => props.enabled,
-  () => props.barCount,
   () => props.fftSize,
-  () => props.spectrumSensitivity,
-  () => props.gradientBars,
-  () => props.thresholdLow,
-  () => props.thresholdMedium,
-  () => props.thresholdHigh,
 ], async ([audioEl, enabled]) => {
   if (enabled && audioEl) {
     await createAnalyzer();
@@ -323,14 +445,35 @@ watch([
   }
 });
 
+watch(
+  [
+    () => props.barCount,
+    () => props.gradientBars,
+    () => props.thresholdLow,
+    () => props.thresholdMedium,
+    () => props.thresholdHigh,
+  ], () => {
+    if (renderer) {
+      buildSpectrumBars(resolveBarCount(props.barCount));
+    }
+  },
+);
+
 onMounted(() => {
+  createThreeRenderer();
+  buildSpectrumBars(resolveBarCount(props.barCount));
+
   if (props.enabled && props.audioEl) {
     void createAnalyzer();
   }
+
+  window.addEventListener('resize', handleResize);
 });
 
 onBeforeUnmount(() => {
   stopAnalyzer();
+  disposeThreeRenderer();
+  window.removeEventListener('resize', handleResize);
 });
 </script>
 

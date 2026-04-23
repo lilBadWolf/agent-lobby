@@ -1,10 +1,9 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.27**
+🎉 **Release highlights for agent-lobby 0.4.28**
 
-- 🔊 Added the new `bubbles` soundpack with fresh audio for startup, join, message, part, rejected, ringback, shutdown, system, secret, and signal-station events.
-- 💨 Added new bubbles-themed animation polish across lobby backgrounds and soundpack transitions for a more immersive chat experience.
-- 🧹 Removed VSEmbed pin support entirely: the required external scripts exposed the app to too much tracking and spyware risk, so VSEmbed content is now treated as a normal external link.
-- 🛠️ Continued cleanup of pinned media handling and security hardening around external content.
+- 🌌 Added a new animated background to the `ChatArea`, bringing richer motion and visual polish to active lobby conversations.
+- 🔐 Added persistent handle auto-login support so returning users keep their chosen display handle and reconnect faster.
+- 🛠️ Improved session persistence to make lobby returns more seamless while preserving user presence state.
 
-> This release focuses on safer media handling and richer soundpack presentation, with dedicated bubbles audio/animation and a cleaner, safer approach to external links.
+> This release focuses on better lobby visuals and more reliable reconnect behavior for returning users.

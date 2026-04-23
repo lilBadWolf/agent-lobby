@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import AuthBackground from './AuthBackground.vue';
 
 function isTauriRuntime(): boolean {
@@ -59,6 +59,7 @@ const props = defineProps<{
   presenceStatus: 'idle' | 'connecting' | 'checking-users' | 'cooldown' | 'ready' | 'error';
   presenceStatusMessage: string;
   soundpack?: string;
+  initialHandle?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -69,6 +70,16 @@ const emit = defineEmits<{
 }>();
 
 const usernameInput = ref('');
+
+watch(
+  () => props.initialHandle,
+  (nextHandle) => {
+    if (nextHandle && !usernameInput.value) {
+      usernameInput.value = nextHandle;
+    }
+  },
+  { immediate: true }
+);
 const hasTauriWindow = isTauriRuntime();
 const canInitialize = computed(() => props.presenceStatus === 'ready');
 const isSystemOnline = computed(() => props.presenceStatus === 'ready');

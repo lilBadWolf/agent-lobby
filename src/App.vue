@@ -82,6 +82,7 @@ declare global {
       :presence-status="presencePreviewStatus"
       :presence-status-message="presencePreviewStatusMessage"
       :soundpack="config.soundpack"
+      :initial-handle="lastAuthHandle"
       @login="handleLogin"
       @config-clicked="toggleNetworkConfig"
       @quit="quit"
@@ -385,6 +386,9 @@ const {
   isInstallingUpdate,
 } = useAutoUpdaterState();
 const appVersion = packageJson.version;
+const LAST_AUTH_HANDLE_STORAGE_KEY = 'agent_auth_handle';
+const lastAuthHandle = ref<string | null>(null);
+let autoInitializeAttempted = false;
 
 interface AgentConfPayload {
   mqttServer: string;
@@ -400,6 +404,31 @@ function isValidMqttServer(url: string): boolean {
 function isValidLobbyId(raw: string): boolean {
   const trimmed = raw.trim();
   return trimmed.length > 0 && /^[A-Za-z0-9_]+$/.test(trimmed);
+}
+
+async function restorePersistedAuthHandle() {
+  try {
+    const persisted = await getPersistedValue<string>(LAST_AUTH_HANDLE_STORAGE_KEY);
+    if (persisted && typeof persisted === 'string') {
+      lastAuthHandle.value = persisted.toUpperCase();
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function attemptAutoInitialize() {
+  if (
+    autoInitializeAttempted ||
+    isConnected.value ||
+    !lastAuthHandle.value ||
+    !isPresencePreviewReady.value
+  ) {
+    return;
+  }
+
+  autoInitializeAttempted = true;
+  handleLogin(lastAuthHandle.value);
 }
 
 async function applyAgentConfPayload(payload: AgentConfPayload) {
@@ -1296,8 +1325,8 @@ onMounted(async () => {
   initializeWebDMBridge();
   await initializeDMWindowActionListener();
   await initializeAgentConfFileListener();
-
-  if (!hasTauriWindow) {
+    await restorePersistedAuthHandle();
+    attemptAutoInitialize();
     return;
   }
 
@@ -1328,6 +1357,14 @@ onBeforeUnmount(() => {
   cleanupDMActionListener?.();
   cleanupDMActionListener = null;
 });
+
+watch(
+  [
+    isPresencePreviewReady,
+    isConnected,
+  ],
+  attemptAutoInitialize
+);
 
 watch(
   [
@@ -1478,6 +1515,10 @@ function handleLogin(handle: string) {
   const params = new URLSearchParams(window.location.search);
   const rawId = params.get('id');
   boot(handle, rawId || undefined);
+
+  if (handle && !authError.value && username.value === handle) {
+    void setPersistedValue(LAST_AUTH_HANDLE_STORAGE_KEY, handle);
+  }
 }
 
 function quit() {

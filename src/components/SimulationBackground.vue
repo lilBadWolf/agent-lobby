@@ -59,26 +59,24 @@ onMounted(() => {
   // --- THE DECODING ENGINE ---
   glitchInterval = window.setInterval(() => {
     activeColumns.forEach(col => {
-      // 1. Head Glitch: The cursor changes constantly
-      if (Math.random() > 0.5) {
-        const headIdx = col.chars.length - 1;
-        col.chars[headIdx] = getRandomChar();
-      }
+      const headIdx = col.chars.length - 1;
+      const headChance = col.tier === 'bg' ? 0.75 : col.tier === 'mg' ? 0.6 : 0.45;
+      const trailBase = col.tier === 'bg' ? 0.01 : col.tier === 'mg' ? 0.03 : 0.06;
 
-      // 2. Trail Glitch: Background noise
-      // Dense background columns have more "static" (higher flip chance)
-      const flipChance = col.tier === 'bg' ? 0.92 : 0.96;
-      const flipCount = col.tier === 'bg' ? 3 : 1;
-      
-      for (let k = 0; k < flipCount; k++) {
-        if (Math.random() > flipChance) { 
-           // Safe access check
-           const randomRow = Math.floor(Math.random() * (col.chars.length - 1));
-           col.chars[randomRow] = getRandomChar();
+      for (let row = 0; row < col.chars.length; row++) {
+        const isHead = row === headIdx;
+        const depthFactor = 0.25 + 0.75 * (1 - row / headIdx);
+
+        if (isHead) {
+          if (Math.random() < headChance) {
+            col.chars[row] = getRandomChar();
+          }
+        } else if (Math.random() < trailBase * depthFactor) {
+          col.chars[row] = getRandomChar();
         }
       }
     });
-  }, 35); 
+  }, 35);
 
   themeObserver = new MutationObserver(() => themeChangeTick.value++);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -162,8 +160,8 @@ const themeColors = computed(() => {
   void themeChangeTick.value;
   const palette = getThemeUserColors();
   return {
-    bg: getThemeTokenValue('--auth-background-base', '#030904'),
-    primary: getThemeTokenValue('--auth-matrix-color', palette?.[0] || '#39ff14'),
+    bg: getThemeTokenValue('--color-bg-base', '#030904'),
+    primary: getThemeTokenValue('--color-accent', palette?.[0] || '#39ff14'),
     head: '#ffffff' 
   };
 });

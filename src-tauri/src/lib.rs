@@ -1,11 +1,12 @@
 use std::sync::{Arc, Mutex};
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, Player, Source};
+use rodio::stream::DeviceSinkBuilder;
 use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::BufReader;
 
-// Only store Sink globally; OutputStream must be local (not Send/Sync)
-static NUMBERS_STATION_SINK: Lazy<Arc<Mutex<Option<Arc<Sink>>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+// Only store the Player globally; the DeviceSink must stay local to the playback thread.
+static NUMBERS_STATION_SINK: Lazy<Arc<Mutex<Option<Arc<Player>>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// Play the numbers-station audio from the given path (should be signal-station.mp3 in a soundpack)
 #[tauri::command]
@@ -63,25 +64,22 @@ fn play_numbers_station_audio(app: tauri::AppHandle, path: String) -> Result<(),
     };
     let source = Decoder::new(BufReader::new(file)).map_err(|e| format!("Failed to decode audio: {}", e))?;
 
-    // OutputStream must be kept alive as long as Sink is alive, so spawn a thread
+    // DeviceSink must stay alive as long as playback is active, so spawn a thread.
     let sink_arc = NUMBERS_STATION_SINK.clone();
     std::thread::spawn(move || {
-        let (_stream, handle) = match OutputStream::try_default() {
-            Ok(pair) => pair,
+        let device_sink = match DeviceSinkBuilder::open_default_sink() {
+            Ok(handle) => handle,
             Err(_) => return,
         };
-        let sink = match Sink::try_new(&handle) {
-            Ok(s) => Arc::new(s),
-            Err(_) => return,
-        };
-        sink.append(source.repeat_infinite()); // Loop playback (Source trait)
-        // Store Arc<Sink> so stop can pause it
+        let player = Arc::new(Player::connect_new(device_sink.mixer()));
+        player.append(source.repeat_infinite()); // Loop playback (Source trait)
+        // Store Arc<Player> so stop can signal it later.
         {
             let mut s = sink_arc.lock().unwrap();
-            *s = Some(sink.clone());
+            *s = Some(player.clone());
         }
-        sink.sleep_until_end();
-        // Remove sink after playback ends
+        player.sleep_until_end();
+        // Remove player after playback ends
         {
             let mut s = sink_arc.lock().unwrap();
             *s = None;
@@ -94,9 +92,9 @@ fn play_numbers_station_audio(app: tauri::AppHandle, path: String) -> Result<(),
 #[tauri::command]
 fn stop_numbers_station_audio() -> Result<(), String> {
     let mut s = NUMBERS_STATION_SINK.lock().unwrap();
-    if let Some(sink) = s.take() {
-        sink.pause();
-        // Dropping the Arc<Sink> will stop playback and release resources
+    if let Some(player) = s.take() {
+        player.stop();
+        // Dropping the Arc<Player> will stop playback and release resources
     }
     Ok(())
 }

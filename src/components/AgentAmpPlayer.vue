@@ -3624,6 +3624,8 @@ onMounted(() => {
   initializeMediaSession();
 
   if (isTauriRuntime()) {
+    void getTauriDialogOpen();
+
     import('@tauri-apps/api/event')
       .then(async ({ listen }) => {
         mediaLibraryAddListener = await listen('media-library-add-to-playlist', async (event) => {

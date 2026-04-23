@@ -93,6 +93,9 @@ declare global {
         class="main-view"
         :class="{ 'sidebar-compact': !isSidebarVisible }"
       >
+        <div v-if="config.useAuthBackgroundAsChatBackground" class="main-view-background-wrapper">
+          <AuthBackground :soundpack="config.soundpack" />
+        </div>
         <ChatArea
           ref="chatAreaRef"
           :messages="messages"
@@ -308,10 +311,19 @@ declare global {
 .workspace-shell .main-view {
   min-height: 0;
   height: auto;
+  position: relative;
 }
 
 .workspace-shell > .main-view {
   min-height: 0;
+}
+
+.main-view-background-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 </style>
@@ -330,6 +342,7 @@ import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
 import AuthScreen from './components/AuthScreen.vue';
+import AuthBackground from './components/AuthBackground.vue';
 import ChatArea from './components/ChatArea.vue';
 import Sidebar from './components/Sidebar.vue';
 import SettingsModal from './components/SettingsModal.vue';

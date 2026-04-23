@@ -587,6 +587,8 @@ watch(
 
 <style scoped>
 #sidebar {
+  position: relative;
+  z-index: 2;
   grid-area: sidebar;
   width: 220px;
   padding: 10px;

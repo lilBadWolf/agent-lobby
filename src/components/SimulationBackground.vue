@@ -207,11 +207,11 @@ function getCharStyle(col: MatrixColumn, index: number) {
 
 <style scoped>
 .matrix-bg {
-  position: fixed;
+  position: absolute;
   inset: 0;
   overflow: hidden;
   background: #000;
-  z-index: -1;
+  z-index: 0;
   font-family: 'MS Gothic', 'Meiryo', monospace;
 }
 

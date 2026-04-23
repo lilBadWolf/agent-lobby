@@ -223,6 +223,9 @@
       <button class="lobby-join-cancel" type="button" @click="cancelJoinLobby">CANCEL</button>
     </div>
     <div ref="messagesContainer" id="messages">
+      <div v-if="props.useAuthBackgroundAsChatBackground" class="chat-background-wrapper">
+        <AuthBackground :soundpack="props.soundpack" :offset-style="authBackgroundOffsetStyle" />
+      </div>
       <div v-for="(msg, index) in messages" :key="index">
         <div v-if="msg.isSystem" class="system-msg">
           <span class="text">[{{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>]</span>
@@ -477,6 +480,7 @@ import type { ActiveMedia, ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
 import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
+import AuthBackground from './AuthBackground.vue';
 import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 import * as nodeEmoji from 'node-emoji';
 
@@ -552,6 +556,8 @@ const props = defineProps<{
   username: string;
   isConnected: boolean;
   users: Record<string, UserPresence>;
+  soundpack?: string;
+  useAuthBackgroundAsChatBackground?: boolean;
   enableAvatars?: boolean;
   lobbyTabs?: Array<{ id: string; label: string; unreadCount: number; isDefault?: boolean }>;
   activeLobbyId?: string;
@@ -576,6 +582,38 @@ const emit = defineEmits<{
 
 const { getUserColor } = useTheme();
 const { extractImageUris, initializeImage, markImageLoaded, markImageError, getImageState } = useImageDetection();
+const authBackgroundOffset = ref({ top: 0, left: 0 });
+
+function refreshAuthBackgroundOffset() {
+  if (!messagesContainer.value) {
+    return;
+  }
+
+  const rect = messagesContainer.value.getBoundingClientRect();
+  authBackgroundOffset.value = {
+    top: rect.top,
+    left: rect.left,
+  };
+}
+
+const authBackgroundOffsetStyle = computed(() => ({
+  position: 'absolute',
+  top: `-${authBackgroundOffset.value.top}px`,
+  left: `-${authBackgroundOffset.value.left}px`,
+  width: '100vw',
+  height: '100vh',
+}));
+
+onMounted(() => {
+  refreshAuthBackgroundOffset();
+  window.addEventListener('resize', refreshAuthBackgroundOffset);
+  window.addEventListener('scroll', refreshAuthBackgroundOffset, { passive: true });
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', refreshAuthBackgroundOffset);
+  window.removeEventListener('scroll', refreshAuthBackgroundOffset);
+});
 
 function normalizeUserPresenceUsername(user: string): string {
   return user ? user.toUpperCase() : '';
@@ -2955,12 +2993,28 @@ onBeforeUnmount(() => {
 }
 
 #messages {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 20px;
   font-size: 16px;
   scrollbar-width: thin;
+  background: rgba(5, 10, 18, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+#messages > .chat-background-wrapper {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#messages > :not(.chat-background-wrapper) {
+  position: relative;
+  z-index: 1;
 }
 
 .input-bar {
@@ -3022,6 +3076,9 @@ onBeforeUnmount(() => {
   border-left: 3px solid var(--color-accent-muted);
   padding: 12px 12px 12px 56px;
   max-width: min(78%, 100%);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 10px;
+  backdrop-filter: blur(4px);
 }
 
 .msg.self-msg {
@@ -3079,10 +3136,12 @@ onBeforeUnmount(() => {
   text-align: center;
   color: var(--color-chat-text-muted);
   font-size: 13px;
-  margin: 15px 0;
+  margin: 8px 0;
   letter-spacing: 1px;
   font-weight: bold;
-  background: linear-gradient(90deg, transparent, var(--color-accent-muted), transparent);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  padding: 0px 10px;
 }
 
 .sender {

@@ -128,13 +128,12 @@ const gridLineStyle = computed(() => ({
 
 <style scoped>
 .radio-bg {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  z-index: -1;
+  z-index: 0;
   transition: background 0.3s ease;
 }
 

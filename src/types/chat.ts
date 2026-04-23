@@ -58,6 +58,7 @@ export interface AudioConfig {
   scanlines?: boolean;
   soundpack: string;
   theme: string;
+  useAuthBackgroundAsChatBackground?: boolean;
   showJoinPartMessages?: boolean;
   audioInputDeviceId: string;
   audioOutputDeviceId: string;

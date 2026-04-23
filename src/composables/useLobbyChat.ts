@@ -73,6 +73,7 @@ const APP_CONFIG_STORAGE_KEYS = {
   scanlines: 'agent_scanlines',
   soundpack: 'agent_soundpack',
   theme: 'agent_theme',
+  useAuthBackgroundAsChatBackground: 'agent_use_auth_background_as_chat_background',
   pageText: 'agent_page_text',
   pageUrl: 'agent_page_url',
   dmChatEffect: 'agent_dm_chat_effect',
@@ -94,6 +95,7 @@ type AppSettings = Pick<
   | 'scanlines'
   | 'soundpack'
   | 'theme'
+  | 'useAuthBackgroundAsChatBackground'
   | 'dmChatEffect'
   | 'showJoinPartMessages'
   | 'audioInputDeviceId'
@@ -149,6 +151,7 @@ const DEFAULT_APP_CONFIG: AudioConfig = {
   spectrumThresholdHigh: 0.6,
   soundpack: 'default',
   theme: 'retro-terminal',
+  useAuthBackgroundAsChatBackground: false,
   enableAvatars: false,
   avatarUrl: '',
   tagline: '',
@@ -312,6 +315,10 @@ function normalizeAudioConfig(savedConfig?: Partial<AudioConfig> | null): AudioC
     normalized.spectrumThresholdHigh = Math.max(spectrumThresholdMedium + 0.05, spectrumThresholdHigh);
   }
 
+  if (typeof normalized.useAuthBackgroundAsChatBackground !== 'boolean') {
+    normalized.useAuthBackgroundAsChatBackground = DEFAULT_APP_CONFIG.useAuthBackgroundAsChatBackground;
+  }
+
   if (typeof normalized.showJoinPartMessages !== 'boolean') {
     normalized.showJoinPartMessages = DEFAULT_APP_CONFIG.showJoinPartMessages;
   }
@@ -330,6 +337,7 @@ async function persistAudioConfig(nextConfig: AudioConfig): Promise<void> {
     scanlines: nextConfig.scanlines ?? DEFAULT_APP_CONFIG.scanlines,
     soundpack: nextConfig.soundpack,
     theme: nextConfig.theme,
+    useAuthBackgroundAsChatBackground: nextConfig.useAuthBackgroundAsChatBackground ?? DEFAULT_APP_CONFIG.useAuthBackgroundAsChatBackground,
     dmChatEffect: nextConfig.dmChatEffect,
     showJoinPartMessages: nextConfig.showJoinPartMessages ?? DEFAULT_APP_CONFIG.showJoinPartMessages,
     audioInputDeviceId: nextConfig.audioInputDeviceId,
@@ -393,6 +401,7 @@ async function loadPersistedLegacyAudioConfig(): Promise<Partial<AudioConfig> | 
     scanlines,
     soundpack,
     theme,
+    useAuthBackgroundAsChatBackground,
     dmChatEffect,
     showJoinPartMessages,
     audioInputDeviceId,
@@ -424,6 +433,7 @@ async function loadPersistedLegacyAudioConfig(): Promise<Partial<AudioConfig> | 
     getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.scanlines),
     getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.soundpack),
     getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.theme),
+    getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.useAuthBackgroundAsChatBackground),
     getPersistedValue<AudioConfig['dmChatEffect']>(APP_CONFIG_STORAGE_KEYS.dmChatEffect),
     getPersistedValue<boolean>(APP_CONFIG_STORAGE_KEYS.showJoinPartMessages),
     getPersistedValue<string>(APP_CONFIG_STORAGE_KEYS.audioInputDeviceId),
@@ -463,6 +473,7 @@ async function loadPersistedLegacyAudioConfig(): Promise<Partial<AudioConfig> | 
   }
   if (typeof soundpack === 'string') saved.soundpack = soundpack;
   if (typeof theme === 'string') saved.theme = theme;
+  if (typeof useAuthBackgroundAsChatBackground === 'boolean') saved.useAuthBackgroundAsChatBackground = useAuthBackgroundAsChatBackground;
   if (typeof spectrumGradientBars === 'boolean') saved.spectrumGradientBars = spectrumGradientBars;
   if (
     dmChatEffect === 'none' ||

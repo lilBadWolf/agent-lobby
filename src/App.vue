@@ -103,6 +103,8 @@ declare global {
           :active-lobby-id="activeLobbyId"
           :default-lobby-id="networkConfig.defaultLobby"
           :mention-request="mentionRequest"
+          :soundpack="config.soundpack"
+          :use-auth-background-as-chat-background="config.useAuthBackgroundAsChatBackground"
           :agent-amp-pinned-video="agentAmpPinnedVideo"
           :agent-amp-detached="config.agentAmpDetached"
           :enable-avatars="config.enableAvatars"
@@ -1325,10 +1327,8 @@ onMounted(async () => {
   initializeWebDMBridge();
   await initializeDMWindowActionListener();
   await initializeAgentConfFileListener();
-    await restorePersistedAuthHandle();
-    attemptAutoInitialize();
-    return;
-  }
+  await restorePersistedAuthHandle();
+  attemptAutoInitialize();
 
   const appWindow = getCurrentWindow();
   isMaximized.value = await appWindow.isMaximized();

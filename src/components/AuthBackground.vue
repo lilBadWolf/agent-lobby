@@ -1,5 +1,5 @@
 <template>
-  <div class="auth-background-root">
+  <div class="auth-background-root" :style="props.offsetStyle">
     <component :is="backgroundComponent" />
   </div>
 </template>
@@ -14,6 +14,7 @@ import LavaBackground from './LavaBackground.vue';
 
 const props = defineProps<{
   soundpack?: string;
+  offsetStyle?: Record<string, string>;
 }>();
 
 const { getThemeTokenValue } = useTheme();
@@ -55,8 +56,9 @@ const backgroundComponent = computed(() => {
 
 <style scoped>
 .auth-background-root {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
+  overflow: hidden;
 }
 </style>

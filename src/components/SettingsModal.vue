@@ -78,6 +78,15 @@
             </select>
           </div>
           <div class="setting-row">
+            <label>USE SOUNDPACK ANIMATION AS CHAT BACKGROUND</label>
+            <input
+              v-model="localConfig.useAuthBackgroundAsChatBackground"
+              type="checkbox"
+              id="set-soundpack-chat-bg-toggle"
+              @change="handleChange"
+            />
+          </div>
+          <div class="setting-row">
             <label>SCANLINES</label>
             <input
               v-model="localConfig.scanlines"
@@ -560,6 +569,7 @@ function normalizeConfig(config: AudioConfig): AudioConfig {
   return {
     ...config,
     theme: normalizedTheme,
+    useAuthBackgroundAsChatBackground: config.useAuthBackgroundAsChatBackground ?? false,
     autoAwayMinutes: config.autoAwayMinutes ?? 10,
     autoUpdatePulseMinutes: config.autoUpdatePulseMinutes ?? 30,
     enableAvatars: config.enableAvatars ?? false,

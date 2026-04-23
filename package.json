@@ -1,7 +1,7 @@
 {
   "name": "agent-lobby",
   "private": true,
-  "version": "0.4.28",
+  "version": "0.4.29",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,19 +24,19 @@
     "node-emoji": "^2.2.0",
     "peerjs": "^1.5.5",
     "three": "^0.184.0",
-    "vue": "^3.5.32"
+    "vue": "^3.5.33"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/peerjs": "^0.0.30",
     "@types/three": "^0.184.0",
     "@vitejs/plugin-vue": "^6.0.6",
-    "@vitest/coverage-v8": "^4.1.4",
+    "@vitest/coverage-v8": "^4.1.5",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^29.0.2",
     "typescript": "^6.0.3",
-    "vite": "^8.0.8",
-    "vitest": "^4.1.4",
-    "vue-tsc": "^3.2.6"
+    "vite": "^8.0.9",
+    "vitest": "^4.1.5",
+    "vue-tsc": "^3.2.7"
   }
 }

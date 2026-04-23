@@ -67,10 +67,11 @@ fn play_numbers_station_audio(app: tauri::AppHandle, path: String) -> Result<(),
     // DeviceSink must stay alive as long as playback is active, so spawn a thread.
     let sink_arc = NUMBERS_STATION_SINK.clone();
     std::thread::spawn(move || {
-        let device_sink = match DeviceSinkBuilder::open_default_sink() {
+        let mut device_sink = match DeviceSinkBuilder::open_default_sink() {
             Ok(handle) => handle,
             Err(_) => return,
         };
+        device_sink.log_on_drop(false);
         let player = Arc::new(Player::connect_new(device_sink.mixer()));
         player.append(source.repeat_infinite()); // Loop playback (Source trait)
         // Store Arc<Player> so stop can signal it later.

@@ -49,9 +49,9 @@ jobs:
             echo "RELEASE.md not found. Create RELEASE.md with your release notes." >&2
             exit 1
           fi
-          echo "RELEASE_BODY<<EOF" >> $GITHUB_ENV
-          cat RELEASE.md >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          printf '%s\n' 'RELEASE_BODY<<EOF_RELEASE_BODY' >> "$GITHUB_ENV"
+          cat RELEASE.md >> "$GITHUB_ENV"
+          printf '%s\n' 'EOF_RELEASE_BODY' >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@action-v0.6.2
         id: tauri
         env:

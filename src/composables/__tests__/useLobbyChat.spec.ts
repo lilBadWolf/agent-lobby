@@ -88,7 +88,7 @@ describe('useLobbyChat', () => {
 
     chat.sendMessage('hello world');
     expect(activeClient.publish).toHaveBeenCalledWith(
-      'opsroom_lobby/chat_global',
+      'opsroom_v2/chat_global',
       expect.stringContaining('hello world')
     );
 
@@ -114,7 +114,7 @@ describe('useLobbyChat', () => {
     chat.sendMessage('/back');
     expect(chat.isAway.value).toBe(false);
 
-    const publishedChatCalls = activeClient.publish.mock.calls.filter((c: any[]) => c[0] === 'intel_lobby/chat_global');
+    const publishedChatCalls = activeClient.publish.mock.calls.filter((c: any[]) => c[0] === 'intel_v2/chat_global');
     expect(publishedChatCalls.length).toBe(0);
     expect(activeClient.publish.mock.calls.length).toBeGreaterThanOrEqual(callsBefore);
   });
@@ -126,7 +126,7 @@ describe('useLobbyChat', () => {
     previewClient.emit('connect');
     previewClient.emit(
       'message',
-      'agent_lobby_lobby/presence/ALPHA',
+      'agent_lobby_v2/presence/ALPHA',
       {
         toString: () => JSON.stringify({
           username: 'ALPHA',
@@ -194,7 +194,7 @@ describe('useLobbyChat', () => {
     chat.toggleAway();
 
     const presenceCalls = activeClient.publish.mock.calls.filter((c: any[]) =>
-      String(c[0]).startsWith('intel_lobby/presence/')
+      String(c[0]).startsWith('intel_v2/presence/')
     );
     expect(presenceCalls.length).toBe(4);
   });
@@ -212,7 +212,7 @@ describe('useLobbyChat', () => {
 
     expect(chat.isAway.value).toBe(false);
 
-    const chatCall = activeClient.publish.mock.calls.find((c: any[]) => c[0] === 'intel_lobby/chat_global');
+    const chatCall = activeClient.publish.mock.calls.find((c: any[]) => c[0] === 'intel_v2/chat_global');
     expect(chatCall).toBeTruthy();
     const payload = chatCall?.[1] as string;
     expect(payload).toContain('Hello team');
@@ -224,7 +224,7 @@ describe('useLobbyChat', () => {
 
     const previewClient = clients[0];
     previewClient.emit('connect');
-    previewClient.emit('message', 'agent_lobby_lobby/presence/BAD', {
+    previewClient.emit('message', 'agent_lobby_v2/presence/BAD', {
       toString: () => '{not-json',
     });
 

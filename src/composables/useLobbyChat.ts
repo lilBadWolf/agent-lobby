@@ -84,6 +84,104 @@ const APP_CONFIG_STORAGE_KEYS = {
   customSlashCommands: 'agent_custom_slash_commands',
 } as const;
 
+const LOBBY_ENCRYPTION_KEY = (import.meta.env.VITE_LOBBY_ENCRYPTION_KEY ?? '').trim();
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder();
+
+let lobbyCryptoKeyPromise: Promise<CryptoKey | null> | null = null;
+
+function base64ToBytes(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+function bytesToBase64(bytes: ArrayBuffer | ArrayBufferView): string {
+  let binary = '';
+  const array = bytes instanceof ArrayBuffer
+    ? new Uint8Array(bytes)
+    : new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  for (let i = 0; i < array.length; i += 1) {
+    binary += String.fromCharCode(array[i]);
+  }
+  return btoa(binary);
+}
+
+async function getLobbyCryptoKey(): Promise<CryptoKey | null> {
+  if (!LOBBY_ENCRYPTION_KEY) {
+    return null;
+  }
+
+  if (!lobbyCryptoKeyPromise) {
+    const keyBytes = base64ToBytes(LOBBY_ENCRYPTION_KEY);
+    lobbyCryptoKeyPromise = crypto.subtle.importKey(
+      'raw',
+      keyBytes,
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    ).catch((error) => {
+      console.error('[LobbyChat] failed to import lobby encryption key', error);
+      return null;
+    });
+  }
+
+  return lobbyCryptoKeyPromise;
+}
+
+async function encryptLobbyPayload(payload: string): Promise<string> {
+  const key = await getLobbyCryptoKey();
+  if (!key) {
+    return payload;
+  }
+
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv.buffer },
+    key,
+    TEXT_ENCODER.encode(payload)
+  );
+
+  return JSON.stringify({
+    iv: bytesToBase64(iv.buffer),
+    ct: bytesToBase64(ciphertext),
+  });
+}
+
+async function decryptLobbyPayload(raw: string): Promise<string> {
+  if (!raw) {
+    return raw;
+  }
+
+  const key = await getLobbyCryptoKey();
+  if (!key) {
+    return raw;
+  }
+
+  try {
+    const payload = JSON.parse(raw) as { iv: string; ct: string };
+    if (!payload || !payload.iv || !payload.ct) {
+      return raw;
+    }
+
+    const iv = base64ToBytes(payload.iv);
+    const ciphertext = base64ToBytes(payload.ct);
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    );
+
+    return TEXT_DECODER.decode(plaintext);
+  } catch {
+    return raw;
+  }
+}
+
 type AppSettings = Pick<
   AudioConfig,
   | 'audioEnabled'
@@ -650,21 +748,25 @@ export function useLobbyChat() {
     return rawLobbyId.toLowerCase().replace(/[^a-z0-9_]/g, '');
   }
 
+  function getLobbyTopicBase(targetRoomId: string): string {
+    return targetRoomId.endsWith('_v2') ? targetRoomId : `${targetRoomId}_v2`;
+  }
+
   function getChatTopic(targetRoomId: string): string {
-    return `${targetRoomId}_lobby/chat_global`;
+    return `${getLobbyTopicBase(targetRoomId)}/chat_global`;
   }
 
   function getPresenceTopicPrefix(targetRoomId: string): string {
-    return `${targetRoomId}_lobby/presence/`;
+    return `${getLobbyTopicBase(targetRoomId)}/presence/`;
   }
 
   function parseRoomFromChatTopic(topic: string): string | null {
-    const match = topic.match(/^([^/]+)_lobby\/chat_global$/);
+    const match = topic.match(/^([^/]+?)(?:_(?:lobby|v2))?\/chat_global$/);
     return match?.[1] || null;
   }
 
   function parsePresenceTopic(topic: string): { room: string; user: string } | null {
-    const match = topic.match(/^([^/]+)_lobby\/presence\/([^/]+)$/);
+    const match = topic.match(/^([^/]+?)(?:_(?:lobby|v2))?\/presence\/([^/]+)$/);
     if (!match) {
       return null;
     }
@@ -778,17 +880,25 @@ export function useLobbyChat() {
   }
 
   function publishPresenceForLobby(targetRoomId: string) {
-    if (!client || !client.connected || !username.value) {
+    const mqttClient = client;
+    if (!mqttClient || !mqttClient.connected || !username.value) {
       return;
     }
 
     ensureLobbyState(targetRoomId);
 
-    client.publish(
-      `${getPresenceTopicPrefix(targetRoomId)}${username.value}`,
-      JSON.stringify(buildPresencePayload(targetRoomId)),
-      { retain: true }
-    );
+    const payloadText = JSON.stringify(buildPresencePayload(targetRoomId));
+    void encryptLobbyPayload(payloadText)
+      .then((ciphertext) => {
+        mqttClient.publish(
+          `${getPresenceTopicPrefix(targetRoomId)}${username.value}`,
+          ciphertext,
+          { retain: true }
+        );
+      })
+      .catch((error) => {
+        console.error('[LobbyChat] failed to encrypt presence payload', error);
+      });
   }
 
   function publishPresence() {
@@ -1069,20 +1179,21 @@ export function useLobbyChat() {
       });
     });
 
-    previewClient.on('message', (topic, payload) => {
+    previewClient.on('message', async (topic, payload) => {
       const raw = payload.toString();
+      const decryptedRaw = await decryptLobbyPayload(raw);
       try {
         const parsedTopic = parsePresenceTopic(topic);
         if (!parsedTopic || parsedTopic.room !== previewRoom) {
           return;
         }
 
-        if (raw === '') {
+        if (decryptedRaw === '') {
           delete previewUsers[parsedTopic.user];
           return;
         }
 
-        previewUsers[parsedTopic.user] = JSON.parse(raw) as UserPresence;
+        previewUsers[parsedTopic.user] = JSON.parse(decryptedRaw) as UserPresence;
       } catch {
         // Ignore malformed presence payloads from third-party clients.
       }
@@ -1384,12 +1495,13 @@ export function useLobbyChat() {
       stopPresenceHeartbeat();
     });
 
-    client.on('message', (topic, payload) => {
+    client.on('message', async (topic, payload) => {
       const raw = payload.toString();
+      const decryptedRaw = await decryptLobbyPayload(raw);
 
-      if (topic.includes('_lobby/presence/')) {
+      if (parsePresenceTopic(topic)) {
         try {
-          handlePresenceMessage(topic, raw, { withAlerts: true });
+          handlePresenceMessage(topic, decryptedRaw, { withAlerts: true });
         } catch {
           // Ignore malformed presence payloads from third-party clients.
         }
@@ -1398,14 +1510,18 @@ export function useLobbyChat() {
 
       const targetRoomId = parseRoomFromChatTopic(topic);
       if (targetRoomId && joinedLobbies.value.includes(targetRoomId)) {
-        const data = JSON.parse(raw);
-        const isInbound = data.u !== username.value;
+        try {
+          const data = JSON.parse(decryptedRaw);
+          const isInbound = data.u !== username.value;
 
-        if (isInbound) {
-          playAlert('message');
+          if (isInbound) {
+            playAlert('message');
+          }
+
+          addMessageToLobby(targetRoomId, data.u, data.m, false, isInbound);
+        } catch {
+          // Ignore malformed chat payloads from third-party clients.
         }
-
-        addMessageToLobby(targetRoomId, data.u, data.m, false, isInbound);
       }
     });
   }
@@ -1445,7 +1561,17 @@ export function useLobbyChat() {
       setAway(false, 'system');
     }
 
-    client.publish(getChatTopic(activeLobbyId.value), JSON.stringify({ u: username.value, m: outboundMessage }));
+    const mqttClient = client;
+    const outboundPayload = JSON.stringify({ u: username.value, m: outboundMessage });
+    void encryptLobbyPayload(outboundPayload)
+      .then((ciphertext) => {
+        if (mqttClient) {
+          mqttClient.publish(getChatTopic(activeLobbyId.value), ciphertext);
+        }
+      })
+      .catch((error) => {
+        console.error('[LobbyChat] failed to encrypt chat payload', error);
+      });
   }
 
   function switchLobby(targetLobbyId: string): boolean {

@@ -1,6 +1,6 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.29**
+🎉 **Release highlights for agent-lobby 0.4.30**
 
 - 🌌 Added a new animated background to the `ChatArea`, bringing richer motion and visual polish to active lobby conversations.
 - 🎯 Fixed `ChatArea` animation sizing so the animation fills the main view and remains visible through the chat overlay.

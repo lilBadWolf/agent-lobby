@@ -8,11 +8,12 @@ export const dmEffectOptions = [
   { value: 'mspacman', label: 'MS PACMAN' },
   { value: 'pacman', label: 'PACMAN' },
   { value: 'smoke', label: 'POWDER' },
+  { value: 'cookieMonster', label: 'COOKIE MONSTER' },
   { value: 'rust', label: 'RUST' },
   { value: 'starmap', label: 'STARMAP' },
 ] as const;
 
-export type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'mspacman' | 'starmap' | 'bubbles' | 'smoke' | 'inferno';
+export type AnimationEffect = 'none' | 'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames' | 'rust' | 'pacman' | 'mspacman' | 'starmap' | 'bubbles' | 'smoke' | 'cookieMonster' | 'inferno';
 
 interface WordAppendState {
   currentWordContainer: HTMLSpanElement | null;

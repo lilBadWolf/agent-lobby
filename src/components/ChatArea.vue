@@ -261,7 +261,7 @@
                 >
                   {{ getExternalLinkLabel(part) }}
                 </a>
-                <span v-else>{{ part.text }}</span>
+                <span v-else class="markdown-text" v-html="renderMarkdownHtml(part.text)"></span>
               </template>
               <span v-if="isTyping(index)" class="cursor">█</span>
             </span>
@@ -479,6 +479,44 @@ import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
 import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
 import * as nodeEmoji from 'node-emoji';
+import MarkdownIt from 'markdown-it';
+
+const markdownIt = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+  breaks: true,
+});
+
+markdownIt.inline.ruler.before('emphasis', 'underline', (state: any, silent: boolean) => {
+  const max = state.posMax;
+  const start = state.pos;
+  if (state.src.charCodeAt(start) !== 0x3D /* = */) {
+    return false;
+  }
+  if (start + 2 >= max || state.src.charCodeAt(start + 1) !== 0x3D) {
+    return false;
+  }
+
+  let pos = start + 2;
+  while (pos < max) {
+    if (state.src.charCodeAt(pos) === 0x3D && state.src.charCodeAt(pos + 1) === 0x3D) {
+      if (!silent) {
+        const token = state.push('underline_open', 'u', 1);
+        token.markup = '==';
+        state.push('text', '', 0).content = state.src.slice(start + 2, pos);
+        state.push('underline_close', 'u', -1).markup = '==';
+      }
+      state.pos = pos + 2;
+      return true;
+    }
+    pos += 1;
+  }
+  return false;
+});
+
+markdownIt.renderer.rules.underline_open = () => '<u>';
+markdownIt.renderer.rules.underline_close = () => '</u>';
 
 type YouTubePlayerState = {
   ready: boolean;
@@ -2362,6 +2400,11 @@ function pushTextWithMentions(parts: DisplayPart[], text: string, targetUsername
   if (lastIndex < text.length) {
     parts.push({ type: 'text', text: text.slice(lastIndex) });
   }
+}
+
+function renderMarkdownHtml(text: string): string {
+  if (!text) return '';
+  return markdownIt.renderInline(text);
 }
 
 function getDisplayedParts(messageIndex: number): DisplayPart[] {

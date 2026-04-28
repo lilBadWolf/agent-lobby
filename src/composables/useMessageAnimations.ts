@@ -16,6 +16,7 @@ import StarmapEffect from '../components/dm-effects/StarmapEffect.vue';
 import BubbleEffect from '../components/dm-effects/BubbleEffect.vue';
 import PowderEffect from '../components/dm-effects/PowderEffect.vue';
 import InfernoEffect from '../components/dm-effects/InfernoEffect.vue';
+import CookieMonsterEffect from '../components/dm-effects/CookieMonsterEffect.vue';
 
 const effectComponentMap: Record<Exclude<AnimationEffect, 'none'>, any> = {
   typewriter: TypewriterEffect,
@@ -29,6 +30,7 @@ const effectComponentMap: Record<Exclude<AnimationEffect, 'none'>, any> = {
   starmap: StarmapEffect,
   bubbles: BubbleEffect,
   smoke: PowderEffect,
+  cookieMonster: CookieMonsterEffect,
   inferno: InfernoEffect,
 };
 

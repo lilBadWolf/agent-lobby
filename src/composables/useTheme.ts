@@ -250,21 +250,35 @@ export async function resolvePersistedTheme(): Promise<string | undefined> {
   return undefined;
 }
 
+function normalizeCssColorValue(value: string): string {
+  const trimmed = value.trim();
+  if (/^#([0-9a-fA-F]{8})$/.test(trimmed)) {
+    return `#${trimmed.slice(1, 7)}`;
+  }
+  if (/^#([0-9a-fA-F]{4})$/.test(trimmed)) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+  }
+  if (/^#([0-9a-fA-F]{3})$/.test(trimmed)) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+  }
+  return trimmed;
+}
+
 function getThemeTokenValue(tokenName: string, fallback = ''): string {
   if (typeof window === 'undefined') {
-    return fallback;
+    return normalizeCssColorValue(fallback);
   }
 
   const root = document.documentElement;
   const value = getComputedStyle(root).getPropertyValue(tokenName).trim();
-  return value || fallback;
+  return normalizeCssColorValue(value || fallback);
 }
 
 function getThemeUserColors(): string[] {
   const rawPalette = getThemeTokenValue('--theme-user-colors', '');
   const parsedPalette = rawPalette
     .split(',')
-    .map((entry) => entry.trim())
+    .map((entry) => normalizeCssColorValue(entry))
     .filter(Boolean);
 
   return parsedPalette.length > 0 ? parsedPalette : DEFAULT_USER_COLORS;

@@ -48,6 +48,13 @@ describe('useTheme', () => {
     expect(first).toBe(second);
   });
 
+  it('normalizes 4- and 8-digit theme palette colors from CSS variables', () => {
+    document.documentElement.style.setProperty('--theme-user-colors', '#e5d9f2ab, #1a2b3c4d, #abc');
+
+    const { getThemeUserColors } = useTheme();
+    expect(getThemeUserColors()).toEqual(['#e5d9f2', '#1a2b3c', '#aabbcc']);
+  });
+
   it('applies initial theme variables immediately', () => {
     localStorage.setItem('agent_settings', JSON.stringify({ theme: 'light-blue' }));
 

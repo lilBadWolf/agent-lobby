@@ -220,8 +220,6 @@ function animatePasses(layoutData: { stageRect: DOMRect; monsterSize: number }) 
   const passes: any[] = []
   lines.forEach((line) => {
     if (!line.letterElements?.length) return
-    const firstLetter = line.letterElements[0]
-    const rect = firstLetter.getBoundingClientRect()
     passes.push({
       line,
       entries: line.letterElements.map((el, idx) => ({ element: el, index: idx }))

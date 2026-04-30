@@ -70,7 +70,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './composables/useTauriApi';
 import { THEMES } from './themes';
 import { useTheme } from './composables/useTheme';
 import ThemeEditorPreview from './components/ThemeEditorPreview.vue';
@@ -116,8 +116,8 @@ async function loadThemeSource(themeName: string) {
   }
 
   try {
-    const source = await invoke<string>('get_theme_source', { themeName });
-    selectedThemeSource.value = source;
+    const source = await tauriInvoke<string>('get_theme_source', { themeName });
+    selectedThemeSource.value = source ?? '';
   } catch {
     selectedThemeSource.value = '';
   }
@@ -151,7 +151,7 @@ async function saveEditedTheme() {
   const themeName = saveThemeName.value.trim() || selectedThemeName.value;
   const overwrite = themeName === selectedThemeName.value;
   try {
-    await invoke('save_custom_theme', { themeName, cssContent: getCurrentCssContent(), overwrite });
+    await tauriInvoke('save_custom_theme', { themeName, cssContent: getCurrentCssContent(), overwrite });
     await refreshCustomThemes();
     alert(`Theme '${themeName}' saved to the application theme folder`);
   } catch (error) {

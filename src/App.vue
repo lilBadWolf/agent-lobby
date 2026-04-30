@@ -331,8 +331,7 @@ declare global {
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, watchEffect, onMounted, onBeforeUnmount } from 'vue';
 import packageJson from '../package.json';
-import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { isTauriRuntime, tauriInvoke, tauriGetCurrentWindow } from './composables/useTauriApi';
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
@@ -350,10 +349,6 @@ import ProfileSettingsModal from './components/ProfileSettingsModal.vue';
 import NetworkConfigModal from './components/NetworkConfigModal.vue';
 import DMRequestStack from './components/DMRequestStack.vue';
 import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
-
-function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && typeof (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === 'object';
-}
 
 const {
   username,
@@ -474,7 +469,10 @@ async function applyAgentConfPayload(payload: AgentConfPayload) {
   if (isConnected.value) {
     if (hasTauriWindow) {
       try {
-        await getCurrentWindow().setFocus();
+        const currentWindow = await tauriGetCurrentWindow();
+        if (currentWindow) {
+          await currentWindow.setFocus();
+        }
       } catch {
         // ignore focus failures
       }
@@ -780,7 +778,7 @@ const showSettings = ref(false);
 watch(showSettings, async (val, oldVal) => {
   if (val) {
     try {
-      await invoke('stop_numbers_station_audio');
+      await tauriInvoke('stop_numbers_station_audio');
     } catch {}
   } else if (!val && oldVal) {
     // Only play numbers-station if AuthScreen is visible (ChatArea NOT shown)
@@ -800,7 +798,7 @@ watch(showSettings, async (val, oldVal) => {
         numbersPath = window.__TAURI__.path.resolveResource('sounds/default/signal-station.mp3') || window.__TAURI__.path.resolveResource('public/sounds/default/signal-station.mp3');
       }
       try {
-        await invoke('play_numbers_station_audio', { path: numbersPath });
+        await tauriInvoke('play_numbers_station_audio', { path: numbersPath });
       } catch {}
     }
   }
@@ -810,7 +808,7 @@ watch(showSettings, async (val, oldVal) => {
 watch(showAuth, async (val, oldVal) => {
   if (oldVal && !val) {
     try {
-      await invoke('stop_numbers_station_audio');
+      await tauriInvoke('stop_numbers_station_audio');
     } catch {}
     // Block signal-station from playing while ChatArea is loaded
     window.__NO_SIGNAL_STATION__ = true;
@@ -1138,7 +1136,7 @@ function normalizeLocalFilePathForProxy(raw: string): string {
 }
 
 async function getLocalPinnedVideoProxyUrl(url: string): Promise<string> {
-  const proxyBaseUrl = await invoke<string>('get_local_video_proxy_base_url');
+  const proxyBaseUrl = await tauriInvoke<string>('get_local_video_proxy_base_url');
   const normalizedPath = normalizeLocalFilePathForProxy(url);
   return `${proxyBaseUrl}/local-video?path=${encodeURIComponent(normalizedPath)}`;
 }
@@ -1343,8 +1341,10 @@ onMounted(async () => {
   await restorePersistedAuthHandle();
   attemptAutoInitialize();
 
-  const appWindow = getCurrentWindow();
-  isMaximized.value = await appWindow.isMaximized();
+  const appWindow = await tauriGetCurrentWindow();
+  if (appWindow) {
+    isMaximized.value = await appWindow.isMaximized();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -1493,12 +1493,16 @@ watch(
   { immediate: true, deep: true, flush: 'post' }
 );
 
-function minimize() {
+async function minimize() {
   if (!hasTauriWindow) {
     return;
   }
 
-  const appWindow = getCurrentWindow();
+  const appWindow = await tauriGetCurrentWindow();
+  if (!appWindow) {
+    return;
+  }
+
   appWindow.minimize();
 }
 
@@ -1507,7 +1511,11 @@ async function toggleMaximize() {
     return;
   }
 
-  const appWindow = getCurrentWindow();
+  const appWindow = await tauriGetCurrentWindow();
+  if (!appWindow) {
+    return;
+  }
+
   if (isMaximized.value) {
     await appWindow.unmaximize();
   } else {
@@ -1598,11 +1606,15 @@ function quit() {
         }, 2500);
       });
 
-      const appWindow = getCurrentWindow();
-      await appWindow.close();
+      const appWindow = await tauriGetCurrentWindow();
+      if (appWindow) {
+        await appWindow.close();
+      }
     } catch (error) {
-      const appWindow = getCurrentWindow();
-      await appWindow.close();
+      const appWindow = await tauriGetCurrentWindow();
+      if (appWindow) {
+        await appWindow.close();
+      }
     }
   }, 600);
 }
@@ -1747,14 +1759,14 @@ async function scanMediaLibraryFolders() {
   }
 
   try {
-    const state = await invoke<{ folders: Array<{ path: string }> }>('load_media_library_state');
+    const state = await tauriInvoke<{ folders: Array<{ path: string }> }>('load_media_library_state');
     if (!state?.folders?.length) {
       return;
     }
 
     for (const folder of state.folders) {
       if (folder?.path) {
-        await invoke('scan_media_library_folder', { folderPath: folder.path });
+        await tauriInvoke('scan_media_library_folder', { folderPath: folder.path });
       }
     }
   } catch (error) {
@@ -2321,7 +2333,7 @@ function startAgentAmpWebPopupHeartbeat() {
 async function focusDetachedAgentAmpWindow(): Promise<boolean> {
   if (hasTauriWindow) {
     try {
-      return await invoke<boolean>('raise_agentamp_window');
+      return (await tauriInvoke<boolean>('raise_agentamp_window')) ?? false;
     } catch (error) {
       console.debug('Unable to raise detached AgentAmp window via native command:', error);
     }

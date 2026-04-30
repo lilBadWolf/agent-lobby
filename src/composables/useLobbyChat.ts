@@ -15,7 +15,6 @@ declare global {
   }
 }
 import { ref, reactive, computed, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import type { ActiveMedia, UserPresence, ChatMessage, AudioConfig, NetworkConfig, SlashCommandAlias } from '../types/chat';
 import mqtt from 'mqtt';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from './usePlatformStorage';
@@ -113,6 +112,12 @@ function bytesToBase64(bytes: ArrayBuffer | ArrayBufferView): string {
 
 async function getLobbyCryptoKey(): Promise<CryptoKey | null> {
   if (!LOBBY_ENCRYPTION_KEY) {
+    return null;
+  }
+
+  const hasWebCrypto = typeof crypto === 'object' && crypto !== null && typeof crypto.subtle === 'object' && typeof crypto.subtle.importKey === 'function' && typeof crypto.getRandomValues === 'function';
+  if (!hasWebCrypto) {
+    console.warn('[LobbyChat] Web Crypto unavailable; lobby encryption disabled for this runtime.');
     return null;
   }
 
@@ -1011,7 +1016,9 @@ export function useLobbyChat() {
     incrementUnread = false
   ) {
     ensureLobbyState(targetRoomId);
-    lobbyMessages[targetRoomId].push({ user, message, isSystem });
+    const normalizedUser = typeof user === 'string' ? user : String(user ?? 'UNKNOWN');
+    const normalizedMessage = typeof message === 'string' ? message : String(message ?? '');
+    lobbyMessages[targetRoomId].push({ user: normalizedUser, message: normalizedMessage, isSystem });
 
     if (incrementUnread && targetRoomId !== activeLobbyId.value) {
       lobbyUnread[targetRoomId] = (lobbyUnread[targetRoomId] || 0) + 1;
@@ -1380,7 +1387,7 @@ export function useLobbyChat() {
         }
       }
       try {
-        await invoke('play_numbers_station_audio', { path: numbersPath });
+        await tauriInvoke('play_numbers_station_audio', { path: numbersPath });
       } catch {}
     }
   }
@@ -1512,8 +1519,11 @@ export function useLobbyChat() {
       if (targetRoomId && joinedLobbies.value.includes(targetRoomId)) {
         try {
           const data = JSON.parse(decryptedRaw);
-          const isInbound = data.u !== username.value;
+          if (!data || typeof data.u !== 'string' || typeof data.m !== 'string') {
+            return;
+          }
 
+          const isInbound = data.u !== username.value;
           if (isInbound) {
             playAlert('message');
           }
@@ -1789,6 +1799,11 @@ export function useLobbyChat() {
     const tauriCore = await tauriCoreModulePromise;
     tauriConvertFileSrc = tauriCore?.convertFileSrc ?? null;
     return tauriCore;
+  }
+
+  async function tauriInvoke<T = unknown>(message: string, payload?: unknown): Promise<T | null> {
+    const tauriCore = await getTauriCoreModule();
+    return tauriCore?.invoke<T>(message, payload as any) ?? null;
   }
 
   function toAssetAudioUrl(basePath: string, fileName: string, convertFileSrc: (filePath: string) => string): string {

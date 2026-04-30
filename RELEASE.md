@@ -1,10 +1,10 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.31**
+🎉 **Release highlights for agent-lobby 0.4.32**
 
-- 🌌 Added a new animated background to the `ChatArea`, bringing richer motion and visual polish to active lobby conversations.
-- 🎯 Fixed `ChatArea` animation sizing so the animation fills the main view and remains visible through the chat overlay.
-- 🔐 Added persistent handle auto-login support so returning users keep their chosen display handle and reconnect faster.
-- 🛠️ Improved session persistence to make lobby returns more seamless while preserving user presence state.
+- 🔧 Fixed hosted web build runtime errors by loading Tauri APIs only in the desktop runtime.
+- 🌐 Added browser-safe fallbacks so the hosted dist can run without leaking Tauri-only code into the web bundle.
+- 🔐 Hardened lobby message handling with malformed payload validation and safe encryption fallback.
+- ✅ Kept the app stable across both Tauri and web deployments while preserving desktop behavior.
 
-> This release focuses on better lobby visuals and more reliable reconnect behavior for returning users.
+> This release focuses on making the hosted web build more robust and compatible while keeping the desktop app intact.

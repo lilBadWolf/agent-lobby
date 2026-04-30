@@ -66,7 +66,11 @@ interface TextLine { letters: TextLetter[]; rowElement?: HTMLElement | null; let
 interface Crumb { id: number; x: number; y: number; vx: number; vy: number; r: number; vr: number; life: number; size: number }
 
 // --- Props ---
-const props = defineProps<{ text: string }>()
+const props = defineProps<{
+  text: string;
+  audioEnabled?: boolean;
+  masterVolume?: number;
+}>()
 const emit = defineEmits<{ (event: 'done'): void }>()
 
 // --- State ---
@@ -116,11 +120,20 @@ const monsterStyle = computed(() => ({
 }))
 
 // --- Audio ---
+function getEffectVolume() {
+  const normalized = Math.max(0, Math.min(1, Number(props.masterVolume ?? 1)));
+  const enabled = props.audioEnabled ?? true;
+  return enabled ? normalized * 0.7 : 0;
+}
+
 function playCrunch() {
   if (!audioRef.value || hasPlayedAudio) return
+  const effectVolume = getEffectVolume()
+  if (effectVolume <= 0) return
+
   hasPlayedAudio = true
   audioRef.value.currentTime = 0
-  audioRef.value.volume = 0.7
+  audioRef.value.volume = effectVolume
   audioRef.value.play().catch(() => {})
 }
 
@@ -130,12 +143,13 @@ function stopCrunch() {
 }
 
 function unlockAudio() {
-  if (!audioUnlocked && audioRef.value && lines.length) {
+  const enabled = props.audioEnabled ?? true;
+  if (!audioUnlocked && audioRef.value && lines.length && enabled && getEffectVolume() > 0) {
     audioUnlocked = true
     audioRef.value.volume = 0.0
     audioRef.value.play().then(() => {
       audioRef.value!.pause()
-      audioRef.value!.volume = 0.7
+      audioRef.value!.volume = getEffectVolume()
     }).catch(() => {})
   }
 }

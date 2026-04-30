@@ -140,7 +140,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from './composables/useTauriApi';
 import { resolvePersistedTheme, useTheme } from './composables/useTheme';
 
 interface MediaLibraryFolder {
@@ -385,7 +385,7 @@ async function openMetadataEditor(track: MediaLibraryTrack) {
 async function loadLibraryTrackMetadata(track: MediaLibraryTrack) {
   try {
     const normalizedPath = normalizeTrackFsPath(track.path);
-    const metadata = await invoke<MediaLibraryMetadataResult | null>('read_agentamp_metadata', { path: normalizedPath });
+    const metadata = await tauriInvoke<MediaLibraryMetadataResult | null>('read_agentamp_metadata', { path: normalizedPath });
     if (!metadata) {
       return;
     }
@@ -439,7 +439,7 @@ function normalizeYearValue(value?: string): string | undefined {
 
 async function writeTrackMetadataToFile(track: MediaLibraryTrack, metadata: MetadataEditFields): Promise<void> {
   const path = normalizeTrackFsPath(track.path);
-  await invoke('save_agentamp_metadata', {
+  await tauriInvoke('save_agentamp_metadata', {
     path,
     metadata: {
       artist: metadata.artist || null,
@@ -582,7 +582,7 @@ function getSortIndicator(field: 'name' | 'artist' | 'genre' | 'album' | 'year' 
 
 async function loadLibraryState() {
   try {
-    const state = await invoke<MediaLibraryState>('load_media_library_state');
+    const state = await tauriInvoke<MediaLibraryState>('load_media_library_state');
     if (state && typeof state === 'object') {
       folders.value = state.folders ?? [];
       tracks.value = state.tracks ?? [];
@@ -604,7 +604,7 @@ async function scanAllFolders() {
 
   for (const folder of folders.value) {
     try {
-      await invoke('scan_media_library_folder', { folderPath: folder.path });
+      await tauriInvoke('scan_media_library_folder', { folderPath: folder.path });
     } catch (error) {
       console.error('Failed to rescan folder:', folder.path, error);
     }
@@ -623,7 +623,7 @@ async function addSelectedTracksToPlaylist() {
   }
 
   try {
-    await invoke('library_add_tracks_to_playlist', {
+    await tauriInvoke('library_add_tracks_to_playlist', {
       tracks: selected.map((track) => ({
         path: track.path,
         artist: track.artist,
@@ -666,7 +666,7 @@ function toggleSelectAll() {
 
 async function addTrackToPlaylist(track: MediaLibraryTrack) {
   try {
-    await invoke('library_add_tracks_to_playlist', {
+    await tauriInvoke('library_add_tracks_to_playlist', {
       tracks: [
         {
           path: track.path,

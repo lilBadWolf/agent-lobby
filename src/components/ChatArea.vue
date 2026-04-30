@@ -471,10 +471,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import type { ComponentPublicInstance } from 'vue';
 import type { ActiveMedia, ChatMessage, UserPresence } from '../types/chat';
 import { useTheme } from '../composables/useTheme';
+import { tauriInvoke } from '../composables/useTauriApi';
 import { useImageDetection } from '../composables/useImageDetection';
 import { getPersistedValue, removePersistedValue, setPersistedValue } from '../composables/usePlatformStorage';
 import { parseAvatarUrl, resolveAvatarSrc, getAvatarObjectPosition } from '../composables/useAvatarPacks';
@@ -860,7 +860,7 @@ async function ensureLocalVideoProxyBaseUrl(): Promise<void> {
   }
 
   try {
-    localVideoProxyBaseUrl.value = await invoke<string>('get_local_video_proxy_base_url');
+    localVideoProxyBaseUrl.value = await tauriInvoke<string>('get_local_video_proxy_base_url');
   } catch {
     localVideoProxyBaseUrl.value = null;
   }

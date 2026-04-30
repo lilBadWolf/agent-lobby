@@ -492,7 +492,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriInvoke } from '../composables/useTauriApi';
 import type { AudioConfig, SlashCommandAlias } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { dmEffectOptions } from '../composables/messageEffectHelpers';
@@ -871,7 +871,7 @@ async function loadLibraryFolders() {
   }
 
   try {
-    const state = await invoke<MediaLibraryState>('load_media_library_state');
+    const state = await tauriInvoke<MediaLibraryState>('load_media_library_state');
     if (state && Array.isArray((state as any).folders)) {
       libraryFolders.value = (state as any).folders.map((folder: any) => String(folder.path)).filter(Boolean);
     }
@@ -888,7 +888,7 @@ async function removeLibraryFolder(folderPath: string) {
   }
 
   try {
-    await invoke('remove_media_library_folder', { folderPath });
+    await tauriInvoke('remove_media_library_folder', { folderPath });
     await loadLibraryFolders();
     libraryStatusMessage.value = 'Folder removed from library.';
   } catch (error) {
@@ -921,7 +921,7 @@ async function promptAddFolderToLibrary() {
     }
 
     libraryStatusMessage.value = `Scanning ${folderPath}...`;
-    await invoke('scan_media_library_folder', { folderPath });
+    await tauriInvoke('scan_media_library_folder', { folderPath });
   } catch (error) {
     console.error('Failed to add library folder:', error);
     libraryStatusMessage.value = 'Failed to add folder to library.';
@@ -978,7 +978,10 @@ async function previewEffect() {
   if (previewElement.value) {
     previewElement.value.innerHTML = '';
     const effectName = dmEffectOptions.find((option) => option.value === localConfig.value.dmChatEffect)?.label ?? localConfig.value.dmChatEffect.toUpperCase();
-    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value);
+    await playAnimation(localConfig.value.dmChatEffect as any, effectName, previewElement.value, {
+      audioEnabled: localConfig.value.audioEnabled,
+      masterVolume: localConfig.value.volume,
+    });
     setTimeout(() => {
       showEffectPreview.value = false;
     }, 300);
@@ -1049,7 +1052,7 @@ async function toggleVideoPreview() {
 
 async function openThemesFolder() {
   try {
-    await invoke('open_themes_folder');
+    await tauriInvoke('open_themes_folder');
   } catch (error) {
     console.error('Failed to open themes folder:', error);
   }
@@ -1057,7 +1060,7 @@ async function openThemesFolder() {
 
 async function openSoundpacksFolder() {
   try {
-    await invoke('open_soundpacks_folder');
+    await tauriInvoke('open_soundpacks_folder');
   } catch (error) {
     console.error('Failed to open soundpacks folder:', error);
   }

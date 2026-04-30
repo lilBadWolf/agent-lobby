@@ -34,10 +34,16 @@ const effectComponentMap: Record<Exclude<AnimationEffect, 'none'>, any> = {
   inferno: InfernoEffect,
 };
 
+interface MessageAnimationOptions {
+  audioEnabled?: boolean;
+  masterVolume?: number;
+}
+
 function mountEffectComponent(
   effect: Exclude<AnimationEffect, 'none'>,
   text: string,
-  element: HTMLElement
+  element: HTMLElement,
+  options?: MessageAnimationOptions
 ): Promise<void> {
   ensureAnimationStyles();
   element.innerHTML = '';
@@ -51,6 +57,7 @@ function mountEffectComponent(
   return new Promise<void>((resolve) => {
     const app = createApp(component, {
       text,
+      ...options,
       onDone: () => {
         try {
           app.unmount();
@@ -69,7 +76,12 @@ function mountEffectComponent(
 export function useMessageAnimations() {
   const isPlaying = ref(false);
 
-  async function playAnimation(effect: AnimationEffect, text: string, element?: HTMLElement | null): Promise<void> {
+  async function playAnimation(
+    effect: AnimationEffect,
+    text: string,
+    element?: HTMLElement | null,
+    options?: MessageAnimationOptions
+  ): Promise<void> {
     if (!element || !text) return;
 
     isPlaying.value = true;
@@ -79,7 +91,7 @@ export function useMessageAnimations() {
         return;
       }
 
-      await mountEffectComponent(effect, text, element);
+      await mountEffectComponent(effect, text, element, options);
     } finally {
       isPlaying.value = false;
     }

@@ -189,6 +189,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import type { DMChat, DMRequest, AudioCallRequest, VideoCallRequest, DMNotice, FileTransferState } from '../types/directMessage';
+import type { AudioConfig } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import VideoWindow from './VideoWindow.vue';
@@ -207,6 +208,7 @@ const props = defineProps<{
   notices: DMNotice[];
   username: string;
   dmChatEffect: string;
+  audioConfig?: AudioConfig | null;
   focusedDMUser?: string | null;
   showHeaderClose?: boolean;
   showHeaderTitle?: boolean;
@@ -915,7 +917,10 @@ async function processPendingMessage(): Promise<void> {
 
   const effect = (nextMsg.effect || 'none') as 'none' | 'typewriter' | 'scan' | 'codex' | 'glitch' | 'flames' | 'rust' | 'bubbles' | 'smoke' | 'inferno';
   try {
-    await playAnimation(effect, nextMsg.message, textContainer);
+    await playAnimation(effect, nextMsg.message, textContainer, {
+      audioEnabled: props.audioConfig?.audioEnabled ?? true,
+      masterVolume: props.audioConfig?.volume ?? 1,
+    });
   } catch (e) {
     console.error('Animation error:', e);
     textContainer.textContent = nextMsg.message;

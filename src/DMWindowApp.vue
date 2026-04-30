@@ -56,6 +56,7 @@
       :notices="viewNotices"
       :username="viewUsername"
       :dm-chat-effect="dmChatEffect"
+      :audio-config="runtimeAudioConfig"
       :focused-dm-user="focusedDMUser"
       @close="handleClose"
       @accept-dm="handleAcceptDM"

@@ -349,8 +349,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
 import { getPersistedValue, setPersistedValue, removePersistedValue } from '../composables/usePlatformStorage';
+import { tauriInvoke } from '../composables/useTauriApi';
 import SpectrumAnalyzer from './SpectrumAnalyzer.vue';
 
 type TauriDialogModule = typeof import('@tauri-apps/plugin-dialog');
@@ -1224,7 +1224,7 @@ async function writeTrackMetadataToFile(track: PlaylistTrack, metadata: Metadata
   }
 
   const path = normalizeTrackFsPath(track.location);
-  await invoke('save_agentamp_metadata', {
+  await tauriInvoke('save_agentamp_metadata', {
     path,
     metadata: {
       artist: metadata.artist || null,
@@ -1930,7 +1930,7 @@ async function addTracksFromLibraryEntries(entries: MediaLibraryAddPayload[]) {
 async function lookupMediaLibraryTrack(path: string): Promise<MediaLibraryLookupResult | null> {
   try {
     const normalizedPath = normalizeTrackFsPath(path);
-    return await invoke<MediaLibraryLookupResult | null>('lookup_media_library_track', { path: normalizedPath });
+    return await tauriInvoke<MediaLibraryLookupResult | null>('lookup_media_library_track', { path: normalizedPath });
   } catch (error) {
     console.warn('Failed to query media library for metadata:', error);
     return null;
@@ -1939,7 +1939,7 @@ async function lookupMediaLibraryTrack(path: string): Promise<MediaLibraryLookup
 
 async function addMediaLibraryTrack(payload: MediaLibraryAddTrackPayload): Promise<boolean> {
   try {
-    await invoke('add_media_library_track', payload);
+    await tauriInvoke('add_media_library_track', payload);
     return true;
   } catch (error) {
     console.warn('Failed to save track to media library:', error);

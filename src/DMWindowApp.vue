@@ -76,6 +76,10 @@
       @accept-pong="handleAcceptPong"
       @reject-pong="handleRejectPong"
       @cancel-pong="handleCancelPong"
+      @request-battleship="handleRequestBattleship"
+      @accept-battleship="handleAcceptBattleship"
+      @reject-battleship="handleRejectBattleship"
+      @cancel-battleship="handleCancelBattleship"
       @request-audio="handleRequestAudio"
       @toggle-audio="handleToggleAudio"
       @request-video="handleRequestVideo"
@@ -650,6 +654,26 @@ function handleRejectPong(user: string) {
 function handleCancelPong(user: string) {
   debugLog('handleCancelPong', { user });
   dmRuntime.value?.sendPongCancel(user);
+}
+
+function handleRequestBattleship(user: string) {
+  debugLog('handleRequestBattleship', { user });
+  dmRuntime.value?.sendBattleshipRequest(user);
+}
+
+function handleAcceptBattleship(user: string) {
+  debugLog('handleAcceptBattleship', { user });
+  dmRuntime.value?.sendBattleshipAccept(user);
+}
+
+function handleRejectBattleship(user: string) {
+  debugLog('handleRejectBattleship', { user });
+  dmRuntime.value?.sendBattleshipReject(user);
+}
+
+function handleCancelBattleship(user: string) {
+  debugLog('handleCancelBattleship', { user });
+  dmRuntime.value?.sendBattleshipCancel(user);
 }
 
 function handleRequestAudio(user: string) {

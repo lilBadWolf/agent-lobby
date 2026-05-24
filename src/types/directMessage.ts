@@ -59,6 +59,10 @@ export interface DMNotice {
     | 'pong-accept'
     | 'pong-reject'
     | 'pong-cancel'
+    | 'battleship-request'
+    | 'battleship-accept'
+    | 'battleship-reject'
+    | 'battleship-cancel'
     | 'info'
     | 'file-offer';
   from?: string;

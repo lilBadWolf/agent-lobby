@@ -108,7 +108,7 @@ export function useDirectMessage(
 
   function pushNotice(
     message: string,
-    type?: 'audio-call' | 'video-call' | 'call-status' | 'pong-request' | 'pong-accept' | 'pong-reject' | 'pong-cancel' | 'info' | 'file-offer',
+    type?: 'audio-call' | 'video-call' | 'call-status' | 'pong-request' | 'pong-accept' | 'pong-reject' | 'pong-cancel' | 'battleship-request' | 'battleship-accept' | 'battleship-reject' | 'battleship-cancel' | 'info' | 'file-offer',
     from?: string,
     fileId?: string,
     timeout = 4000
@@ -167,6 +167,26 @@ export function useDirectMessage(
   function sendPongCancel(user: string) {
     if (isPresenceRuntime) return;
     sendDataChannelMessage(user, { type: 'pong-cancel' });
+  }
+
+  function sendBattleshipRequest(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'battleship-request' });
+  }
+
+  function sendBattleshipAccept(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'battleship-accept' });
+  }
+
+  function sendBattleshipReject(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'battleship-reject' });
+  }
+
+  function sendBattleshipCancel(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'battleship-cancel' });
   }
 
   // Start call duration timer
@@ -803,7 +823,31 @@ export function useDirectMessage(
           return;
         }
 
+        if (data.type === 'battleship-request') {
+          pushNotice(`${otherUser} wants to play BATTLESHIP`, 'battleship-request', otherUser, undefined, 10000);
+          return;
+        }
+
+        if (data.type === 'battleship-accept') {
+          pushNotice(`${otherUser} accepted your BATTLESHIP request`, 'battleship-accept', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'battleship-reject') {
+          pushNotice(`${otherUser} declined your BATTLESHIP request`, 'battleship-reject', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'battleship-cancel') {
+          pushNotice(`${otherUser} canceled the BATTLESHIP request`, 'battleship-cancel', otherUser, undefined, 4000);
+          return;
+        }
+
         if (data.type?.startsWith('pong-')) {
+          return;
+        }
+
+        if (data.type?.startsWith('battleship-')) {
           return;
         }
 
@@ -2343,6 +2387,10 @@ export function useDirectMessage(
     sendPongAccept,
     sendPongReject,
     sendPongCancel,
+    sendBattleshipRequest,
+    sendBattleshipAccept,
+    sendBattleshipReject,
+    sendBattleshipCancel,
     cleanup
   };
 }

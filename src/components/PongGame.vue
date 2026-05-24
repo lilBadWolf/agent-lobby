@@ -174,8 +174,12 @@ function playPongGameOver() {
   playTone(120, 0.14, 'sine');
 }
 
-function clampX(x: number) {
+function clampPaddleX(x: number) {
   return Math.max(0, Math.min(x, boardWidth - paddleWidth));
+}
+
+function clampBallX(x: number) {
+  return Math.max(0, Math.min(x, boardWidth - ballSize));
 }
 
 function sendPongMessage(message: Record<string, unknown>) {
@@ -285,15 +289,27 @@ function stopGame(message: string) {
 function pauseForFocusLoss() {
   if (isRunning.value) {
     pausedDueToFocusLoss.value = true;
-    stopGame('Paused — window lost focus');
+    isRunning.value = false;
+    statusMessage.value = 'Paused — window lost focus';
+    if (rafId.value !== null) {
+      cancelAnimationFrame(rafId.value);
+      rafId.value = null;
+    }
   }
 }
 
 function resumeAfterFocusGain() {
   if (pausedDueToFocusLoss.value) {
     pausedDueToFocusLoss.value = false;
-    statusMessage.value = 'Resuming PONG...';
-    startGame();
+    statusMessage.value = 'PONG resumed';
+
+    if (!authority.value) {
+      startGame();
+      return;
+    }
+
+    isRunning.value = true;
+    scheduleFrame();
   }
 }
 
@@ -308,18 +324,18 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   if (event.key === 'ArrowLeft') {
-    localPaddleX.value = clampX(localPaddleX.value - 20);
+    localPaddleX.value = clampPaddleX(localPaddleX.value - 20);
     sendPaddleUpdate();
     event.preventDefault();
   } else if (event.key === 'ArrowRight') {
-    localPaddleX.value = clampX(localPaddleX.value + 20);
+    localPaddleX.value = clampPaddleX(localPaddleX.value + 20);
     sendPaddleUpdate();
     event.preventDefault();
   }
 }
 
 function updateRemotePaddle(x: number) {
-  remotePaddleX.value = clampX(x);
+  remotePaddleX.value = clampPaddleX(x);
 }
 
 function updateBallFromMessage(data: any) {
@@ -332,7 +348,7 @@ function updateBallFromMessage(data: any) {
     return;
   }
 
-  ballX.value = clampX(data.ballX);
+  ballX.value = clampBallX(data.ballX);
   ballY.value = Math.max(0, Math.min(data.ballY, boardHeight - ballSize));
   ballVelX.value = data.velX;
   ballVelY.value = data.velY;
@@ -441,7 +457,7 @@ function frame(now: number) {
   ballY.value += ballVelY.value * delta;
 
   if (ballX.value <= 0 || ballX.value >= boardWidth - ballSize) {
-    ballX.value = clampX(ballX.value);
+    ballX.value = clampBallX(ballX.value);
     ballVelX.value = -ballVelX.value;
     playPongBounce();
   }

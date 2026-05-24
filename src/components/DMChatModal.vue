@@ -24,9 +24,9 @@
               :class="[notice.type || 'info', { 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status' }]"
             >
               <span>{{ notice.message }}</span>
-              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer' || notice.type === 'pong-request'" class="notice-buttons" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }">
-                <button class="btn-accept" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="acceptNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' ? '✅' : 'ACCEPT' }}</button>
-                <button class="btn-reject" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="rejectNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' ? '❌' : 'REJECT' }}</button>
+              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer' || notice.type === 'pong-request' || notice.type === 'battleship-request'" class="notice-buttons" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }">
+                <button class="btn-accept" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="acceptNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' || notice.type === 'battleship-request' ? '✅' : 'ACCEPT' }}</button>
+                <button class="btn-reject" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="rejectNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' || notice.type === 'battleship-request' ? '❌' : 'REJECT' }}</button>
               </div>
             </div>
 
@@ -145,20 +145,36 @@
               </div>
             </div>
 
-            <div class="pong-start-bar" v-if="canShowPong && !isPongVisible">
-              <button class="pong-launch-btn" type="button" @click="requestPong">
-                START PONG
+            <div class="game-start-bar" v-if="canShowGames && !activeGame">
+              <label class="game-picker" for="dm-game-select">
+                <span>Game</span>
+                <select id="dm-game-select" v-model="selectedGame">
+                  <option v-for="option in gameOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <button class="game-launch-btn" type="button" @click="launchSelectedGame">
+                START
               </button>
             </div>
 
-            <div v-if="isPongVisible" class="pong-game-container">
+            <div v-if="activeGame" class="pong-game-container">
               <PongGame
+                v-if="activeGame === 'pong'"
                 :user="props.username"
-                :peer-name="currentTab"
-                :data-channel="getCurrentChat()?.dataChannel ?? null"
+                :peer-name="activeGameUser || currentTab"
+                :data-channel="getGameChat()?.dataChannel ?? null"
                 :start-signal="pongStartSignal"
-                :waiting-for-acceptance="isPongRequestPending"
-                @close="closePong"
+                :waiting-for-acceptance="pendingGameRequest === 'pong'"
+                @close="closeActiveGame"
+              />
+              <BattleshipGame
+                v-else
+                :user="props.username"
+                :peer-name="activeGameUser || currentTab"
+                :data-channel="getGameChat()?.dataChannel ?? null"
+                :start-signal="battleshipStartSignal"
+                :waiting-for-acceptance="pendingGameRequest === 'battleship'"
+                @close="closeActiveGame"
               />
             </div>
 
@@ -213,6 +229,7 @@ import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import VideoWindow from './VideoWindow.vue';
 import PongGame from './PongGame.vue';
+import BattleshipGame from './BattleshipGame.vue';
 
 type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
 type TauriPathModule = typeof import('@tauri-apps/api/path');
@@ -239,11 +256,21 @@ const showHeaderClose = computed(() => props.showHeaderClose ?? true);
 const showHeaderTitle = computed(() => props.showHeaderTitle ?? true);
 const showHeaderBar = computed(() => showHeaderClose.value || showHeaderTitle.value);
 const presentationMode = computed(() => props.presentation ?? 'modal');
-const isPongVisible = ref(false);
-const isPongRequestPending = ref(false);
-const isPongInitiator = ref(false);
+type DMGameType = 'pong' | 'battleship';
+
+const gameOptions: Array<{ value: DMGameType; label: string }> = [
+  { value: 'pong', label: 'PONG' },
+  { value: 'battleship', label: 'BATTLESHIP' },
+];
+
+const selectedGame = ref<DMGameType>('pong');
+const activeGame = ref<DMGameType | null>(null);
+const pendingGameRequest = ref<DMGameType | null>(null);
+const isGameInitiator = ref(false);
+const activeGameUser = ref<string | null>(null);
 const pongStartSignal = ref(0);
-const canShowPong = computed(() => {
+const battleshipStartSignal = ref(0);
+const canShowGames = computed(() => {
   const chat = getCurrentChat();
   return Boolean(chat?.isConnected);
 });
@@ -254,22 +281,61 @@ const isWaitingForConnection = computed(() => {
 
 function requestPong() {
   if (!currentTab.value) return;
-  isPongVisible.value = true;
-  isPongRequestPending.value = true;
-  isPongInitiator.value = true;
+  activeGame.value = 'pong';
+  activeGameUser.value = currentTab.value;
+  pendingGameRequest.value = 'pong';
+  isGameInitiator.value = true;
   pongStartSignal.value = 0;
   emit('requestPong', currentTab.value);
 }
 
-function closePong() {
-  if (isPongRequestPending.value && currentTab.value) {
-    emit('cancelPong', currentTab.value);
+function requestBattleship() {
+  if (!currentTab.value) return;
+  activeGame.value = 'battleship';
+  activeGameUser.value = currentTab.value;
+  pendingGameRequest.value = 'battleship';
+  isGameInitiator.value = true;
+  battleshipStartSignal.value = 0;
+  emit('requestBattleship', currentTab.value);
+}
+
+function launchSelectedGame() {
+  if (selectedGame.value === 'pong') {
+    requestPong();
+    return;
   }
 
-  isPongVisible.value = false;
-  isPongRequestPending.value = false;
-  isPongInitiator.value = false;
+  requestBattleship();
+}
+
+function closeActiveGame() {
+  const targetUser = activeGameUser.value ?? currentTab.value;
+  const gameToCancel = pendingGameRequest.value ?? activeGame.value;
+  if (gameToCancel && targetUser) {
+    if (gameToCancel === 'pong') {
+      emit('cancelPong', targetUser);
+    }
+
+    if (gameToCancel === 'battleship') {
+      emit('cancelBattleship', targetUser);
+    }
+  }
+
+  activeGame.value = null;
+  activeGameUser.value = null;
+  pendingGameRequest.value = null;
+  isGameInitiator.value = false;
   pongStartSignal.value = 0;
+  battleshipStartSignal.value = 0;
+}
+
+function getGameChat(): DMChat | undefined {
+  const user = activeGameUser.value;
+  if (!user) {
+    return undefined;
+  }
+
+  return props.activeChats.get(user);
 }
 
 const emit = defineEmits<{
@@ -287,6 +353,10 @@ const emit = defineEmits<{
   acceptPong: [user: string];
   rejectPong: [user: string];
   cancelPong: [user: string];
+  requestBattleship: [user: string];
+  acceptBattleship: [user: string];
+  rejectBattleship: [user: string];
+  cancelBattleship: [user: string];
   'update:dmChatEffect': [effect: string];
   cancelPendingMessages: [user: string];
   typing: [user: string];
@@ -446,7 +516,19 @@ const chatToastNotices = computed(() => {
   if (!currentTab.value) return [];
 
   return props.notices.filter((notice) => {
-    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status') {
+    if (
+      notice.type === 'audio-call'
+      || notice.type === 'video-call'
+      || notice.type === 'call-status'
+      || notice.type === 'pong-request'
+      || notice.type === 'pong-accept'
+      || notice.type === 'pong-reject'
+      || notice.type === 'pong-cancel'
+      || notice.type === 'battleship-request'
+      || notice.type === 'battleship-accept'
+      || notice.type === 'battleship-reject'
+      || notice.type === 'battleship-cancel'
+    ) {
       return sameDMUser(notice.from, currentTab.value);
     }
 
@@ -476,10 +558,22 @@ function acceptNotice(notice: DMNotice) {
   }
 
   if (notice.type === 'pong-request') {
-    isPongVisible.value = true;
-    isPongRequestPending.value = false;
-    isPongInitiator.value = false;
+    activeGame.value = 'pong';
+    activeGameUser.value = notice.from;
+    pendingGameRequest.value = null;
+    isGameInitiator.value = false;
+    pongStartSignal.value += 1;
     emit('acceptPong', notice.from);
+    return;
+  }
+
+  if (notice.type === 'battleship-request') {
+    activeGame.value = 'battleship';
+    activeGameUser.value = notice.from;
+    pendingGameRequest.value = null;
+    isGameInitiator.value = false;
+    battleshipStartSignal.value += 1;
+    emit('acceptBattleship', notice.from);
     return;
   }
 
@@ -503,6 +597,11 @@ function rejectNotice(notice: DMNotice) {
 
   if (notice.type === 'pong-request') {
     emit('rejectPong', notice.from);
+    return;
+  }
+
+  if (notice.type === 'battleship-request') {
+    emit('rejectBattleship', notice.from);
     return;
   }
 
@@ -537,24 +636,60 @@ watch(
 
     const matchingNotice = newNotices.find(
       (notice) => sameDMUser(notice.from, currentTab.value)
-        && (notice.type === 'pong-accept' || notice.type === 'pong-reject' || notice.type === 'pong-cancel')
+        && (
+          notice.type === 'pong-accept'
+          || notice.type === 'pong-reject'
+          || notice.type === 'pong-cancel'
+          || notice.type === 'battleship-accept'
+          || notice.type === 'battleship-reject'
+          || notice.type === 'battleship-cancel'
+        )
     );
 
     if (!matchingNotice) return;
 
-    if (isPongInitiator.value && isPongRequestPending.value && matchingNotice.type === 'pong-accept') {
+    if (isGameInitiator.value && pendingGameRequest.value === 'pong' && matchingNotice.type === 'pong-accept') {
       pongStartSignal.value += 1;
-      isPongRequestPending.value = false;
+      pendingGameRequest.value = null;
     }
 
-    if (isPongInitiator.value && isPongRequestPending.value && matchingNotice.type === 'pong-reject') {
-      isPongRequestPending.value = false;
-      isPongVisible.value = false;
+    if (isGameInitiator.value && pendingGameRequest.value === 'battleship' && matchingNotice.type === 'battleship-accept') {
+      battleshipStartSignal.value += 1;
+      pendingGameRequest.value = null;
     }
 
-    if (!isPongInitiator.value && matchingNotice.type === 'pong-cancel') {
-      isPongVisible.value = false;
-      isPongRequestPending.value = false;
+    if (
+      isGameInitiator.value
+      && pendingGameRequest.value === 'pong'
+      && matchingNotice.type === 'pong-reject'
+    ) {
+      pendingGameRequest.value = null;
+      activeGame.value = null;
+      activeGameUser.value = null;
+    }
+
+    if (
+      isGameInitiator.value
+      && pendingGameRequest.value === 'battleship'
+      && matchingNotice.type === 'battleship-reject'
+    ) {
+      pendingGameRequest.value = null;
+      activeGame.value = null;
+      activeGameUser.value = null;
+    }
+
+    if (matchingNotice.type === 'pong-cancel' && activeGame.value === 'pong') {
+      pendingGameRequest.value = null;
+      activeGame.value = null;
+      activeGameUser.value = null;
+      isGameInitiator.value = false;
+    }
+
+    if (matchingNotice.type === 'battleship-cancel' && activeGame.value === 'battleship') {
+      pendingGameRequest.value = null;
+      activeGame.value = null;
+      activeGameUser.value = null;
+      isGameInitiator.value = false;
     }
   },
   { deep: true }
@@ -773,14 +908,17 @@ function rejectFileTransfer(fileId: string) {
   emit('rejectFile', currentTab.value, fileId);
 }
 
-function handlePongCloseOnTabChange() {
-  if (!canShowPong.value) {
-    isPongVisible.value = false;
+function handleGameCloseOnTabChange() {
+  if (!canShowGames.value) {
+    activeGame.value = null;
+    activeGameUser.value = null;
+    pendingGameRequest.value = null;
+    isGameInitiator.value = false;
   }
 }
 
-  watch(currentTab, handlePongCloseOnTabChange);
-  watch(() => props.activeChats, handlePongCloseOnTabChange, { deep: true });
+  watch(currentTab, handleGameCloseOnTabChange);
+  watch(() => props.activeChats, handleGameCloseOnTabChange, { deep: true });
 function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim() || 'download.bin';
 }
@@ -1221,6 +1359,14 @@ watch(
   text-shadow: 0 0 8px rgba(105, 255, 130, 0.35);
 }
 
+.notice-item.battleship-request {
+  border-color: #5ad8ff;
+  background: rgba(1, 17, 30, 0.95);
+  color: #c8efff;
+  box-shadow: 0 0 18px rgba(90, 186, 255, 0.2);
+  text-shadow: 0 0 8px rgba(120, 210, 255, 0.35);
+}
+
 .notice-item.pong-accept,
 .notice-item.pong-reject,
 .notice-item.pong-cancel {
@@ -1228,6 +1374,15 @@ watch(
   background: rgba(8, 24, 8, 0.95);
   color: #c9ffd1;
   box-shadow: 0 0 14px rgba(90, 255, 120, 0.2);
+}
+
+.notice-item.battleship-accept,
+.notice-item.battleship-reject,
+.notice-item.battleship-cancel {
+  border-color: #6acfff;
+  background: rgba(8, 20, 34, 0.96);
+  color: #d4f2ff;
+  box-shadow: 0 0 14px rgba(90, 175, 255, 0.2);
 }
 
 .notice-item.info {
@@ -1771,49 +1926,64 @@ watch(
   height: 100%;
 }
 
-.pong-launch-btn {
-  border: 1px solid var(--color-accent);
-  background: transparent;
-  color: var(--color-accent);
-  padding: 0 16px;
-  margin-left: 8px;
-  min-width: 96px;
-  font-size: 11px;
-  text-transform: uppercase;
-  cursor: pointer;
-  border-radius: 3px;
-}
-
-.pong-launch-btn:hover {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-}
-
 .pong-game-container {
   margin: 10px 0 0;
 }
 
-.pong-start-bar {
+.game-start-bar {
   padding: 12px 20px 0;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
 }
 
-.pong-launch-btn {
+.game-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  border: 1px solid var(--color-accent-muted);
+  background: var(--color-chat-surface);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--color-chat-text);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.game-picker select {
+  background: transparent;
+  border: none;
+  color: var(--color-accent);
+  font-family: inherit;
+  font-size: 11px;
+  text-transform: uppercase;
+  outline: none;
+  cursor: pointer;
+}
+
+.game-launch-btn {
   border: 1px solid var(--color-accent);
   background: transparent;
   color: var(--color-accent);
   padding: 8px 14px;
-  font-size: 11px;
+  min-width: 92px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
   border-radius: 4px;
   font-family: inherit;
+  box-shadow: 0 0 14px color-mix(in oklab, var(--color-accent) 24%, transparent);
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
-.pong-launch-btn:hover {
+.game-launch-btn:hover {
   background: var(--color-accent);
   color: var(--color-on-accent);
+  transform: translateY(-1px);
 }
 
 .pong-game-container {

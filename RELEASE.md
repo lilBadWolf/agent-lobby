@@ -1,6 +1,6 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.4.33**
+🚀 **Release highlights for agent-lobby 0.4.34**
 
 - 🕹️ Added in-DM mini games so you can play directly with friends while chatting.
 - 🎮 Introduced **Pong** for fast retro head-to-head rounds.

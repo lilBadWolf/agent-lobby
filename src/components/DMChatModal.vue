@@ -394,7 +394,7 @@ const chatToastNotices = computed(() => {
   if (!currentTab.value) return [];
 
   return props.notices.filter((notice) => {
-    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status' || notice.type === 'file-offer') {
+    if (notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status') {
       return sameDMUser(notice.from, currentTab.value);
     }
 

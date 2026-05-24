@@ -108,7 +108,7 @@ export function useDirectMessage(
 
   function pushNotice(
     message: string,
-    type?: 'audio-call' | 'video-call' | 'call-status' | 'info' | 'file-offer',
+    type?: 'audio-call' | 'video-call' | 'call-status' | 'pong-request' | 'pong-accept' | 'pong-reject' | 'pong-cancel' | 'info' | 'file-offer',
     from?: string,
     fileId?: string,
     timeout = 4000
@@ -131,6 +131,42 @@ export function useDirectMessage(
 
       return notice.from !== fromUser;
     });
+  }
+
+  function sendDataChannelMessage(user: string, payload: Record<string, unknown>) {
+    const chat = activeChats.value.get(user);
+    const channel = chat?.dataChannel;
+    if (!channel || channel.readyState !== 'open') {
+      return false;
+    }
+
+    try {
+      channel.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      console.error('[DM] Failed to send data channel message:', error);
+      return false;
+    }
+  }
+
+  function sendPongRequest(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'pong-request' });
+  }
+
+  function sendPongAccept(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'pong-accept' });
+  }
+
+  function sendPongReject(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'pong-reject' });
+  }
+
+  function sendPongCancel(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'pong-cancel' });
   }
 
   // Start call duration timer
@@ -744,6 +780,30 @@ export function useDirectMessage(
           chat.videoEnabled = Boolean(data.enabled);
           chat.videoCallActive = Boolean(data.enabled);
           setOrUpdateChat(otherUser, chat);
+          return;
+        }
+
+        if (data.type === 'pong-request') {
+          pushNotice(`${otherUser} wants to play PONG`, 'pong-request', otherUser, undefined, 10000);
+          return;
+        }
+
+        if (data.type === 'pong-accept') {
+          pushNotice(`${otherUser} accepted your PONG request`, 'pong-accept', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'pong-reject') {
+          pushNotice(`${otherUser} declined your PONG request`, 'pong-reject', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'pong-cancel') {
+          pushNotice(`${otherUser} canceled the PONG request`, 'pong-cancel', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type?.startsWith('pong-')) {
           return;
         }
 
@@ -2279,6 +2339,10 @@ export function useDirectMessage(
     markFileSaved,
     removeFileTransfer,
     ensureDirectLine,
+    sendPongRequest,
+    sendPongAccept,
+    sendPongReject,
+    sendPongCancel,
     cleanup
   };
 }

@@ -72,6 +72,10 @@
       @stop-typing="handleStopTyping"
       @cancel-pending-messages="handleCancelPendingMessages"
       @close-dm="handleCloseDM"
+      @request-pong="handleRequestPong"
+      @accept-pong="handleAcceptPong"
+      @reject-pong="handleRejectPong"
+      @cancel-pong="handleCancelPong"
       @request-audio="handleRequestAudio"
       @toggle-audio="handleToggleAudio"
       @request-video="handleRequestVideo"
@@ -626,6 +630,26 @@ function handleCloseDM(user: string) {
   debugLog('handleCloseDM', { user });
   dmRuntime.value?.closeDM(user);
   void sendAction({ type: 'closeDm', user });
+}
+
+function handleRequestPong(user: string) {
+  debugLog('handleRequestPong', { user });
+  dmRuntime.value?.sendPongRequest(user);
+}
+
+function handleAcceptPong(user: string) {
+  debugLog('handleAcceptPong', { user });
+  dmRuntime.value?.sendPongAccept(user);
+}
+
+function handleRejectPong(user: string) {
+  debugLog('handleRejectPong', { user });
+  dmRuntime.value?.sendPongReject(user);
+}
+
+function handleCancelPong(user: string) {
+  debugLog('handleCancelPong', { user });
+  dmRuntime.value?.sendPongCancel(user);
 }
 
 function handleRequestAudio(user: string) {

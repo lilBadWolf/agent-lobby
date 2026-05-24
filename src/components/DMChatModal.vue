@@ -24,9 +24,9 @@
               :class="[notice.type || 'info', { 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'call-status' }]"
             >
               <span>{{ notice.message }}</span>
-              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer'" class="notice-buttons" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }">
-                <button class="btn-accept" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="acceptNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' ? '✅' : 'ACCEPT' }}</button>
-                <button class="btn-reject" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="rejectNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' ? '❌' : 'REJECT' }}</button>
+              <div v-if="notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'file-offer' || notice.type === 'pong-request'" class="notice-buttons" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }">
+                <button class="btn-accept" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="acceptNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' ? '✅' : 'ACCEPT' }}</button>
+                <button class="btn-reject" :class="{ 'stack-like': notice.type === 'audio-call' || notice.type === 'video-call' }" @click="rejectNotice(notice)">{{ notice.type === 'audio-call' || notice.type === 'video-call' || notice.type === 'pong-request' ? '❌' : 'REJECT' }}</button>
               </div>
             </div>
 
@@ -145,38 +145,57 @@
               </div>
             </div>
 
-            <!-- Input -->
-            <div class="input-bar">
-              <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
-                ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
-              </div>
-              <input
-                v-model="messageInput"
-                type="text"
-                placeholder="Type message..."
-                :disabled="!getCurrentChat()?.isConnected"
-                @keydown.enter.prevent="handleMessageInputEnter"
-              />
-              <div class="dm-effect-picker">
-                <select
-                  id="dm-effect-select"
-                  :value="props.dmChatEffect"
-                  @change="handleDmEffectChange"
-                  :disabled="!getCurrentChat()?.isConnected"
-                >
-                  <option v-for="option in dmEffectOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-              <button
-                class="send-btn"
-                :disabled="!getCurrentChat()?.isConnected"
-                @click="sendMessage"
-              >
-                SEND
+            <div class="pong-start-bar" v-if="canShowPong && !isPongVisible">
+              <button class="pong-launch-btn" type="button" @click="requestPong">
+                START PONG
               </button>
             </div>
+
+            <div v-if="isPongVisible" class="pong-game-container">
+              <PongGame
+                :user="props.username"
+                :peer-name="currentTab"
+                :data-channel="getCurrentChat()?.dataChannel ?? null"
+                :start-signal="pongStartSignal"
+                :waiting-for-acceptance="isPongRequestPending"
+                @close="closePong"
+              />
+            </div>
+
+            <template v-else>
+              <!-- Input -->
+              <div class="input-bar">
+                <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
+                  ⏳ {{ getCurrentChat()?.pendingDisplayMessages.length }} waiting to display
+                </div>
+                <input
+                  v-model="messageInput"
+                  type="text"
+                  placeholder="Type message..."
+                  :disabled="!getCurrentChat()?.isConnected"
+                  @keydown.enter.prevent="handleMessageInputEnter"
+                />
+                <div class="dm-effect-picker">
+                  <select
+                    id="dm-effect-select"
+                    :value="props.dmChatEffect"
+                    @change="handleDmEffectChange"
+                    :disabled="!getCurrentChat()?.isConnected"
+                  >
+                    <option v-for="option in dmEffectOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </div>
+                <button
+                  class="send-btn"
+                  :disabled="!getCurrentChat()?.isConnected"
+                  @click="sendMessage"
+                >
+                  SEND
+                </button>
+              </div>
+            </template>
           </template>
         </div>
 
@@ -193,6 +212,7 @@ import type { AudioConfig } from '../types/chat';
 import { useMessageAnimations } from '../composables/useMessageAnimations';
 import { dmEffectOptions } from '../composables/messageEffectHelpers';
 import VideoWindow from './VideoWindow.vue';
+import PongGame from './PongGame.vue';
 
 type TauriFsModule = typeof import('@tauri-apps/plugin-fs');
 type TauriPathModule = typeof import('@tauri-apps/api/path');
@@ -219,10 +239,38 @@ const showHeaderClose = computed(() => props.showHeaderClose ?? true);
 const showHeaderTitle = computed(() => props.showHeaderTitle ?? true);
 const showHeaderBar = computed(() => showHeaderClose.value || showHeaderTitle.value);
 const presentationMode = computed(() => props.presentation ?? 'modal');
+const isPongVisible = ref(false);
+const isPongRequestPending = ref(false);
+const isPongInitiator = ref(false);
+const pongStartSignal = ref(0);
+const canShowPong = computed(() => {
+  const chat = getCurrentChat();
+  return Boolean(chat?.isConnected);
+});
 const isWaitingForConnection = computed(() => {
   const chat = getCurrentChat();
   return Boolean(currentTab.value && chat && !chat.isConnected);
 });
+
+function requestPong() {
+  if (!currentTab.value) return;
+  isPongVisible.value = true;
+  isPongRequestPending.value = true;
+  isPongInitiator.value = true;
+  pongStartSignal.value = 0;
+  emit('requestPong', currentTab.value);
+}
+
+function closePong() {
+  if (isPongRequestPending.value && currentTab.value) {
+    emit('cancelPong', currentTab.value);
+  }
+
+  isPongVisible.value = false;
+  isPongRequestPending.value = false;
+  isPongInitiator.value = false;
+  pongStartSignal.value = 0;
+}
 
 const emit = defineEmits<{
   close: [];
@@ -235,6 +283,10 @@ const emit = defineEmits<{
   cancelRequest: [user: string];
   sendMessage: [user: string, message: string, effect: string];
   closeDm: [user: string];
+  requestPong: [user: string];
+  acceptPong: [user: string];
+  rejectPong: [user: string];
+  cancelPong: [user: string];
   'update:dmChatEffect': [effect: string];
   cancelPendingMessages: [user: string];
   typing: [user: string];
@@ -423,6 +475,14 @@ function acceptNotice(notice: DMNotice) {
     return;
   }
 
+  if (notice.type === 'pong-request') {
+    isPongVisible.value = true;
+    isPongRequestPending.value = false;
+    isPongInitiator.value = false;
+    emit('acceptPong', notice.from);
+    return;
+  }
+
   if (notice.type === 'file-offer' && notice.fileId) {
     emit('acceptFile', notice.from, notice.fileId);
   }
@@ -438,6 +498,11 @@ function rejectNotice(notice: DMNotice) {
 
   if (notice.type === 'video-call') {
     emit('rejectVideo', notice.from);
+    return;
+  }
+
+  if (notice.type === 'pong-request') {
+    emit('rejectPong', notice.from);
     return;
   }
 
@@ -464,6 +529,36 @@ watch(() => props.focusedDMUser, (focusedUser) => {
     currentTab.value = resolveTabUser(focusedUser) ?? '';
   }
 });
+
+watch(
+  () => props.notices,
+  (newNotices) => {
+    if (!currentTab.value) return;
+
+    const matchingNotice = newNotices.find(
+      (notice) => sameDMUser(notice.from, currentTab.value)
+        && (notice.type === 'pong-accept' || notice.type === 'pong-reject' || notice.type === 'pong-cancel')
+    );
+
+    if (!matchingNotice) return;
+
+    if (isPongInitiator.value && isPongRequestPending.value && matchingNotice.type === 'pong-accept') {
+      pongStartSignal.value += 1;
+      isPongRequestPending.value = false;
+    }
+
+    if (isPongInitiator.value && isPongRequestPending.value && matchingNotice.type === 'pong-reject') {
+      isPongRequestPending.value = false;
+      isPongVisible.value = false;
+    }
+
+    if (!isPongInitiator.value && matchingNotice.type === 'pong-cancel') {
+      isPongVisible.value = false;
+      isPongRequestPending.value = false;
+    }
+  },
+  { deep: true }
+);
 
 // Auto-expand files panel when a new incoming file request appears on the active tab.
 watch(
@@ -678,6 +773,14 @@ function rejectFileTransfer(fileId: string) {
   emit('rejectFile', currentTab.value, fileId);
 }
 
+function handlePongCloseOnTabChange() {
+  if (!canShowPong.value) {
+    isPongVisible.value = false;
+  }
+}
+
+  watch(currentTab, handlePongCloseOnTabChange);
+  watch(() => props.activeChats, handlePongCloseOnTabChange, { deep: true });
 function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').trim() || 'download.bin';
 }
@@ -1108,6 +1211,23 @@ watch(
   border-color: var(--color-dmchatmodal-notice-file-offer-border);
   background: var(--color-dmchatmodal-notice-file-offer-bg);
   color: var(--color-dmchatmodal-notice-file-offer-color);
+}
+
+.notice-item.pong-request {
+  border-color: #7bff7b;
+  background: rgba(0, 20, 0, 0.94);
+  color: #bafcb9;
+  box-shadow: 0 0 18px rgba(55, 255, 105, 0.22);
+  text-shadow: 0 0 8px rgba(105, 255, 130, 0.35);
+}
+
+.notice-item.pong-accept,
+.notice-item.pong-reject,
+.notice-item.pong-cancel {
+  border-color: #72ff72;
+  background: rgba(8, 24, 8, 0.95);
+  color: #c9ffd1;
+  box-shadow: 0 0 14px rgba(90, 255, 120, 0.2);
 }
 
 .notice-item.info {
@@ -1649,6 +1769,57 @@ watch(
   transition: all 0.2s;
   text-transform: uppercase;
   height: 100%;
+}
+
+.pong-launch-btn {
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  padding: 0 16px;
+  margin-left: 8px;
+  min-width: 96px;
+  font-size: 11px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.pong-launch-btn:hover {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.pong-game-container {
+  margin: 10px 0 0;
+}
+
+.pong-start-bar {
+  padding: 12px 20px 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pong-launch-btn {
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  padding: 8px 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.pong-launch-btn:hover {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.pong-game-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .send-btn:hover:not(:disabled) {

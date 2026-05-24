@@ -15,8 +15,8 @@
 
       <!-- Content Area -->
       <div class="modal-content">
-        <div v-if="currentTab" class="chat-section" :class="{ 'has-video-call': !!activeVideoCallUser }">
-          <div v-if="chatToastNotices.length > 0 || outgoingRequestsForCurrentTab.length > 0" class="notice-stack notice-stack-inline">
+        <div v-if="currentTab" class="chat-section" :class="{ 'has-video-call': !!activeVideoCallUser, 'game-active': !!activeGame }">
+          <div v-if="!activeGame && (chatToastNotices.length > 0 || outgoingRequestsForCurrentTab.length > 0)" class="notice-stack notice-stack-inline">
             <div
               v-for="notice in chatToastNotices"
               :key="`notice-${notice.id}`"
@@ -58,105 +58,6 @@
           </div>
 
           <template v-else>
-            <!-- Messages: Displayed via animations only (ephemeral) -->
-            <div
-              ref="messagesContainer"
-              class="messages"
-              @dragover="handleDragOver"
-              @dragleave="handleDragLeave"
-              @drop="handleDrop"
-              :class="{ 'drag-over': dragOverZone }"
-            >
-              <div v-if="dragOverZone" class="drop-overlay">
-                Drop files to send
-              </div>
-
-              <div v-if="isWaitingForConnection" class="connection-wait-overlay">
-                <div class="connection-wait-box">
-                  <span class="connection-wait-text">Connecting<span class="connection-wait-dots"></span></span>
-                </div>
-              </div>
-            </div>
-
-            <!-- File Downloads -->
-            <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
-              <div class="files-header" @click="toggleFilesPanel">
-                <span>📁 FILES ({{ visibleTransferCount() }})</span>
-                <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
-              </div>
-              <div v-if="!isFilesPanelCollapsed()" class="files-list">
-                <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
-                  <div class="file-info">
-                    <div class="file-name">{{ transfer.filename }}</div>
-                    <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
-                    <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
-                    <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
-                    <div v-else-if="transfer.status === 'in-progress'" class="file-progress">
-                      <div class="progress-bar">
-                        <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
-                      </div>
-                      <span class="progress-text">
-                        {{ transfer.direction === 'incoming' ? 'RECEIVING' : 'SENDING' }} {{ Math.round(transfer.progress) }}%
-                      </span>
-                    </div>
-                    <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
-                    <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
-                    <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
-                  </div>
-                  <div class="file-actions">
-                    <button
-                      v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
-                      class="file-action-btn accept"
-                      @click="acceptFileTransfer(fileId)"
-                    >
-                      ACCEPT
-                    </button>
-                    <button
-                      v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
-                      class="file-action-btn reject"
-                      @click="rejectFileTransfer(fileId)"
-                    >
-                      REJECT
-                    </button>
-                    <button
-                      v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && !isFileAlreadySaved(transfer)"
-                      class="file-action-btn"
-                      :disabled="isSavingFile(fileId)"
-                      @click="downloadFile(transfer)"
-                    >
-                      {{ getDownloadActionLabel(fileId) }}
-                    </button>
-                    <button
-                      v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"
-                      class="file-action-btn"
-                      @click="showSavedFileInFolder(transfer)"
-                    >
-                      SHOW IN FOLDER
-                    </button>
-                    <button
-                      v-if="(transfer.status === 'completed' && (isFileAlreadySaved(transfer) || transfer.direction === 'outgoing')) || transfer.status === 'rejected' || transfer.status === 'failed'"
-                      class="file-action-btn reject"
-                      @click="removeFileTransfer(fileId)"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="game-start-bar" v-if="canShowGames && !activeGame">
-              <label class="game-picker" for="dm-game-select">
-                <span>Game</span>
-                <select id="dm-game-select" v-model="selectedGame">
-                  <option v-for="option in gameOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                </select>
-              </label>
-              <button class="game-launch-btn" type="button" @click="launchSelectedGame">
-                START
-              </button>
-            </div>
-
             <div v-if="activeGame" class="pong-game-container">
               <PongGame
                 v-if="activeGame === 'pong'"
@@ -179,6 +80,105 @@
             </div>
 
             <template v-else>
+              <!-- Messages: Displayed via animations only (ephemeral) -->
+              <div
+                ref="messagesContainer"
+                class="messages"
+                @dragover="handleDragOver"
+                @dragleave="handleDragLeave"
+                @drop="handleDrop"
+                :class="{ 'drag-over': dragOverZone }"
+              >
+                <div v-if="dragOverZone" class="drop-overlay">
+                  Drop files to send
+                </div>
+
+                <div v-if="isWaitingForConnection" class="connection-wait-overlay">
+                  <div class="connection-wait-box">
+                    <span class="connection-wait-text">Connecting<span class="connection-wait-dots"></span></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- File Downloads -->
+              <div v-if="hasVisibleTransfers()" class="files-section" :class="{ collapsed: isFilesPanelCollapsed() }">
+                <div class="files-header" @click="toggleFilesPanel">
+                  <span>📁 FILES ({{ visibleTransferCount() }})</span>
+                  <span class="files-collapse-icon">{{ isFilesPanelCollapsed() ? '▸' : '▾' }}</span>
+                </div>
+                <div v-if="!isFilesPanelCollapsed()" class="files-list">
+                  <div v-for="[fileId, transfer] of getCurrentChat()?.fileTransfers || []" :key="fileId" class="file-item">
+                    <div class="file-info">
+                      <div class="file-name">{{ transfer.filename }}</div>
+                      <div class="file-size">{{ formatBytes(transfer.totalSize) }}</div>
+                      <div v-if="transfer.status === 'awaiting-accept'" class="file-status pending">AWAITING ACCEPTANCE</div>
+                      <div v-else-if="transfer.status === 'pending'" class="file-status pending">PENDING YOUR DECISION</div>
+                      <div v-else-if="transfer.status === 'in-progress'" class="file-progress">
+                        <div class="progress-bar">
+                          <div class="progress-fill" :style="{ width: `${transfer.progress}%` }"></div>
+                        </div>
+                        <span class="progress-text">
+                          {{ transfer.direction === 'incoming' ? 'RECEIVING' : 'SENDING' }} {{ Math.round(transfer.progress) }}%
+                        </span>
+                      </div>
+                      <div v-else-if="transfer.status === 'completed'" class="file-status completed">✓ COMPLETE</div>
+                      <div v-else-if="transfer.status === 'rejected'" class="file-status rejected">✗ REJECTED</div>
+                      <div v-else-if="transfer.status === 'failed'" class="file-status failed">✗ FAILED</div>
+                    </div>
+                    <div class="file-actions">
+                      <button
+                        v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                        class="file-action-btn accept"
+                        @click="acceptFileTransfer(fileId)"
+                      >
+                        ACCEPT
+                      </button>
+                      <button
+                        v-if="transfer.status === 'pending' && transfer.direction === 'incoming'"
+                        class="file-action-btn reject"
+                        @click="rejectFileTransfer(fileId)"
+                      >
+                        REJECT
+                      </button>
+                      <button
+                        v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && !isFileAlreadySaved(transfer)"
+                        class="file-action-btn"
+                        :disabled="isSavingFile(fileId)"
+                        @click="downloadFile(transfer)"
+                      >
+                        {{ getDownloadActionLabel(fileId) }}
+                      </button>
+                      <button
+                        v-if="transfer.status === 'completed' && transfer.direction === 'incoming' && canRevealSavedFile(transfer)"
+                        class="file-action-btn"
+                        @click="showSavedFileInFolder(transfer)"
+                      >
+                        SHOW IN FOLDER
+                      </button>
+                      <button
+                        v-if="(transfer.status === 'completed' && (isFileAlreadySaved(transfer) || transfer.direction === 'outgoing')) || transfer.status === 'rejected' || transfer.status === 'failed'"
+                        class="file-action-btn reject"
+                        @click="removeFileTransfer(fileId)"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="game-start-bar" v-if="canShowGames && !activeGame">
+                <label class="game-picker" for="dm-game-select">
+                  <span>Game</span>
+                  <select id="dm-game-select" v-model="selectedGame">
+                    <option v-for="option in gameOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                </label>
+                <button class="game-launch-btn" type="button" @click="launchSelectedGame">
+                  START
+                </button>
+              </div>
+
               <!-- Input -->
               <div class="input-bar">
                 <div v-if="getCurrentChat()?.pendingDisplayMessages.length" class="waiting-indicator">
@@ -634,17 +634,19 @@ watch(
   (newNotices) => {
     if (!currentTab.value) return;
 
-    const matchingNotice = newNotices.find(
-      (notice) => sameDMUser(notice.from, currentTab.value)
-        && (
-          notice.type === 'pong-accept'
-          || notice.type === 'pong-reject'
-          || notice.type === 'pong-cancel'
-          || notice.type === 'battleship-accept'
-          || notice.type === 'battleship-reject'
-          || notice.type === 'battleship-cancel'
-        )
-    );
+    const matchingNotice = newNotices
+      .filter(
+        (notice) => sameDMUser(notice.from, currentTab.value)
+          && (
+            notice.type === 'pong-accept'
+            || notice.type === 'pong-reject'
+            || notice.type === 'pong-cancel'
+            || notice.type === 'battleship-accept'
+            || notice.type === 'battleship-reject'
+            || notice.type === 'battleship-cancel'
+          )
+      )
+      .sort((left, right) => right.id - left.id)[0];
 
     if (!matchingNotice) return;
 
@@ -1927,7 +1929,12 @@ watch(
 }
 
 .pong-game-container {
-  margin: 10px 0 0;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
 }
 
 .game-start-bar {
@@ -1984,12 +1991,6 @@ watch(
   background: var(--color-accent);
   color: var(--color-on-accent);
   transform: translateY(-1px);
-}
-
-.pong-game-container {
-  flex: 1;
-  min-height: 0;
-  display: flex;
 }
 
 .send-btn:hover:not(:disabled) {

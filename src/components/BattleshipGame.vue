@@ -192,6 +192,7 @@ const localShipsLost = computed(() => countSunkShips(localShips.value, incomingS
 let audioContext: AudioContext | null = null;
 let currentChannel: RTCDataChannel | null = null;
 let dataChannelListener: ((event: MessageEvent) => void) | null = null;
+let readyBroadcastInterval: ReturnType<typeof setInterval> | null = null;
 
 function countShots(map: Map<number, ShotOutcome>, outcome: ShotOutcome): number {
   let count = 0;
@@ -301,6 +302,33 @@ function sendMessage(payload: Record<string, unknown>) {
   }
 }
 
+function stopReadyBroadcast() {
+  if (readyBroadcastInterval) {
+    clearInterval(readyBroadcastInterval);
+    readyBroadcastInterval = null;
+  }
+}
+
+function startReadyBroadcast() {
+  stopReadyBroadcast();
+
+  if (!localReady.value || phase.value !== 'placement') {
+    return;
+  }
+
+  readyBroadcastInterval = setInterval(() => {
+    if (!localReady.value || phase.value !== 'placement') {
+      stopReadyBroadcast();
+      return;
+    }
+
+    sendMessage({
+      type: 'battleship-ready',
+      ships: localShips.value.length,
+    });
+  }, 1000);
+}
+
 function activateGameIfReady() {
   if (showWaitingOverlay.value) {
     phase.value = 'invite';
@@ -342,6 +370,7 @@ function resetSession() {
   incomingShots.value = new Map();
   pendingOutgoingShot.value = null;
   clearFlashes();
+  stopReadyBroadcast();
 }
 
 function isValidCell(cell: number): boolean {
@@ -419,6 +448,7 @@ function beginBattleIfReady() {
   }
 
   phase.value = 'battle';
+  stopReadyBroadcast();
   localTurn.value = isLocalFirstPlayer();
   statusMessage.value = localTurn.value ? 'Your turn. Pick a target.' : `${props.peerName} is targeting...`;
   combatFeed.value = localTurn.value
@@ -440,6 +470,8 @@ function confirmReady() {
     type: 'battleship-ready',
     ships: localShips.value.length,
   });
+
+  startReadyBroadcast();
 
   beginBattleIfReady();
 }
@@ -741,7 +773,22 @@ onMounted(() => {
   activateGameIfReady();
 });
 
+watch(
+  [localReady, remoteReady, phase],
+  () => {
+    beginBattleIfReady();
+
+    if (localReady.value && phase.value === 'placement') {
+      startReadyBroadcast();
+      return;
+    }
+
+    stopReadyBroadcast();
+  }
+);
+
 onBeforeUnmount(() => {
+  stopReadyBroadcast();
   detachDataChannelListener();
 });
 </script>
@@ -749,12 +796,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .battleship-shell {
   flex: 1;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid rgba(118, 224, 255, 0.78);
-  border-radius: 16px;
-  margin: 10px 12px 12px 20px;
+  border-radius: 12px;
+  margin: 0;
   padding: 14px;
   background:
     radial-gradient(circle at 10% 8%, rgba(83, 231, 255, 0.28), transparent 34%),
@@ -996,6 +1045,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   min-height: 0;
   flex: 1;
+  height: 100%;
 }
 
 .grid.locked .cell {

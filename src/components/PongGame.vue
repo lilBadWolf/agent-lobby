@@ -323,12 +323,14 @@ function handleKeydown(event: KeyboardEvent) {
     return;
   }
 
+  const paddleStep = Math.max(24, Math.round((boardWidth - paddleWidth) * 0.12));
+
   if (event.key === 'ArrowLeft') {
-    localPaddleX.value = clampPaddleX(localPaddleX.value - 20);
+    localPaddleX.value = clampPaddleX(localPaddleX.value - paddleStep);
     sendPaddleUpdate();
     event.preventDefault();
   } else if (event.key === 'ArrowRight') {
-    localPaddleX.value = clampPaddleX(localPaddleX.value + 20);
+    localPaddleX.value = clampPaddleX(localPaddleX.value + paddleStep);
     sendPaddleUpdate();
     event.preventDefault();
   }
@@ -539,13 +541,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .pong-game {
   flex: 1;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   border: 1px solid #4cff7a;
   background: radial-gradient(circle at top, rgba(10, 50, 15, 0.9), rgba(0, 0, 0, 0.95));
-  padding: 14px;
+  padding: 12px;
   border-radius: 10px;
-  margin: 10px 12px 10px 20px;
+  margin: 0;
   color: #8cff8c;
   min-height: 0;
   font-family: 'Courier New', Courier, monospace;
@@ -592,7 +596,7 @@ onBeforeUnmount(() => {
   background: radial-gradient(circle at 20% 20%, rgba(110, 255, 120, 0.12), rgba(0, 0, 0, 0.92));
   border: 1px solid rgba(74, 255, 122, 0.6);
   border-radius: 10px;
-  margin: 0 auto 8px auto;
+  margin: 0;
   overflow: hidden;
   touch-action: none;
   flex: 1;

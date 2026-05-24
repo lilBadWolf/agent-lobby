@@ -1,10 +1,11 @@
 # Release Notes
 
-🎉 **Release highlights for agent-lobby 0.4.32**
+🚀 **Release highlights for agent-lobby 0.4.33**
 
-- 🔧 Fixed hosted web build runtime errors by loading Tauri APIs only in the desktop runtime.
-- 🌐 Added browser-safe fallbacks so the hosted dist can run without leaking Tauri-only code into the web bundle.
-- 🔐 Hardened lobby message handling with malformed payload validation and safe encryption fallback.
-- ✅ Kept the app stable across both Tauri and web deployments while preserving desktop behavior.
+- 🕹️ Added in-DM mini games so you can play directly with friends while chatting.
+- 🎮 Introduced **Pong** for fast retro head-to-head rounds.
+- ⚓ Introduced **Battleship** with turn-based tactical gameplay, fleet setup, and score tracking.
+- ✨ Upgraded game presentation with richer animations, effects, and sound moments to make matches feel more alive.
+- 🛠️ Improved game-session reliability to reduce edge-case hiccups during invites, turns, and reconnect moments.
 
-> This release focuses on making the hosted web build more robust and compatible while keeping the desktop app intact.
+> This release is all about making direct messages way more fun, competitive, and stream-friendly. 💥

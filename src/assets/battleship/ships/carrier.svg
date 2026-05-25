@@ -1,18 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 100" role="img" aria-label="Carrier">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" role="img" aria-label="Carrier game piece">
   <defs>
-    <linearGradient id="carrierHull" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#e4f6ff"/>
-      <stop offset="1" stop-color="#8cbddf"/>
+    <linearGradient id="cv_body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f3f7"/>
+      <stop offset="0.48" stop-color="#ccd1da"/>
+      <stop offset="1" stop-color="#9aa3b2"/>
     </linearGradient>
-    <linearGradient id="carrierDeck" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#3c5f7f"/>
-      <stop offset="1" stop-color="#5f7fa2"/>
+    <linearGradient id="cv_deck" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c5ccd7"/>
+      <stop offset="1" stop-color="#b2bbc9"/>
     </linearGradient>
+    <filter id="cv_shadow" x="-20%" y="-30%" width="140%" height="180%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
   </defs>
-  <rect x="10" y="22" width="480" height="56" rx="28" fill="url(#carrierHull)"/>
-  <rect x="38" y="34" width="408" height="32" rx="14" fill="url(#carrierDeck)"/>
-  <rect x="230" y="30" width="42" height="40" rx="6" fill="#d8ebff"/>
-  <rect x="247" y="14" width="8" height="14" rx="2" fill="#b9d2ea"/>
-  <circle cx="84" cy="50" r="4" fill="#c6e4ff"/>
-  <circle cx="416" cy="50" r="4" fill="#c6e4ff"/>
+  <ellipse cx="600" cy="212" rx="520" ry="14" fill="#0f1420" fill-opacity="0.38" filter="url(#cv_shadow)"/>
+  <path d="M88 152L166 76H1034L1116 118L1034 164H166Z" fill="url(#cv_body)"/>
+  <path d="M132 152L198 92H1010L1072 118L1010 148H198Z" fill="url(#cv_deck)"/>
+  <path d="M206 102H996" stroke="#9ea7b6" stroke-width="3" stroke-dasharray="9 7" opacity="0.62"/>
+  <path d="M206 128H996" stroke="#a7aebb" stroke-width="2" opacity="0.5"/>
+  <rect x="730" y="86" width="130" height="40" rx="8" fill="#b8c1cf"/>
+  <rect x="758" y="70" width="70" height="18" rx="4" fill="#c7ceda"/>
+  <rect x="786" y="48" width="10" height="20" rx="3" fill="#a4adbc"/>
+  <g fill="#151922">
+    <circle cx="184" cy="120" r="13"/>
+    <circle cx="390" cy="120" r="13"/>
+    <circle cx="600" cy="120" r="13"/>
+    <circle cx="806" cy="120" r="13"/>
+    <circle cx="1014" cy="120" r="13"/>
+  </g>
+  <g opacity="0.32" stroke="#7f8897" stroke-width="2">
+    <path d="M250 154V172"/>
+    <path d="M950 154V172"/>
+    <path d="M540 88V70"/>
+  </g>
 </svg>

@@ -1,11 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 100" role="img" aria-label="Patrol boat">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 240" role="img" aria-label="Patrol boat game piece">
   <defs>
-    <linearGradient id="ptHull" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#e0f5ff"/>
-      <stop offset="1" stop-color="#6da7c9"/>
+    <linearGradient id="pt_body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0f3f8"/>
+      <stop offset="0.5" stop-color="#c8cfda"/>
+      <stop offset="1" stop-color="#99a4b3"/>
     </linearGradient>
   </defs>
-  <path d="M16 64 L42 36 H150 L204 50 L150 64 H42 Z" fill="url(#ptHull)"/>
-  <rect x="84" y="32" width="42" height="12" rx="4" fill="#487592"/>
-  <rect x="104" y="24" width="8" height="8" rx="2" fill="#d9ecff"/>
+  <ellipse cx="290" cy="206" rx="200" ry="12" fill="#111724" fill-opacity="0.33"/>
+  <path d="M82 160L130 94H346L502 118L346 142H130Z" fill="url(#pt_body)"/>
+  <path d="M108 160L144 104H336L468 118L336 136H144Z" fill="#bfc7d3"/>
+  <rect x="232" y="96" width="80" height="22" rx="6" fill="#adb7c6"/>
+  <rect x="262" y="76" width="10" height="18" rx="3" fill="#9ca6b6"/>
+  <g fill="#151b26">
+    <circle cx="136" cy="120" r="12"/>
+    <circle cx="292" cy="120" r="12"/>
+    <circle cx="446" cy="120" r="12"/>
+  </g>
+  <path d="M168 104H420" stroke="#929cab" stroke-width="2" stroke-dasharray="7 6" opacity="0.56"/>
 </svg>

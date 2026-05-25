@@ -58,58 +58,95 @@
       </aside>
 
       <div class="board-area">
-        <section class="board-panel target-board">
+        <section
+          class="board-panel target-board"
+          :class="{ 'impact-active': enemyImpactActive, 'chromatic-shock': enemyChromaticShock }"
+        >
           <div class="panel-title">TARGET GRID</div>
-          <div class="grid enemy" :class="{ interactive: canFire }">
-            <button
-              v-for="cell in boardCellCount"
-              :key="`enemy-${cell - 1}`"
-              type="button"
-              class="cell"
-              :class="enemyCellClass(cell - 1)"
-              :disabled="!canClickEnemyCell(cell - 1)"
-              @click="fireAtCell(cell - 1)"
-            >
-              <span class="cell-marker" v-if="localShots.get(cell - 1) === 'hit'">✹</span>
-              <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'miss'">◌</span>
-              <span class="cell-marker" v-else-if="pendingOutgoingShot === cell - 1">◎</span>
-              <span class="impact-burst" v-if="flashOutgoingHit === cell - 1" aria-hidden="true"></span>
-              <span class="splash-ring" v-if="flashOutgoingMiss === cell - 1" aria-hidden="true"></span>
-            </button>
+          <div class="board-stage">
+            <div class="board-ocean" aria-hidden="true">
+              <span class="ocean-wave wave-a"></span>
+              <span class="ocean-wave wave-b"></span>
+              <span class="ocean-wave wave-c"></span>
+            </div>
+            <div class="grid enemy" :class="{ interactive: canFire }">
+              <button
+                v-for="cell in boardCellCount"
+                :key="`enemy-${cell - 1}`"
+                type="button"
+                class="cell"
+                :class="enemyCellClass(cell - 1)"
+                :disabled="!canClickEnemyCell(cell - 1)"
+                @click="fireAtCell(cell - 1)"
+              >
+                <span class="cell-marker" v-if="localShots.get(cell - 1) === 'hit'">✹</span>
+                <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'miss'">◌</span>
+                <span class="cell-marker" v-else-if="pendingOutgoingShot === cell - 1">◎</span>
+                <span
+                  class="shot-vector outgoing"
+                  v-if="pendingOutgoingShot === cell - 1"
+                  :style="shotVectorStyle(cell - 1, 'outgoing')"
+                  aria-hidden="true"
+                ></span>
+                <span class="targeting-flare" v-if="pendingOutgoingShot === cell - 1" aria-hidden="true"></span>
+                <span class="impact-burst" v-if="flashOutgoingHit === cell - 1" aria-hidden="true"></span>
+                <span class="impact-smoke" v-if="flashOutgoingHit === cell - 1" aria-hidden="true"></span>
+                <span class="splash-ring" v-if="flashOutgoingMiss === cell - 1" aria-hidden="true"></span>
+              </button>
+            </div>
           </div>
         </section>
 
-        <section class="board-panel your-board">
+        <section
+          class="board-panel your-board"
+          :class="{ 'impact-active': localImpactActive, 'chromatic-shock': localChromaticShock }"
+        >
           <div class="panel-title">YOUR GRID</div>
-          <div class="local-grid-wrap" :class="{ locked: phase !== 'placement' }">
-            <div class="ship-sprite-layer" aria-hidden="true">
-              <div
-                v-for="ship in localShips"
-                :key="`ship-${ship.id}`"
-                class="ship-sprite"
-                :class="[
-                  `ship-${ship.id}`,
-                  shipOrientation(ship) === 'horizontal' ? 'horizontal' : 'vertical'
-                ]"
-                :style="shipSpriteStyle(ship)"
-              >
-                <span class="ship-code">{{ shipCode(ship.id) }}</span>
-              </div>
+          <div class="board-stage">
+            <div class="board-ocean" aria-hidden="true">
+              <span class="ocean-wave wave-a"></span>
+              <span class="ocean-wave wave-b"></span>
+              <span class="ocean-wave wave-c"></span>
             </div>
-            <div class="grid local-grid">
-            <button
-              v-for="cell in boardCellCount"
-              :key="`local-${cell - 1}`"
-              type="button"
-              class="cell"
-              :class="localCellClass(cell - 1)"
-              @click="handleLocalCellClick(cell - 1)"
-            >
-              <span class="cell-marker" v-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
-              <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
-              <span class="impact-burst" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
-              <span class="splash-ring" v-if="flashIncomingMiss === cell - 1" aria-hidden="true"></span>
-            </button>
+            <div class="local-grid-wrap" :class="{ locked: phase !== 'placement' }">
+              <div class="ship-sprite-layer" aria-hidden="true">
+                <div
+                  v-for="ship in localShips"
+                  :key="`ship-${ship.id}`"
+                  class="ship-sprite"
+                  :class="[
+                    `ship-${ship.id}`,
+                    shipDamageClass(ship),
+                    shipOrientation(ship) === 'horizontal' ? 'horizontal' : 'vertical'
+                  ]"
+                  :style="shipSpriteStyle(ship)"
+                >
+                  <span class="ship-wake" aria-hidden="true"></span>
+                  <span class="ship-code">{{ shipCode(ship.id) }}</span>
+                </div>
+              </div>
+              <div class="grid local-grid">
+              <button
+                v-for="cell in boardCellCount"
+                :key="`local-${cell - 1}`"
+                type="button"
+                class="cell"
+                :class="localCellClass(cell - 1)"
+                @click="handleLocalCellClick(cell - 1)"
+              >
+                <span class="cell-marker" v-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
+                <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
+                <span
+                  class="shot-vector incoming"
+                  v-if="flashIncomingHit === cell - 1 || flashIncomingMiss === cell - 1"
+                  :style="shotVectorStyle(cell - 1, 'incoming')"
+                  aria-hidden="true"
+                ></span>
+                <span class="impact-burst" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
+                <span class="impact-smoke" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
+                <span class="splash-ring" v-if="flashIncomingMiss === cell - 1" aria-hidden="true"></span>
+              </button>
+              </div>
             </div>
           </div>
         </section>
@@ -185,6 +222,10 @@ const flashOutgoingHit = ref<number | null>(null);
 const flashOutgoingMiss = ref<number | null>(null);
 const flashIncomingHit = ref<number | null>(null);
 const flashIncomingMiss = ref<number | null>(null);
+const enemyImpactActive = ref(false);
+const localImpactActive = ref(false);
+const enemyChromaticShock = ref(false);
+const localChromaticShock = ref(false);
 
 const showWaitingOverlay = computed(() => Boolean(props.waitingForAcceptance));
 const phaseLabel = computed(() => {
@@ -219,6 +260,10 @@ let currentChannel: RTCDataChannel | null = null;
 let dataChannelListener: ((event: MessageEvent) => void) | null = null;
 let readyBroadcastInterval: ReturnType<typeof setInterval> | null = null;
 let pendingShotRetryInterval: ReturnType<typeof setInterval> | null = null;
+let enemyImpactTimer: number | null = null;
+let localImpactTimer: number | null = null;
+let enemyShockTimer: number | null = null;
+let localShockTimer: number | null = null;
 
 const shipSpriteUrls: Record<string, string> = {
   carrier: battleshipCarrier,
@@ -568,15 +613,57 @@ function confirmReady() {
 function triggerFlash(type: 'outgoing-hit' | 'outgoing-miss' | 'incoming-hit' | 'incoming-miss', cell: number) {
   if (type === 'outgoing-hit') {
     flashOutgoingHit.value = cell;
+    enemyImpactActive.value = true;
+    enemyChromaticShock.value = true;
+    if (enemyImpactTimer) {
+      clearTimeout(enemyImpactTimer);
+    }
+    if (enemyShockTimer) {
+      clearTimeout(enemyShockTimer);
+    }
+    enemyImpactTimer = window.setTimeout(() => {
+      enemyImpactActive.value = false;
+    }, 280);
+    enemyShockTimer = window.setTimeout(() => {
+      enemyChromaticShock.value = false;
+    }, 420);
   }
   if (type === 'outgoing-miss') {
     flashOutgoingMiss.value = cell;
+    enemyImpactActive.value = true;
+    if (enemyImpactTimer) {
+      clearTimeout(enemyImpactTimer);
+    }
+    enemyImpactTimer = window.setTimeout(() => {
+      enemyImpactActive.value = false;
+    }, 220);
   }
   if (type === 'incoming-hit') {
     flashIncomingHit.value = cell;
+    localImpactActive.value = true;
+    localChromaticShock.value = true;
+    if (localImpactTimer) {
+      clearTimeout(localImpactTimer);
+    }
+    if (localShockTimer) {
+      clearTimeout(localShockTimer);
+    }
+    localImpactTimer = window.setTimeout(() => {
+      localImpactActive.value = false;
+    }, 300);
+    localShockTimer = window.setTimeout(() => {
+      localChromaticShock.value = false;
+    }, 460);
   }
   if (type === 'incoming-miss') {
     flashIncomingMiss.value = cell;
+    localImpactActive.value = true;
+    if (localImpactTimer) {
+      clearTimeout(localImpactTimer);
+    }
+    localImpactTimer = window.setTimeout(() => {
+      localImpactActive.value = false;
+    }, 220);
   }
 
   window.setTimeout(() => {
@@ -593,6 +680,16 @@ function triggerFlash(type: 'outgoing-hit' | 'outgoing-miss' | 'incoming-hit' | 
       flashIncomingMiss.value = null;
     }
   }, 440);
+}
+
+function shotVectorStyle(cell: number, direction: 'outgoing' | 'incoming'): Record<string, string> {
+  const col = colFromIndex(cell);
+  const colOffset = ((col / (BOARD_SIZE - 1)) - 0.5) * 22;
+  const tilt = direction === 'outgoing' ? 5 + (colOffset * 0.08) : -5 + (colOffset * 0.08);
+  return {
+    '--vector-offset': `${colOffset}%`,
+    '--vector-tilt': `${tilt}deg`,
+  } as Record<string, string>;
 }
 
 function canClickEnemyCell(index: number): boolean {
@@ -745,6 +842,39 @@ function shipOrientation(ship: ShipPlacement): 'horizontal' | 'vertical' {
   return rowFromIndex(first) === rowFromIndex(second) ? 'horizontal' : 'vertical';
 }
 
+function shipHitRatio(ship: ShipPlacement): number {
+  if (ship.cells.length === 0) {
+    return 0;
+  }
+
+  let hitCount = 0;
+  ship.cells.forEach((cell) => {
+    if (incomingShots.value.get(cell) === 'hit') {
+      hitCount += 1;
+    }
+  });
+
+  return hitCount / ship.cells.length;
+}
+
+function shipDamageClass(ship: ShipPlacement): string {
+  const ratio = shipHitRatio(ship);
+
+  if (ratio >= 1) {
+    return 'damage-sunk';
+  }
+
+  if (ratio >= 0.66) {
+    return 'damage-critical';
+  }
+
+  if (ratio > 0) {
+    return 'damage-hit';
+  }
+
+  return 'damage-intact';
+}
+
 function shipSpriteStyle(ship: ShipPlacement): Record<string, string> {
   const orientation = shipOrientation(ship);
   const startCell = ship.cells[0];
@@ -752,10 +882,11 @@ function shipSpriteStyle(ship: ShipPlacement): Record<string, string> {
   const col = colFromIndex(startCell) + 1;
   const spriteUrl = shipSpriteUrls[ship.id];
   const sharedStyle: Record<string, string> = {
-    backgroundImage: `linear-gradient(145deg, rgba(218, 244, 255, 0.14), rgba(31, 64, 97, 0.55)), url(${spriteUrl})`,
+    backgroundImage: `linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(36, 43, 56, 0.2)), url(${spriteUrl})`,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
+    '--ship-length': `${ship.length}`,
   };
 
   if (orientation === 'horizontal') {
@@ -936,6 +1067,18 @@ watch(
 onBeforeUnmount(() => {
   stopReadyBroadcast();
   stopPendingShotRetry();
+  if (enemyImpactTimer) {
+    clearTimeout(enemyImpactTimer);
+  }
+  if (localImpactTimer) {
+    clearTimeout(localImpactTimer);
+  }
+  if (enemyShockTimer) {
+    clearTimeout(enemyShockTimer);
+  }
+  if (localShockTimer) {
+    clearTimeout(localShockTimer);
+  }
   detachDataChannelListener();
 });
 </script>
@@ -1205,11 +1348,92 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid rgba(95, 173, 230, 0.45);
+  border: 1px solid rgba(116, 201, 255, 0.52);
   border-radius: 12px;
   padding: 8px;
-  background: rgba(7, 25, 51, 0.54);
-  box-shadow: inset 0 0 16px rgba(88, 190, 255, 0.1);
+  background:
+    linear-gradient(160deg, rgba(14, 38, 73, 0.82), rgba(8, 24, 49, 0.66)),
+    radial-gradient(circle at 14% 18%, rgba(112, 203, 255, 0.2), transparent 40%);
+  box-shadow:
+    inset 0 0 24px rgba(88, 190, 255, 0.16),
+    inset 0 -28px 40px rgba(7, 15, 27, 0.32),
+    0 8px 24px rgba(6, 20, 39, 0.28);
+  position: relative;
+  overflow: hidden;
+}
+
+.board-panel.impact-active {
+  animation: board-impact-shake 0.26s linear;
+}
+
+.board-panel.chromatic-shock::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 13px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 82, 82, 0.16), rgba(255, 82, 82, 0) 48%),
+    linear-gradient(270deg, rgba(102, 220, 255, 0.2), rgba(102, 220, 255, 0) 46%);
+  mix-blend-mode: screen;
+  animation: chromatic-shock-pulse 0.4s ease-out;
+}
+
+.board-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(182, 231, 255, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(182, 231, 255, 0.06) 1px, transparent 1px);
+  background-size: 100% 18px, 18px 100%;
+  opacity: 0.52;
+  pointer-events: none;
+}
+
+.board-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.board-ocean {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(123, 220, 255, 0.2), transparent 42%),
+    radial-gradient(circle at 82% 22%, rgba(134, 160, 255, 0.18), transparent 44%),
+    linear-gradient(180deg, rgba(7, 33, 67, 0.86), rgba(7, 21, 44, 0.9));
+  z-index: 0;
+}
+
+.ocean-wave {
+  position: absolute;
+  left: -10%;
+  width: 120%;
+  border-radius: 42%;
+  filter: blur(2px);
+}
+
+.ocean-wave.wave-a {
+  top: 10%;
+  height: 34%;
+  background: linear-gradient(180deg, rgba(129, 226, 255, 0.24), rgba(129, 226, 255, 0));
+  animation: ocean-swell-a 9s ease-in-out infinite;
+}
+
+.ocean-wave.wave-b {
+  top: 44%;
+  height: 28%;
+  background: linear-gradient(180deg, rgba(108, 184, 255, 0.18), rgba(108, 184, 255, 0));
+  animation: ocean-swell-b 12s ease-in-out infinite;
+}
+
+.ocean-wave.wave-c {
+  top: 72%;
+  height: 22%;
+  background: linear-gradient(180deg, rgba(84, 173, 240, 0.14), rgba(84, 173, 240, 0));
+  animation: ocean-swell-c 15s ease-in-out infinite;
 }
 
 .panel-title {
@@ -1226,6 +1450,8 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   height: 100%;
+  position: relative;
+  z-index: 2;
 }
 
 .local-grid-wrap {
@@ -1258,6 +1484,39 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  transform-style: preserve-3d;
+  animation: ship-idle-drift 4.4s ease-in-out infinite;
+}
+
+.ship-wake {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.66;
+}
+
+.ship-sprite.horizontal .ship-wake {
+  left: calc(-8px - (var(--ship-length, 2) * 1px));
+  right: calc(-8px - (var(--ship-length, 2) * 1px));
+  top: 52%;
+  height: 34%;
+  transform: translateY(-50%);
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(182, 238, 255, 0.42), rgba(182, 238, 255, 0) 54%),
+    radial-gradient(ellipse at 80% 50%, rgba(162, 226, 255, 0.35), rgba(162, 226, 255, 0) 52%);
+  animation: wake-flow-horizontal 3.4s ease-in-out infinite;
+}
+
+.ship-sprite.vertical .ship-wake {
+  top: calc(-10px - (var(--ship-length, 2) * 1px));
+  bottom: calc(-10px - (var(--ship-length, 2) * 1px));
+  left: 50%;
+  width: 34%;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(ellipse at 50% 22%, rgba(178, 236, 255, 0.42), rgba(178, 236, 255, 0) 52%),
+    radial-gradient(ellipse at 50% 78%, rgba(154, 220, 255, 0.34), rgba(154, 220, 255, 0) 52%);
+  animation: wake-flow-vertical 3.8s ease-in-out infinite;
 }
 
 .ship-sprite::before {
@@ -1278,6 +1537,56 @@ onBeforeUnmount(() => {
   opacity: 0.22;
 }
 
+.ship-sprite .ship-code {
+  pointer-events: none;
+}
+
+.ship-sprite.damage-hit {
+  filter: saturate(1.05) brightness(0.96);
+}
+
+.ship-sprite.damage-critical {
+  filter: saturate(0.9) brightness(0.82);
+  animation-duration: 2.8s;
+}
+
+.ship-sprite.damage-sunk {
+  filter: grayscale(0.75) saturate(0.6) brightness(0.62);
+  transform: translateY(1px) rotateX(10deg);
+}
+
+.ship-sprite.damage-hit::before,
+.ship-sprite.damage-critical::before,
+.ship-sprite.damage-sunk::before {
+  border-color: rgba(255, 199, 168, 0.52);
+}
+
+.ship-sprite.damage-hit::after,
+.ship-sprite.damage-critical::after,
+.ship-sprite.damage-sunk::after {
+  background-image:
+    radial-gradient(circle at 32% 48%, rgba(255, 198, 145, 0.58), rgba(255, 198, 145, 0) 38%),
+    radial-gradient(circle at 68% 58%, rgba(255, 154, 124, 0.5), rgba(255, 154, 124, 0) 36%),
+    linear-gradient(90deg, rgba(230, 249, 255, 0.22) 1px, transparent 1px);
+}
+
+.ship-sprite.damage-critical::after,
+.ship-sprite.damage-sunk::after {
+  background-image:
+    radial-gradient(circle at 26% 52%, rgba(255, 182, 142, 0.62), rgba(255, 182, 142, 0) 42%),
+    radial-gradient(circle at 62% 40%, rgba(255, 124, 104, 0.56), rgba(255, 124, 104, 0) 36%),
+    radial-gradient(circle at 82% 64%, rgba(255, 104, 88, 0.48), rgba(255, 104, 88, 0) 34%),
+    linear-gradient(90deg, rgba(230, 249, 255, 0.16) 1px, transparent 1px);
+}
+
+.ship-sprite.damage-sunk::after {
+  background-image:
+    radial-gradient(circle at 18% 58%, rgba(37, 42, 56, 0.66), rgba(37, 42, 56, 0) 42%),
+    radial-gradient(circle at 52% 42%, rgba(45, 53, 70, 0.64), rgba(45, 53, 70, 0) 40%),
+    radial-gradient(circle at 78% 68%, rgba(32, 40, 54, 0.58), rgba(32, 40, 54, 0) 34%),
+    linear-gradient(90deg, rgba(180, 210, 226, 0.12) 1px, transparent 1px);
+}
+
 .ship-sprite.vertical::before {
   inset: 4% 14%;
 }
@@ -1288,12 +1597,14 @@ onBeforeUnmount(() => {
   font-size: 9px;
   letter-spacing: 0.14em;
   font-weight: 700;
-  color: rgba(235, 250, 255, 0.98);
-  text-shadow: 0 0 8px rgba(11, 34, 54, 0.55);
-  background: rgba(7, 22, 40, 0.54);
-  border: 1px solid rgba(176, 228, 255, 0.35);
+  color: rgba(223, 229, 238, 0.7);
+  text-shadow: 0 0 6px rgba(14, 18, 26, 0.45);
+  background: rgba(40, 48, 60, 0.42);
+  border: 1px solid rgba(190, 197, 210, 0.28);
   border-radius: 999px;
   padding: 2px 6px;
+  backdrop-filter: blur(1px);
+  opacity: 0.38;
 }
 
 .ship-carrier {
@@ -1460,24 +1771,73 @@ onBeforeUnmount(() => {
 }
 
 .impact-burst,
-.splash-ring {
+.splash-ring,
+.impact-smoke,
+.targeting-flare {
   position: absolute;
   inset: 12%;
   border-radius: 50%;
   pointer-events: none;
+  z-index: 3;
+}
+
+.shot-vector {
+  position: absolute;
+  left: calc(50% + var(--vector-offset, 0%));
+  width: 2px;
+  height: 170%;
+  pointer-events: none;
   z-index: 2;
+  transform-origin: center;
+  filter: drop-shadow(0 0 8px rgba(177, 233, 255, 0.45));
+}
+
+.shot-vector::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(164, 231, 255, 0), rgba(164, 231, 255, 0.92), rgba(255, 218, 178, 0));
+}
+
+.shot-vector.outgoing {
+  bottom: -160%;
+  transform: rotate(var(--vector-tilt, 8deg));
+  animation: shot-vector-rise 0.54s ease-out;
+}
+
+.shot-vector.incoming {
+  top: -160%;
+  transform: rotate(var(--vector-tilt, -8deg));
+  animation: shot-vector-drop 0.5s ease-out;
 }
 
 .impact-burst {
   border: 2px solid rgba(255, 182, 140, 0.9);
   box-shadow: 0 0 16px rgba(255, 120, 88, 0.7), inset 0 0 8px rgba(255, 194, 145, 0.45);
-  animation: impact-burst 0.44s ease-out;
+  animation: impact-burst 0.5s ease-out;
+}
+
+.impact-smoke {
+  inset: 4%;
+  background:
+    radial-gradient(circle at 36% 42%, rgba(255, 206, 164, 0.66), rgba(255, 206, 164, 0) 44%),
+    radial-gradient(circle at 58% 58%, rgba(78, 68, 74, 0.52), rgba(78, 68, 74, 0) 52%),
+    radial-gradient(circle at 48% 46%, rgba(39, 42, 54, 0.48), rgba(39, 42, 54, 0) 60%);
+  animation: impact-smoke-fade 0.68s ease-out;
 }
 
 .splash-ring {
   border: 2px solid rgba(171, 235, 255, 0.9);
   box-shadow: 0 0 14px rgba(125, 214, 255, 0.6), inset 0 0 8px rgba(188, 238, 255, 0.5);
   animation: splash-ring-expand 0.44s ease-out;
+}
+
+.targeting-flare {
+  inset: 6%;
+  border: 1px solid rgba(173, 235, 255, 0.72);
+  box-shadow: 0 0 0 2px rgba(150, 220, 255, 0.24), 0 0 14px rgba(120, 210, 255, 0.4);
+  animation: targeting-flare-pulse 0.82s ease-in-out infinite;
 }
 
 @keyframes ping-pending {
@@ -1512,6 +1872,37 @@ onBeforeUnmount(() => {
   50% { transform: scale(1.16); opacity: 0.68; }
 }
 
+@keyframes ship-idle-drift {
+  0%, 100% { transform: translateY(0) translateX(0) rotateZ(0deg); }
+  35% { transform: translateY(-1px) translateX(0.5px) rotateZ(0.2deg); }
+  70% { transform: translateY(0.5px) translateX(-0.5px) rotateZ(-0.25deg); }
+}
+
+@keyframes wake-flow-horizontal {
+  0%, 100% { transform: translateY(-50%) scaleX(1); opacity: 0.54; }
+  50% { transform: translateY(-50%) scaleX(1.08); opacity: 0.84; }
+}
+
+@keyframes wake-flow-vertical {
+  0%, 100% { transform: translateX(-50%) scaleY(1); opacity: 0.52; }
+  50% { transform: translateX(-50%) scaleY(1.1); opacity: 0.82; }
+}
+
+@keyframes ocean-swell-a {
+  0%, 100% { transform: translateX(0) translateY(0); opacity: 0.7; }
+  50% { transform: translateX(2%) translateY(3%); opacity: 1; }
+}
+
+@keyframes ocean-swell-b {
+  0%, 100% { transform: translateX(0) translateY(0); opacity: 0.64; }
+  50% { transform: translateX(-2%) translateY(2%); opacity: 0.9; }
+}
+
+@keyframes ocean-swell-c {
+  0%, 100% { transform: translateX(0) translateY(0); opacity: 0.54; }
+  50% { transform: translateX(1.4%) translateY(-2%); opacity: 0.8; }
+}
+
 @keyframes impact-burst {
   0% { transform: scale(0.3); opacity: 0.95; }
   100% { transform: scale(1.45); opacity: 0; }
@@ -1520,6 +1911,42 @@ onBeforeUnmount(() => {
 @keyframes splash-ring-expand {
   0% { transform: scale(0.25); opacity: 0.95; }
   100% { transform: scale(1.55); opacity: 0; }
+}
+
+@keyframes impact-smoke-fade {
+  0% { transform: scale(0.5); opacity: 0.86; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@keyframes targeting-flare-pulse {
+  0%, 100% { transform: scale(0.88); opacity: 0.62; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes shot-vector-rise {
+  0% { transform: rotate(var(--vector-tilt, 8deg)) translateY(18%); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: rotate(var(--vector-tilt, 8deg)) translateY(-8%); opacity: 0; }
+}
+
+@keyframes shot-vector-drop {
+  0% { transform: rotate(var(--vector-tilt, -8deg)) translateY(-18%); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: rotate(var(--vector-tilt, -8deg)) translateY(8%); opacity: 0; }
+}
+
+@keyframes board-impact-shake {
+  0% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-1.5px, 0.7px, 0); }
+  40% { transform: translate3d(1.4px, -0.8px, 0); }
+  60% { transform: translate3d(-1.1px, 0.5px, 0); }
+  80% { transform: translate3d(1px, -0.5px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes chromatic-shock-pulse {
+  0% { opacity: 0.85; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.025); }
 }
 
 .controls {

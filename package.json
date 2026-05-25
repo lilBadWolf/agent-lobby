@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "test": "vitest run",
+    "test:games": "vitest run src/components/__tests__/PongGame.multiplayer.spec.ts src/components/__tests__/BattleshipGame.multiplayer.spec.ts",
+    "test:release-smoke": "npm run test:games",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "preview": "vite preview",

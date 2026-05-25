@@ -1,11 +1,11 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.4.36**
+🚀 **Release highlights for agent-lobby 0.5.1**
 
-- 🕹️ Multiplayer game sessions got a major reliability pass so both players stay in sync more consistently in **Pong** and **Battleship**.
-- 🧪 Added a dedicated two-player game smoke-test suite before release to catch multiplayer regressions earlier.
-- ⚓ **Battleship** got a full visual glow-up with upgraded board atmosphere, stronger effects, and realistic ship-piece inspired styling.
-- 🎯 Combat feedback is more dramatic and readable with improved hit/miss effects, directional strike visuals, and polished motion.
-- 🎬 Overall mini-game experience now feels more stream-ready, more competitive, and more satisfying moment-to-moment.
+- 🕹️ Multiplayer game nights feel smoother and more reliable, with cleaner back-and-forth play in both **Pong** and **Battleship**.
+- 👀 New two-player observe flows make it easier to quickly launch and visually verify game sessions.
+- ⚓ **Battleship** now gives clearer combat callouts when ships are sunk, so big moments are impossible to miss.
+- ❌ Sunk ship cells now stand out with stronger red X markers, making board state easier to read at a glance.
+- ✨ Fleet setup got a quality-of-life boost: placement preview highlighting plus a fast **R key** rotate shortcut.
 
-> This update is all about confidence + spectacle: fewer "did it sync?" moments, more "that looked awesome" moments. 🔥🛟✨
+> This release is all about faster setup, clearer battle feedback, and more confident multiplayer vibes. 🎯🔥🎉

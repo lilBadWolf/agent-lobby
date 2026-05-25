@@ -102,10 +102,13 @@ const lastPaddleSentAt = ref(0);
 const lastStateSentAt = ref(0);
 const audioContext = ref<AudioContext | null>(null);
 const isAudioUnlocked = ref(false);
+const dataChannelReady = ref(false);
 let currentChannel: RTCDataChannel | null = null;
 let dataChannelListener: ((event: MessageEvent) => void) | null = null;
+let dataChannelOpenListener: (() => void) | null = null;
+let dataChannelCloseListener: (() => void) | null = null;
 
-const canSend = computed(() => props.dataChannel?.readyState === 'open');
+const canSend = computed(() => dataChannelReady.value);
 const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunning.value);
 const roundPhase = ref<'idle' | 'countdown' | 'playing' | 'waiting' | 'paused'>('idle');
 const countdownValue = ref(0);
@@ -221,12 +224,12 @@ function clampBallY(y: number) {
 }
 
 function sendPongMessage(message: Record<string, unknown>) {
-  if (!props.dataChannel || props.dataChannel.readyState !== 'open') {
+  if (!currentChannel || currentChannel.readyState !== 'open') {
     return;
   }
 
   try {
-    props.dataChannel.send(JSON.stringify(message));
+    currentChannel.send(JSON.stringify(message));
   } catch {
     // swallow non-fatal send failures
   }
@@ -314,7 +317,7 @@ function beginPlay() {
   clearCountdownTimer();
   roundPhase.value = 'playing';
   isRunning.value = true;
-  statusMessage.value = 'PONG started';
+  statusMessage.value = '';
   scheduleFrame();
 }
 
@@ -559,7 +562,7 @@ function handleIncomingMessage(event: MessageEvent) {
     if (!isRunning.value) {
       roundPhase.value = 'playing';
       isRunning.value = true;
-      statusMessage.value = 'PONG started';
+      statusMessage.value = '';
       scheduleFrame();
     }
 
@@ -572,17 +575,37 @@ function handleIncomingMessage(event: MessageEvent) {
 }
 
 function attachDataChannelListener(channel: RTCDataChannel | null) {
-  if (currentChannel && dataChannelListener) {
-    currentChannel.removeEventListener('message', dataChannelListener);
+  if (currentChannel) {
+    if (dataChannelListener) {
+      currentChannel.removeEventListener('message', dataChannelListener);
+    }
+    if (dataChannelOpenListener) {
+      currentChannel.removeEventListener('open', dataChannelOpenListener);
+    }
+    if (dataChannelCloseListener) {
+      currentChannel.removeEventListener('close', dataChannelCloseListener);
+    }
   }
 
   currentChannel = channel;
+  dataChannelReady.value = Boolean(currentChannel && currentChannel.readyState === 'open');
   if (!currentChannel) {
+    dataChannelListener = null;
+    dataChannelOpenListener = null;
+    dataChannelCloseListener = null;
     return;
   }
 
   dataChannelListener = handleIncomingMessage;
+  dataChannelOpenListener = () => {
+    dataChannelReady.value = true;
+  };
+  dataChannelCloseListener = () => {
+    dataChannelReady.value = false;
+  };
   currentChannel.addEventListener('message', dataChannelListener);
+  currentChannel.addEventListener('open', dataChannelOpenListener);
+  currentChannel.addEventListener('close', dataChannelCloseListener);
 }
 
 function handleVisibilityChange() {
@@ -594,11 +617,22 @@ function handleVisibilityChange() {
 }
 
 function detachDataChannelListener() {
-  if (currentChannel && dataChannelListener) {
-    currentChannel.removeEventListener('message', dataChannelListener);
+  if (currentChannel) {
+    if (dataChannelListener) {
+      currentChannel.removeEventListener('message', dataChannelListener);
+    }
+    if (dataChannelOpenListener) {
+      currentChannel.removeEventListener('open', dataChannelOpenListener);
+    }
+    if (dataChannelCloseListener) {
+      currentChannel.removeEventListener('close', dataChannelCloseListener);
+    }
   }
   currentChannel = null;
+  dataChannelReady.value = false;
   dataChannelListener = null;
+  dataChannelOpenListener = null;
+  dataChannelCloseListener = null;
 }
 
 function scheduleFrame() {

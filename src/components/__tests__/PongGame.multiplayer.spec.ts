@@ -7,34 +7,78 @@ import { createPairedDataChannels } from '../../test/mocks/pairedDataChannel';
 class ChannelDriver {
   readyState: RTCDataChannelState = 'open';
   private messageListeners = new Set<(event: MessageEvent) => void>();
-  send = vi.fn();
+  private openListeners = new Set<() => void>();
+  private closeListeners = new Set<() => void>();
+  send = vi.fn((raw: string) => {
+    if (this.readyState !== 'open') {
+      throw new Error('RTCDataChannel is not open');
+    }
+
+    return raw;
+  });
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-    if (type !== 'message') {
+    if (type === 'message') {
+      if (typeof listener === 'function') {
+        this.messageListeners.add(listener as (event: MessageEvent) => void);
+        return;
+      }
+
+      this.messageListeners.add((event) => listener.handleEvent(event));
       return;
     }
 
-    if (typeof listener === 'function') {
-      this.messageListeners.add(listener as (event: MessageEvent) => void);
+    if (type === 'open') {
+      if (typeof listener === 'function') {
+        this.openListeners.add(listener as () => void);
+        return;
+      }
+
+      this.openListeners.add(() => listener.handleEvent(new Event('open')));
       return;
     }
 
-    this.messageListeners.add((event) => listener.handleEvent(event));
+    if (type === 'close') {
+      if (typeof listener === 'function') {
+        this.closeListeners.add(listener as () => void);
+        return;
+      }
+
+      this.closeListeners.add(() => listener.handleEvent(new Event('close')));
+    }
   }
 
   removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-    if (type !== 'message') {
+    if (type === 'message') {
+      if (typeof listener === 'function') {
+        this.messageListeners.delete(listener as (event: MessageEvent) => void);
+      }
       return;
     }
 
-    if (typeof listener === 'function') {
-      this.messageListeners.delete(listener as (event: MessageEvent) => void);
+    if (type === 'open' && typeof listener === 'function') {
+      this.openListeners.delete(listener as () => void);
+      return;
+    }
+
+    if (type === 'close' && typeof listener === 'function') {
+      this.closeListeners.delete(listener as () => void);
     }
   }
 
   emit(payload: unknown) {
     const event = { data: JSON.stringify(payload) } as MessageEvent;
     this.messageListeners.forEach((listener) => listener(event));
+  }
+
+  emitOpen() {
+    this.readyState = 'open';
+    this.openListeners.forEach((listener) => listener());
+  }
+
+  emitClose() {
+    this.readyState = 'closed';
+    this.closeListeners.forEach((listener) => listener());
   }
 }
 
@@ -181,6 +225,55 @@ describe('PongGame multiplayer sync', () => {
 
     const bottomStyle = bravo.find('.pong-bottom-paddle').attributes('style') ?? '';
     expect(extractLeftPercent(bottomStyle)).toBeGreaterThan(40);
+  });
+
+  it('recovers when non-initiator start signal arrives before channel opens', async () => {
+    const channel = new ChannelDriver();
+    channel.readyState = 'connecting';
+
+    const bravo = mount(PongGame, {
+      props: {
+        user: 'BRAVO',
+        peerName: 'ALPHA',
+        dataChannel: channel as unknown as RTCDataChannel,
+        startSignal: 0,
+        isInitiator: false,
+        waitingForAcceptance: false,
+      },
+    });
+
+    await bravo.setProps({ startSignal: 1 });
+
+    expect(bravo.text()).toContain('Waiting for direct line to start PONG...');
+
+    channel.emitOpen();
+    await advance(50);
+
+    expect(bravo.text()).toContain('Waiting for opponent to start PONG');
+
+    channel.emit({
+      type: 'pong-start',
+      authority: 'ALPHA',
+      seq: 0,
+      ballX: 170,
+      ballY: 100,
+      velX: 120,
+      velY: 140,
+      paddleX: 90,
+    });
+
+    await advance(100);
+    expect(bravo.find('.pong-countdown-overlay').exists()).toBe(true);
+
+    await advance(3400);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    await advance(140);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }));
+    await advance(40);
+
+    const sentMessages = channel.send.mock.calls.map(([raw]) => JSON.parse(String(raw)));
+    expect(sentMessages.some((message) => message.type === 'pong-paddle')).toBe(true);
   });
 
   it('keeps remote paddle updates flowing under latency and reordering', async () => {

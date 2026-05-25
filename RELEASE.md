@@ -1,11 +1,11 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.4.35**
+🚀 **Release highlights for agent-lobby 0.4.36**
 
-- 🕹️ Added in-DM mini games so you can play directly with friends while chatting.
-- 🎮 Introduced **Pong** for fast retro head-to-head rounds.
-- ⚓ Introduced **Battleship** with turn-based tactical gameplay, fleet setup, and score tracking.
-- ✨ Upgraded game presentation with richer animations, effects, and sound moments to make matches feel more alive.
-- 🛠️ Improved game-session reliability to reduce edge-case hiccups during invites, turns, and reconnect moments.
+- 🕹️ Multiplayer game sessions got a major reliability pass so both players stay in sync more consistently in **Pong** and **Battleship**.
+- 🧪 Added a dedicated two-player game smoke-test suite before release to catch multiplayer regressions earlier.
+- ⚓ **Battleship** got a full visual glow-up with upgraded board atmosphere, stronger effects, and realistic ship-piece inspired styling.
+- 🎯 Combat feedback is more dramatic and readable with improved hit/miss effects, directional strike visuals, and polished motion.
+- 🎬 Overall mini-game experience now feels more stream-ready, more competitive, and more satisfying moment-to-moment.
 
-> This release is all about making direct messages way more fun, competitive, and stream-friendly. 💥
+> This update is all about confidence + spectacle: fewer "did it sync?" moments, more "that looked awesome" moments. 🔥🛟✨

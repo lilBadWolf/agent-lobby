@@ -65,6 +65,7 @@
                 :peer-name="activeGameUser || currentTab"
                 :data-channel="getGameChat()?.dataChannel ?? null"
                 :start-signal="pongStartSignal"
+                :is-initiator="isGameInitiator"
                 :waiting-for-acceptance="pendingGameRequest === 'pong'"
                 @close="closeActiveGame"
               />

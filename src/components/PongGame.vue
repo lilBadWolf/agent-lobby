@@ -37,8 +37,8 @@
       <div
         class="pong-ball"
         :style="{
-          left: `${(ballX / boardWidth) * 100}%`,
-          top: `${(ballY / boardHeight) * 100}%`,
+          left: `${(renderBallX / boardWidth) * 100}%`,
+          top: `${(renderBallY / boardHeight) * 100}%`,
           width: `${(ballSize / boardWidth) * 100}%`,
           height: `${(ballSize / boardHeight) * 100}%`
         }"
@@ -72,6 +72,7 @@ const props = defineProps<{
   peerName: string;
   dataChannel: RTCDataChannel | null;
   startSignal: number;
+  isInitiator?: boolean;
   waitingForAcceptance?: boolean;
 }>();
 
@@ -84,8 +85,11 @@ const ballSize = 12;
 
 const localPaddleX = ref((boardWidth - paddleWidth) / 2);
 const remotePaddleX = ref((boardWidth - paddleWidth) / 2);
+const remotePaddleTargetX = ref((boardWidth - paddleWidth) / 2);
 const ballX = ref((boardWidth - ballSize) / 2);
 const ballY = ref((boardHeight - ballSize) / 2);
+const renderBallX = ref((boardWidth - ballSize) / 2);
+const renderBallY = ref((boardHeight - ballSize) / 2);
 const ballVelX = ref(120);
 const ballVelY = ref(140);
 const isRunning = ref(false);
@@ -111,6 +115,12 @@ const remoteScore = ref(0);
 const pendingStartFromRemote = ref(false);
 const paddleDirection = ref<'left' | 'right' | null>(null);
 const paddleSpeed = 420;
+const pendingStartWhenReady = ref(false);
+const remoteBallReceivedAt = ref(performance.now());
+const remoteBallSequence = ref(-1);
+const outgoingBallSequence = ref(0);
+const paddleLerpSpeed = 18;
+const ballLerpSpeed = 16;
 
 const showCountdownOverlay = computed(() => roundPhase.value === 'countdown');
 const countdownLabel = computed(() => countdownValue.value > 0 ? countdownValue.value.toString() : 'GO!');
@@ -207,6 +217,10 @@ function clampBallX(x: number) {
   return Math.max(0, Math.min(x, boardWidth - ballSize));
 }
 
+function clampBallY(y: number) {
+  return Math.max(0, Math.min(y, boardHeight - ballSize));
+}
+
 function sendPongMessage(message: Record<string, unknown>) {
   if (!props.dataChannel || props.dataChannel.readyState !== 'open') {
     return;
@@ -225,7 +239,7 @@ function sendPaddleUpdate() {
   }
 
   const now = performance.now();
-  if (now - lastPaddleSentAt.value < 50) {
+  if (now - lastPaddleSentAt.value < 33) {
     return;
   }
 
@@ -239,6 +253,7 @@ function sendStartMessage() {
   }
 
   authority.value = 'local';
+  outgoingBallSequence.value = 0;
   resetBallState();
   sendPongMessage({
     type: 'pong-start',
@@ -247,6 +262,7 @@ function sendStartMessage() {
     ballY: ballY.value,
     velX: ballVelX.value,
     velY: ballVelY.value,
+    seq: outgoingBallSequence.value,
     paddleX: localPaddleX.value
   });
 }
@@ -257,17 +273,19 @@ function sendBallUpdate() {
   }
 
   const now = performance.now();
-  if (now - lastStateSentAt.value < 80) {
+  if (now - lastStateSentAt.value < 33) {
     return;
   }
 
   lastStateSentAt.value = now;
+  outgoingBallSequence.value += 1;
   sendPongMessage({
     type: 'pong-state',
     ballX: ballX.value,
     ballY: ballY.value,
     velX: ballVelX.value,
     velY: ballVelY.value,
+    seq: outgoingBallSequence.value,
     paddleX: localPaddleX.value
   });
 }
@@ -275,8 +293,11 @@ function sendBallUpdate() {
 function resetBallState() {
   ballX.value = (boardWidth - ballSize) / 2;
   ballY.value = (boardHeight - ballSize) / 2;
+  renderBallX.value = ballX.value;
+  renderBallY.value = ballY.value;
   ballVelX.value = 120;
   ballVelY.value = 140;
+  remoteBallReceivedAt.value = performance.now();
 }
 
 function clearCountdownTimer() {
@@ -346,25 +367,27 @@ function prepareNextRound(message: string, winner: 'local' | 'remote') {
 
 function startGame() {
   if (!canSend.value) {
-    statusMessage.value = 'PONG requires an active direct line.';
+    pendingStartWhenReady.value = true;
+    statusMessage.value = 'Waiting for direct line to start PONG...';
     return;
   }
+
+  pendingStartWhenReady.value = false;
 
   if (roundPhase.value === 'countdown' || roundPhase.value === 'playing') {
     return;
   }
 
-  if (!authority.value) {
-    authority.value = 'local';
-  }
-
   unlockAudioContext();
 
-  if (authority.value === 'local') {
+  if (props.isInitiator) {
+    authority.value = 'local';
     startCountdown(false);
     sendStartMessage();
   } else {
-    startCountdown(true);
+    authority.value = 'remote';
+    roundPhase.value = 'waiting';
+    statusMessage.value = 'Waiting for opponent to start PONG';
   }
 }
 
@@ -433,7 +456,12 @@ function handleKeyup(event: KeyboardEvent) {
 }
 
 function updateRemotePaddle(x: number) {
-  remotePaddleX.value = clampPaddleX(x);
+  remotePaddleTargetX.value = clampPaddleX(x);
+
+  // Snap quickly after round transitions, then smooth in-frame.
+  if (Math.abs(remotePaddleTargetX.value - remotePaddleX.value) > paddleWidth) {
+    remotePaddleX.value = remotePaddleTargetX.value;
+  }
 }
 
 function updateBallFromMessage(data: any) {
@@ -447,9 +475,36 @@ function updateBallFromMessage(data: any) {
   }
 
   ballX.value = clampBallX(data.ballX);
-  ballY.value = Math.max(0, Math.min(data.ballY, boardHeight - ballSize));
+  ballY.value = clampBallY(data.ballY);
   ballVelX.value = data.velX;
   ballVelY.value = data.velY;
+  remoteBallReceivedAt.value = performance.now();
+}
+
+function smoothPaddles(delta: number) {
+  const factor = Math.min(1, delta * paddleLerpSpeed);
+  remotePaddleX.value += (remotePaddleTargetX.value - remotePaddleX.value) * factor;
+}
+
+function advanceRemoteBallPrediction(delta: number) {
+  ballX.value += ballVelX.value * delta;
+  ballY.value += ballVelY.value * delta;
+
+  if (ballX.value <= 0 || ballX.value >= boardWidth - ballSize) {
+    ballX.value = clampBallX(ballX.value);
+    ballVelX.value = -ballVelX.value;
+  }
+
+  if (ballY.value <= 0 || ballY.value >= boardHeight - ballSize) {
+    ballY.value = clampBallY(ballY.value);
+    ballVelY.value = -ballVelY.value;
+  }
+}
+
+function smoothRemoteBallRender(delta: number) {
+  const factor = Math.min(1, delta * ballLerpSpeed);
+  renderBallX.value += (ballX.value - renderBallX.value) * factor;
+  renderBallY.value += (ballY.value - renderBallY.value) * factor;
 }
 
 function handleIncomingMessage(event: MessageEvent) {
@@ -479,7 +534,14 @@ function handleIncomingMessage(event: MessageEvent) {
 
   if (data.type === 'pong-start') {
     authority.value = data.authority === props.user ? 'local' : 'remote';
+    if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
+      remoteBallSequence.value = data.seq;
+    } else {
+      remoteBallSequence.value = 0;
+    }
     updateBallFromMessage(data);
+    renderBallX.value = ballX.value;
+    renderBallY.value = ballY.value;
     if (typeof data.paddleX === 'number') {
       updateRemotePaddle(data.paddleX);
     }
@@ -493,6 +555,21 @@ function handleIncomingMessage(event: MessageEvent) {
     if (authority.value === 'local') {
       return;
     }
+
+    if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
+      if (data.seq <= remoteBallSequence.value) {
+        return;
+      }
+      remoteBallSequence.value = data.seq;
+    }
+
+    if (!isRunning.value) {
+      roundPhase.value = 'playing';
+      isRunning.value = true;
+      statusMessage.value = 'PONG started';
+      scheduleFrame();
+    }
+
     updateBallFromMessage(data);
     if (typeof data.paddleX === 'number') {
       updateRemotePaddle(data.paddleX);
@@ -549,6 +626,8 @@ function frame(now: number) {
   const delta = Math.min(0.05, (now - lastTick.value) / 1000);
   lastTick.value = now;
 
+  smoothPaddles(delta);
+
   if (paddleDirection.value) {
     const proposedX = clampPaddleX(localPaddleX.value + (paddleDirection.value === 'left' ? -paddleSpeed : paddleSpeed) * delta);
     if (proposedX !== localPaddleX.value) {
@@ -557,8 +636,17 @@ function frame(now: number) {
     }
   }
 
+  if (authority.value !== 'local') {
+    advanceRemoteBallPrediction(delta);
+    smoothRemoteBallRender(delta);
+    rafId.value = requestAnimationFrame(frame);
+    return;
+  }
+
   ballX.value += ballVelX.value * delta;
   ballY.value += ballVelY.value * delta;
+  renderBallX.value = ballX.value;
+  renderBallY.value = ballY.value;
 
   if (ballX.value <= 0 || ballX.value >= boardWidth - ballSize) {
     ballX.value = clampBallX(ballX.value);
@@ -621,6 +709,15 @@ watch(
   }
 );
 
+watch(
+  canSend,
+  (isOpen) => {
+    if (isOpen && pendingStartWhenReady.value && !isRunning.value) {
+      startGame();
+    }
+  }
+);
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('keyup', handleKeyup);
@@ -639,6 +736,7 @@ onBeforeUnmount(() => {
   if (rafId.value !== null) {
     cancelAnimationFrame(rafId.value);
   }
+  clearCountdownTimer();
 });
 </script>
 

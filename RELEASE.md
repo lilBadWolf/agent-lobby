@@ -1,10 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.2**
+🚀 **Release highlights for agent-lobby 0.5.3**
 
-- 🏓 **Pong** joins now feel way more dependable: accepting a match now cleanly transitions both players into a live game.
-- 🎯 Paddle movement now stays in sync more consistently between both sides, even during tricky connection timing moments.
-- 🧼 In-game startup messaging is cleaner and less noisy, so once the match starts you can just focus on the action.
-- ✅ Multiplayer verification got stronger behind the scenes with tougher real-behavior checks for game motion and controls.
+- 🏓 **Pong** is now much easier to follow in observe mode: Alpha and Bravo show the ball from opposite perspectives, so you can actually see one side going down while the other goes up.
+- 🧮 **Score updates** now sync to both sides, so when a point is awarded the Bravo pane reflects it too.
+- 🎯 Match starts and round restarts are more reliable, so the remote side no longer gets stuck continuing an old round.
+- 🔁 Paddle movement stays in sync while the ball state is being shared every frame, making the whole match feel far more consistent.
 
-> This update is all about smoother match starts, better sync confidence, and less friction when you just want to play. ⚡🎮💬
+> This update focuses on clearer Pong observation, tighter score sync, and more trustworthy multiplayer flow. 🎮✨

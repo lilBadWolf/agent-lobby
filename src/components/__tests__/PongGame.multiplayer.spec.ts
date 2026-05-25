@@ -100,13 +100,13 @@ describe('PongGame multiplayer sync', () => {
     channels.left.send(JSON.stringify({ type: 'pong-paddle', x: 20 }));
     await advance(50);
 
-    const bravoTop = bravo.find('.pong-top-paddle').attributes('style');
+    const bravoTop = bravo.find('.pong-top-paddle').attributes('style') ?? '';
     expect(extractLeftPercent(bravoTop)).toBeGreaterThan(5);
 
     channels.right.send(JSON.stringify({ type: 'pong-paddle', x: 340 }));
     await advance(50);
 
-    const alphaTop = alpha.find('.pong-top-paddle').attributes('style');
+    const alphaTop = alpha.find('.pong-top-paddle').attributes('style') ?? '';
     expect(extractLeftPercent(alphaTop)).toBeGreaterThan(70);
   });
 });

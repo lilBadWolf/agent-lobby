@@ -74,6 +74,7 @@ const props = defineProps<{
   startSignal: number;
   isInitiator?: boolean;
   waitingForAcceptance?: boolean;
+  autoTrackBall?: boolean;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -85,7 +86,6 @@ const ballSize = 12;
 
 const localPaddleX = ref((boardWidth - paddleWidth) / 2);
 const remotePaddleX = ref((boardWidth - paddleWidth) / 2);
-const remotePaddleTargetX = ref((boardWidth - paddleWidth) / 2);
 const ballX = ref((boardWidth - ballSize) / 2);
 const ballY = ref((boardHeight - ballSize) / 2);
 const renderBallX = ref((boardWidth - ballSize) / 2);
@@ -119,7 +119,6 @@ const pendingStartWhenReady = ref(false);
 const remoteBallReceivedAt = ref(performance.now());
 const remoteBallSequence = ref(-1);
 const outgoingBallSequence = ref(0);
-const paddleLerpSpeed = 18;
 const ballLerpSpeed = 16;
 
 const showCountdownOverlay = computed(() => roundPhase.value === 'countdown');
@@ -233,13 +232,17 @@ function sendPongMessage(message: Record<string, unknown>) {
   }
 }
 
-function sendPaddleUpdate() {
+function sendPaddleUpdate(force = false) {
   if (!canSend.value) {
     return;
   }
 
   const now = performance.now();
-  if (now - lastPaddleSentAt.value < 33) {
+  if (!force && now - lastPaddleSentAt.value < 33) {
+    return;
+  }
+
+  if (force && now - lastPaddleSentAt.value < 33) {
     return;
   }
 
@@ -456,12 +459,7 @@ function handleKeyup(event: KeyboardEvent) {
 }
 
 function updateRemotePaddle(x: number) {
-  remotePaddleTargetX.value = clampPaddleX(x);
-
-  // Snap quickly after round transitions, then smooth in-frame.
-  if (Math.abs(remotePaddleTargetX.value - remotePaddleX.value) > paddleWidth) {
-    remotePaddleX.value = remotePaddleTargetX.value;
-  }
+  remotePaddleX.value = clampPaddleX(x);
 }
 
 function updateBallFromMessage(data: any) {
@@ -479,11 +477,6 @@ function updateBallFromMessage(data: any) {
   ballVelX.value = data.velX;
   ballVelY.value = data.velY;
   remoteBallReceivedAt.value = performance.now();
-}
-
-function smoothPaddles(delta: number) {
-  const factor = Math.min(1, delta * paddleLerpSpeed);
-  remotePaddleX.value += (remotePaddleTargetX.value - remotePaddleX.value) * factor;
 }
 
 function advanceRemoteBallPrediction(delta: number) {
@@ -626,15 +619,25 @@ function frame(now: number) {
   const delta = Math.min(0.05, (now - lastTick.value) / 1000);
   lastTick.value = now;
 
-  smoothPaddles(delta);
+  if (props.autoTrackBall) {
+    const targetX = clampPaddleX(ballX.value + ballSize / 2 - paddleWidth / 2);
+    if (Math.abs(targetX - localPaddleX.value) > 0.1) {
+      localPaddleX.value = targetX;
+      sendPaddleUpdate();
+    }
+  }
 
-  if (paddleDirection.value) {
+  if (!props.autoTrackBall && paddleDirection.value) {
     const proposedX = clampPaddleX(localPaddleX.value + (paddleDirection.value === 'left' ? -paddleSpeed : paddleSpeed) * delta);
     if (proposedX !== localPaddleX.value) {
       localPaddleX.value = proposedX;
       sendPaddleUpdate();
     }
   }
+
+  // Periodically send absolute paddle position even while stationary,
+  // so both peers stay aligned when packets are dropped.
+  sendPaddleUpdate(true);
 
   if (authority.value !== 'local') {
     advanceRemoteBallPrediction(delta);
@@ -747,15 +750,15 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border: 1px solid #4cff7a;
-  background: radial-gradient(circle at top, rgba(10, 50, 15, 0.9), rgba(0, 0, 0, 0.95));
+  border: 1px solid var(--color-accent);
+  background: radial-gradient(circle at top, var(--color-accent-muted), var(--color-bg-base));
   padding: 12px;
   border-radius: 10px;
   margin: 0;
-  color: #8cff8c;
+  color: var(--color-text-primary);
   min-height: 0;
   font-family: 'Courier New', Courier, monospace;
-  box-shadow: 0 0 20px rgba(0, 255, 0, 0.15);
+  box-shadow: 0 0 20px var(--color-accent-muted);
 }
 
 .pong-header {
@@ -770,20 +773,20 @@ onBeforeUnmount(() => {
 }
 
 .pong-action-btn {
-  border: 1px solid rgba(82, 255, 87, 0.8);
-  background: rgba(0, 0, 0, 0.45);
-  color: #b8ffb8;
+  border: 1px solid var(--color-accent);
+  background: var(--color-chat-surface);
+  color: var(--color-text-primary);
   padding: 8px 12px;
   text-transform: uppercase;
   font-size: 11px;
   cursor: pointer;
   border-radius: 4px;
-  box-shadow: inset 0 0 10px rgba(0, 255, 0, 0.18);
+  box-shadow: inset 0 0 10px var(--color-accent-muted);
 }
 
 .pong-action-btn.secondary {
-  border-color: rgba(120, 255, 140, 0.6);
-  color: #a5ffad;
+  border-color: var(--color-accent-muted);
+  color: var(--color-text-secondary);
 }
 
 .pong-action-btn:hover {
@@ -794,7 +797,7 @@ onBeforeUnmount(() => {
 .pong-scoreboard {
   flex: 1;
   text-align: center;
-  color: #d7ffe8;
+  color: var(--color-text-primary);
   font-size: 11px;
   letter-spacing: 0.16em;
 }
@@ -805,7 +808,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-chat-overlay);
   z-index: 4;
   pointer-events: none;
 }
@@ -817,45 +820,45 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 8px;
   padding: 18px 22px;
-  border: 1px solid rgba(102, 255, 146, 0.75);
-  background: rgba(0, 12, 0, 0.9);
+  border: 1px solid var(--color-accent);
+  background: var(--color-chat-surface-strong);
   border-radius: 18px;
-  box-shadow: 0 0 30px rgba(88, 255, 118, 0.18);
+  box-shadow: 0 0 30px var(--color-accent-muted);
 }
 
 .pong-countdown-subtitle {
   font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: #a6ffac;
+  color: var(--color-text-secondary);
 }
 
 .pong-countdown-value {
   font-size: 64px;
   line-height: 1;
-  color: #dcffb0;
-  text-shadow: 0 0 24px rgba(255, 255, 160, 0.45);
+  color: var(--color-accent);
+  text-shadow: 0 0 24px var(--color-accent-muted);
 }
 
 .pong-board {
   position: relative;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at 20% 20%, rgba(110, 255, 120, 0.12), rgba(0, 0, 0, 0.92));
-  border: 1px solid rgba(74, 255, 122, 0.6);
+  background: radial-gradient(circle at 20% 20%, var(--color-accent-muted), var(--color-chat-bg));
+  border: 1px solid var(--color-accent-muted);
   border-radius: 10px;
   margin: 0;
   overflow: hidden;
   touch-action: none;
   flex: 1;
-  box-shadow: inset 0 0 60px rgba(0, 255, 100, 0.12);
+  box-shadow: inset 0 0 60px var(--color-accent-muted);
 }
 
 .pong-board::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-image: linear-gradient(var(--color-accent-muted) 1px, transparent 1px), linear-gradient(90deg, var(--color-accent-muted) 1px, transparent 1px);
   background-size: 100% 18px, 18px 100%;
   pointer-events: none;
   animation: pong-scanline 8s infinite linear;
@@ -869,12 +872,12 @@ onBeforeUnmount(() => {
 .pong-status {
   position: absolute;
   inset: 8px 10px auto;
-  color: #c3ffc5;
+  color: var(--color-text-primary);
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   z-index: 2;
-  text-shadow: 0 0 14px rgba(115, 255, 120, 0.35);
+  text-shadow: 0 0 14px var(--color-accent-muted);
 }
 
 .pong-pause-overlay,
@@ -884,7 +887,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--color-chat-overlay);
   color: var(--color-on-accent);
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -898,17 +901,17 @@ onBeforeUnmount(() => {
   position: absolute;
   width: 84px;
   height: 12px;
-  background: rgba(126, 255, 146, 0.18);
-  border: 1px solid rgba(110, 255, 120, 0.9);
+  background: var(--color-accent-muted);
+  border: 1px solid var(--color-accent);
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 9px;
-  color: #caffc7;
+  color: var(--color-text-primary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  text-shadow: 0 0 5px rgba(160, 255, 160, 0.8);
+  text-shadow: 0 0 5px var(--color-accent-muted);
 }
 
 .pong-top-paddle {
@@ -921,14 +924,14 @@ onBeforeUnmount(() => {
 
 .pong-ball {
   position: absolute;
-  background: radial-gradient(circle, #d4ffb4 0%, #60ff5a 40%, #1a700f 100%);
+  background: radial-gradient(circle, var(--color-text-primary) 0%, var(--color-accent) 40%, var(--color-bg-base) 100%);
   border-radius: 50%;
-  box-shadow: 0 0 14px rgba(115, 255, 108, 0.8);
+  box-shadow: 0 0 14px var(--color-accent-muted);
 }
 
 .pong-helper-text {
   font-size: 11px;
-  color: #9cff9c;
+  color: var(--color-text-secondary);
   text-align: center;
   margin-top: 6px;
   letter-spacing: 0.08em;

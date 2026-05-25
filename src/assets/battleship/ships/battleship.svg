@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" role="img" aria-label="Battleship">
+  <defs>
+    <linearGradient id="bbHull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dff0ff"/>
+      <stop offset="1" stop-color="#7da1d8"/>
+    </linearGradient>
+  </defs>
+  <path d="M16 62 L58 20 H334 L382 50 L334 80 H58 Z" fill="url(#bbHull)"/>
+  <rect x="110" y="30" width="48" height="18" rx="4" fill="#4e6f9a"/>
+  <rect x="174" y="28" width="60" height="20" rx="4" fill="#5f80aa"/>
+  <rect x="248" y="34" width="44" height="16" rx="4" fill="#4a6b97"/>
+  <rect x="206" y="18" width="8" height="10" rx="2" fill="#d2e8ff"/>
+  <rect x="162" y="36" width="24" height="4" rx="2" fill="#c0ddff"/>
+  <rect x="236" y="36" width="24" height="4" rx="2" fill="#c0ddff"/>
+</svg>

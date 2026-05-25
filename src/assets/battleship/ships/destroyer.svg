@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" role="img" aria-label="Destroyer">
+  <defs>
+    <linearGradient id="ddHull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d7f9ef"/>
+      <stop offset="1" stop-color="#68b7a9"/>
+    </linearGradient>
+  </defs>
+  <path d="M14 62 L44 28 H220 L286 50 L220 72 H44 Z" fill="url(#ddHull)"/>
+  <rect x="110" y="32" width="44" height="14" rx="4" fill="#2f6f69"/>
+  <rect x="164" y="28" width="36" height="18" rx="4" fill="#357c74"/>
+  <rect x="180" y="16" width="7" height="10" rx="2" fill="#c9f6ef"/>
+</svg>

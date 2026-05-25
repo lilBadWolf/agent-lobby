@@ -81,7 +81,22 @@
 
         <section class="board-panel your-board">
           <div class="panel-title">YOUR GRID</div>
-          <div class="grid" :class="{ locked: phase !== 'placement' }">
+          <div class="local-grid-wrap" :class="{ locked: phase !== 'placement' }">
+            <div class="ship-sprite-layer" aria-hidden="true">
+              <div
+                v-for="ship in localShips"
+                :key="`ship-${ship.id}`"
+                class="ship-sprite"
+                :class="[
+                  `ship-${ship.id}`,
+                  shipOrientation(ship) === 'horizontal' ? 'horizontal' : 'vertical'
+                ]"
+                :style="shipSpriteStyle(ship)"
+              >
+                <span class="ship-code">{{ shipCode(ship.id) }}</span>
+              </div>
+            </div>
+            <div class="grid local-grid">
             <button
               v-for="cell in boardCellCount"
               :key="`local-${cell - 1}`"
@@ -95,6 +110,7 @@
               <span class="impact-burst" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
               <span class="splash-ring" v-if="flashIncomingMiss === cell - 1" aria-hidden="true"></span>
             </button>
+            </div>
           </div>
         </section>
       </div>
@@ -108,6 +124,11 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import battleshipCarrier from '../assets/battleship/ships/carrier.svg';
+import battleshipBattleship from '../assets/battleship/ships/battleship.svg';
+import battleshipDestroyer from '../assets/battleship/ships/destroyer.svg';
+import battleshipSubmarine from '../assets/battleship/ships/submarine.svg';
+import battleshipPatrol from '../assets/battleship/ships/patrol.svg';
 
 interface ShipDefinition {
   id: string;
@@ -197,6 +218,27 @@ let audioContext: AudioContext | null = null;
 let currentChannel: RTCDataChannel | null = null;
 let dataChannelListener: ((event: MessageEvent) => void) | null = null;
 let readyBroadcastInterval: ReturnType<typeof setInterval> | null = null;
+let pendingShotRetryInterval: ReturnType<typeof setInterval> | null = null;
+
+const shipSpriteUrls: Record<string, string> = {
+  carrier: battleshipCarrier,
+  battleship: battleshipBattleship,
+  destroyer: battleshipDestroyer,
+  submarine: battleshipSubmarine,
+  patrol: battleshipPatrol,
+};
+
+function shipCode(id: string): string {
+  const codeMap: Record<string, string> = {
+    carrier: 'CV',
+    battleship: 'BB',
+    destroyer: 'DD',
+    submarine: 'SS',
+    patrol: 'PT',
+  };
+
+  return codeMap[id] ?? id.slice(0, 2).toUpperCase();
+}
 
 function countShots(map: Map<number, ShotOutcome>, outcome: ShotOutcome): number {
   let count = 0;
@@ -282,6 +324,10 @@ function isLocalFirstPlayer(): boolean {
   return normalizeHandle(props.user) <= normalizeHandle(props.peerName);
 }
 
+function resolveFirstPlayer(): string {
+  return isLocalFirstPlayer() ? props.user : props.peerName;
+}
+
 function rowFromIndex(index: number): number {
   return Math.floor(index / BOARD_SIZE);
 }
@@ -306,6 +352,14 @@ function sendMessage(payload: Record<string, unknown>) {
   }
 }
 
+function sendReadyState() {
+  sendMessage({
+    type: 'battleship-ready',
+    ready: localReady.value,
+    ships: localShips.value.length,
+  });
+}
+
 function stopReadyBroadcast() {
   if (readyBroadcastInterval) {
     clearInterval(readyBroadcastInterval);
@@ -320,17 +374,40 @@ function startReadyBroadcast() {
     return;
   }
 
+  sendReadyState();
+
   readyBroadcastInterval = setInterval(() => {
     if (!localReady.value || phase.value !== 'placement') {
       stopReadyBroadcast();
       return;
     }
 
-    sendMessage({
-      type: 'battleship-ready',
-      ships: localShips.value.length,
-    });
+    sendReadyState();
   }, 1000);
+}
+
+function stopPendingShotRetry() {
+  if (pendingShotRetryInterval) {
+    clearInterval(pendingShotRetryInterval);
+    pendingShotRetryInterval = null;
+  }
+}
+
+function startPendingShotRetry() {
+  stopPendingShotRetry();
+
+  pendingShotRetryInterval = setInterval(() => {
+    const cell = pendingOutgoingShot.value;
+    if (cell === null || phase.value !== 'battle' || !localTurn.value) {
+      stopPendingShotRetry();
+      return;
+    }
+
+    sendMessage({
+      type: 'battleship-shot',
+      cell,
+    });
+  }, 850);
 }
 
 function activateGameIfReady() {
@@ -350,6 +427,17 @@ function activateGameIfReady() {
       ? 'TACTICAL FEED: Your fleet is locked in.'
       : 'TACTICAL FEED: Position ships to begin.';
   }
+}
+
+function enterBattle(firstPlayer: string) {
+  phase.value = 'battle';
+  stopReadyBroadcast();
+  const localStarts = normalizeHandle(firstPlayer) === normalizeHandle(props.user);
+  localTurn.value = localStarts;
+  statusMessage.value = localStarts ? 'Your turn. Pick a target.' : `${props.peerName} is targeting...`;
+  combatFeed.value = localStarts
+    ? 'TACTICAL FEED: Fire control is yours.'
+    : `TACTICAL FEED: ${props.peerName} has firing priority.`;
 }
 
 function clearFlashes() {
@@ -375,6 +463,7 @@ function resetSession() {
   pendingOutgoingShot.value = null;
   clearFlashes();
   stopReadyBroadcast();
+  stopPendingShotRetry();
 }
 
 function isValidCell(cell: number): boolean {
@@ -447,17 +536,16 @@ function clearPlacement() {
 }
 
 function beginBattleIfReady() {
-  if (!localReady.value || !remoteReady.value || phase.value === 'finished') {
+  if (!localReady.value || !remoteReady.value || phase.value === 'finished' || phase.value === 'battle') {
     return;
   }
 
-  phase.value = 'battle';
-  stopReadyBroadcast();
-  localTurn.value = isLocalFirstPlayer();
-  statusMessage.value = localTurn.value ? 'Your turn. Pick a target.' : `${props.peerName} is targeting...`;
-  combatFeed.value = localTurn.value
-    ? 'TACTICAL FEED: Fire control is yours.'
-    : `TACTICAL FEED: ${props.peerName} has firing priority.`;
+  const firstPlayer = resolveFirstPlayer();
+  enterBattle(firstPlayer);
+  sendMessage({
+    type: 'battleship-begin',
+    firstPlayer,
+  });
 }
 
 function confirmReady() {
@@ -470,10 +558,7 @@ function confirmReady() {
   statusMessage.value = remoteReady.value ? 'Fleet locked. Awaiting first turn...' : 'Waiting for opponent fleet deployment...';
   combatFeed.value = 'TACTICAL FEED: Fleet deployment confirmed.';
 
-  sendMessage({
-    type: 'battleship-ready',
-    ships: localShips.value.length,
-  });
+  sendReadyState();
 
   startReadyBroadcast();
 
@@ -534,6 +619,7 @@ function fireAtCell(index: number) {
     type: 'battleship-shot',
     cell: index,
   });
+  startPendingShotRetry();
 }
 
 function handleIncomingShot(cell: number) {
@@ -622,6 +708,7 @@ function handleShotResult(data: Record<string, unknown>) {
   }
 
   pendingOutgoingShot.value = null;
+  stopPendingShotRetry();
 
   if (hit) {
     playHitSound();
@@ -646,6 +733,44 @@ function handleShotResult(data: Record<string, unknown>) {
 
   localTurn.value = false;
   statusMessage.value = `${props.peerName} is targeting...`;
+}
+
+function shipOrientation(ship: ShipPlacement): 'horizontal' | 'vertical' {
+  if (ship.cells.length <= 1) {
+    return 'horizontal';
+  }
+
+  const first = ship.cells[0];
+  const second = ship.cells[1];
+  return rowFromIndex(first) === rowFromIndex(second) ? 'horizontal' : 'vertical';
+}
+
+function shipSpriteStyle(ship: ShipPlacement): Record<string, string> {
+  const orientation = shipOrientation(ship);
+  const startCell = ship.cells[0];
+  const row = rowFromIndex(startCell) + 1;
+  const col = colFromIndex(startCell) + 1;
+  const spriteUrl = shipSpriteUrls[ship.id];
+  const sharedStyle: Record<string, string> = {
+    backgroundImage: `linear-gradient(145deg, rgba(218, 244, 255, 0.14), rgba(31, 64, 97, 0.55)), url(${spriteUrl})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+  };
+
+  if (orientation === 'horizontal') {
+    return {
+      gridRow: `${row} / span 1`,
+      gridColumn: `${col} / span ${ship.length}`,
+      ...sharedStyle,
+    };
+  }
+
+  return {
+    gridRow: `${row} / span ${ship.length}`,
+    gridColumn: `${col} / span 1`,
+    ...sharedStyle,
+  };
 }
 
 function localCellClass(index: number): Record<string, boolean> {
@@ -687,7 +812,7 @@ function handleIncomingMessage(event: MessageEvent) {
   }
 
   if (data.type === 'battleship-ready') {
-    remoteReady.value = true;
+    remoteReady.value = data.ready !== false;
     if (phase.value === 'invite') {
       phase.value = 'placement';
     }
@@ -701,6 +826,14 @@ function handleIncomingMessage(event: MessageEvent) {
 
   if (data.type === 'battleship-shot' && typeof data.cell === 'number') {
     handleIncomingShot(data.cell);
+    return;
+  }
+
+  if (data.type === 'battleship-begin') {
+    if (typeof data.firstPlayer === 'string' && data.firstPlayer.trim()) {
+      enterBattle(data.firstPlayer);
+      remoteReady.value = true;
+    }
     return;
   }
 
@@ -802,6 +935,7 @@ watch(
 
 onBeforeUnmount(() => {
   stopReadyBroadcast();
+  stopPendingShotRetry();
   detachDataChannelListener();
 });
 </script>
@@ -1094,6 +1228,124 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
+.local-grid-wrap {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+}
+
+.ship-sprite-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(10, minmax(0, 1fr));
+  gap: 4px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ship-sprite {
+  border-radius: 7px;
+  border: 1px solid rgba(188, 238, 255, 0.72);
+  background-color: rgba(40, 97, 138, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(230, 249, 255, 0.32),
+    inset 0 -6px 10px rgba(3, 26, 49, 0.28),
+    0 4px 10px rgba(5, 26, 47, 0.26);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ship-sprite::before {
+  content: '';
+  position: absolute;
+  inset: 14% 4%;
+  border-radius: 999px;
+  border: 1px solid rgba(222, 246, 255, 0.6);
+  background: linear-gradient(180deg, rgba(229, 251, 255, 0.52), rgba(133, 197, 227, 0.08));
+}
+
+.ship-sprite::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, rgba(230, 249, 255, 0.28) 1px, transparent 1px);
+  background-size: 16px 100%;
+  opacity: 0.22;
+}
+
+.ship-sprite.vertical::before {
+  inset: 4% 14%;
+}
+
+.ship-code {
+  position: relative;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: rgba(235, 250, 255, 0.98);
+  text-shadow: 0 0 8px rgba(11, 34, 54, 0.55);
+  background: rgba(7, 22, 40, 0.54);
+  border: 1px solid rgba(176, 228, 255, 0.35);
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.ship-carrier {
+  box-shadow:
+    inset 0 0 0 1px rgba(230, 249, 255, 0.38),
+    inset 0 -8px 14px rgba(3, 26, 49, 0.35),
+    0 5px 12px rgba(8, 30, 50, 0.3);
+}
+
+.ship-battleship {
+  box-shadow:
+    inset 0 0 0 1px rgba(231, 242, 255, 0.35),
+    inset 0 -8px 14px rgba(14, 26, 56, 0.42),
+    0 5px 12px rgba(8, 30, 50, 0.3);
+}
+
+.ship-destroyer {
+  box-shadow:
+    inset 0 0 0 1px rgba(210, 248, 240, 0.35),
+    inset 0 -8px 14px rgba(10, 47, 49, 0.34),
+    0 5px 12px rgba(8, 30, 50, 0.3);
+}
+
+.ship-submarine {
+  box-shadow:
+    inset 0 0 0 1px rgba(221, 232, 255, 0.35),
+    inset 0 -8px 14px rgba(16, 27, 57, 0.42),
+    0 5px 12px rgba(8, 30, 50, 0.3);
+}
+
+.ship-patrol {
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 246, 255, 0.35),
+    inset 0 -8px 14px rgba(9, 40, 55, 0.38),
+    0 5px 12px rgba(8, 30, 50, 0.3);
+}
+
+.local-grid {
+  position: relative;
+  z-index: 2;
+}
+
+.local-grid .cell {
+  background: linear-gradient(180deg, rgba(11, 33, 65, 0.7), rgba(8, 24, 49, 0.68));
+  border-color: rgba(123, 198, 236, 0.5);
+  backdrop-filter: blur(1px);
+}
+
+.local-grid-wrap.locked .local-grid .cell {
+  background: linear-gradient(180deg, rgba(10, 31, 58, 0.55), rgba(8, 24, 45, 0.52));
+}
+
 .grid.locked .cell {
   cursor: default;
 }
@@ -1163,14 +1415,15 @@ onBeforeUnmount(() => {
 }
 
 .cell.ship {
-  background: linear-gradient(180deg, rgba(61, 158, 210, 0.78), rgba(22, 84, 136, 0.95));
-  box-shadow: inset 0 0 10px rgba(151, 224, 255, 0.25);
+  background: linear-gradient(180deg, rgba(35, 112, 166, 0.44), rgba(16, 61, 104, 0.54));
+  box-shadow: inset 0 0 8px rgba(151, 224, 255, 0.2);
 }
 
 .cell.hit {
   background: linear-gradient(180deg, rgba(255, 140, 92, 0.94), rgba(191, 50, 34, 0.95));
   border-color: rgba(255, 154, 117, 0.92);
   box-shadow: 0 0 14px rgba(255, 112, 91, 0.66);
+  z-index: 4;
 }
 
 .cell.hit .cell-marker {
@@ -1181,6 +1434,7 @@ onBeforeUnmount(() => {
 .cell.miss {
   background: linear-gradient(180deg, rgba(93, 154, 206, 0.78), rgba(33, 96, 150, 0.95));
   border-color: rgba(135, 190, 230, 0.65);
+  z-index: 4;
 }
 
 .cell.miss .cell-marker {
@@ -1354,8 +1608,12 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 980px) {
-  .board-wrap {
+  .game-shell-content {
     grid-template-columns: 1fr;
+  }
+
+  .board-area {
+    grid-template-rows: repeat(2, minmax(210px, 1fr));
   }
 
   .battleship-header {

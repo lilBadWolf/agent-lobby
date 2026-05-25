@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100" role="img" aria-label="Submarine">
+  <defs>
+    <linearGradient id="ssHull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9e6ff"/>
+      <stop offset="1" stop-color="#6781c4"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="34" width="264" height="34" rx="17" fill="url(#ssHull)"/>
+  <rect x="112" y="22" width="74" height="16" rx="6" fill="#4661a8"/>
+  <rect x="142" y="14" width="10" height="8" rx="2" fill="#c5d7ff"/>
+  <circle cx="64" cy="51" r="4" fill="#c7d8ff"/>
+  <circle cx="236" cy="51" r="4" fill="#c7d8ff"/>
+</svg>

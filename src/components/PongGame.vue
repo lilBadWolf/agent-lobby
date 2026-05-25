@@ -60,6 +60,10 @@
   </div>
 </template>
 
+<script lang="ts">
+export default {};
+</script>
+
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 
@@ -570,7 +574,15 @@ function frame(now: number) {
         playPongHit();
       } else {
         playPongGameOver();
-            prepareNextRound('Point for you', 'local');
+        prepareNextRound('Point for you', 'local');
+        return;
+      }
+    } else {
+      ballY.value = 0;
+      ballVelY.value = Math.abs(ballVelY.value);
+    }
+  }
+
   if (ballY.value >= boardHeight - ballSize) {
     if (authority.value === 'local') {
       if (ballX.value + ballSize >= localPaddleX.value && ballX.value <= localPaddleX.value + paddleWidth) {
@@ -579,7 +591,15 @@ function frame(now: number) {
         playPongHit();
       } else {
         playPongGameOver();
-            prepareNextRound('Opponent scored', 'remote');
+        prepareNextRound('Opponent scored', 'remote');
+        return;
+      }
+    } else {
+      ballY.value = boardHeight - ballSize;
+      ballVelY.value = -Math.abs(ballVelY.value);
+    }
+  }
+
   sendBallUpdate();
   rafId.value = requestAnimationFrame(frame);
 }

@@ -11,6 +11,8 @@
     "test:e2e:pong:headed": "playwright test e2e/pong-two-users.spec.ts --headed",
     "test:e2e:pong:debug": "playwright test e2e/pong-two-users.spec.ts --debug",
     "test:e2e:pong:observe": "playwright test e2e/pong-observe.spec.ts --headed",
+    "test:e2e:battleship": "playwright test e2e/battleship-two-users.spec.ts",
+    "test:e2e:battleship:observe": "playwright test e2e/battleship-observe.spec.ts --headed",
     "test:games": "vitest run src/components/__tests__/PongGame.multiplayer.spec.ts src/components/__tests__/BattleshipGame.multiplayer.spec.ts",
     "test:release-smoke": "npm run test:games",
     "test:watch": "vitest",

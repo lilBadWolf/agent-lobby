@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battleship Two-User E2E Harness</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #060b10;
+        color: #c6ffc6;
+        font-family: Consolas, 'Courier New', monospace;
+      }
+
+      #app {
+        width: min(1180px, 98vw);
+        height: min(760px, 96vh);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import '/src/styles/global.css';
+      import '/src/themes';
+      import { createApp, h, ref, shallowRef } from 'vue';
+      import BattleshipGame from '/src/components/BattleshipGame.vue';
+
+      const params = new URLSearchParams(window.location.search);
+      const room = params.get('room') ?? 'default-room';
+      const role = params.get('role') === 'guest' ? 'guest' : 'host';
+      const user = params.get('user') ?? (role === 'host' ? 'ALPHA' : 'BRAVO');
+      const peerName = params.get('peer') ?? (role === 'host' ? 'BRAVO' : 'ALPHA');
+
+      const persistedThemeRaw = localStorage.getItem('agent_theme');
+      let persistedTheme = 'retro-terminal';
+      if (persistedThemeRaw) {
+        try {
+          const parsedTheme = JSON.parse(persistedThemeRaw);
+          if (typeof parsedTheme === 'string' && parsedTheme.trim()) {
+            persistedTheme = parsedTheme;
+          } else if (persistedThemeRaw.trim()) {
+            persistedTheme = persistedThemeRaw;
+          }
+        } catch {
+          if (persistedThemeRaw.trim()) {
+            persistedTheme = persistedThemeRaw;
+          }
+        }
+      }
+      document.documentElement.setAttribute('data-theme', persistedTheme);
+
+      class BroadcastDataChannel {
+        readyState = 'open';
+        bus = new BroadcastChannel(`battleship-e2e-link-${room}`);
+        listeners = new Map();
+
+        constructor() {
+          this.bus.onmessage = (event) => {
+            const message = event.data;
+            if (!message || message.sender === role || message.type !== 'payload') {
+              return;
+            }
+            this.emit('message', { data: message.data });
+          };
+
+          setTimeout(() => {
+            this.emit('open');
+          }, 0);
+        }
+
+        addEventListener(type, listener) {
+          const existing = this.listeners.get(type) ?? new Set();
+          existing.add(listener);
+          this.listeners.set(type, existing);
+        }
+
+        removeEventListener(type, listener) {
+          const existing = this.listeners.get(type);
+          if (!existing) {
+            return;
+          }
+          existing.delete(listener);
+        }
+
+        send(data) {
+          this.bus.postMessage({ type: 'payload', sender: role, data });
+        }
+
+        emit(type, event = undefined) {
+          const existing = this.listeners.get(type);
+          if (!existing) {
+            return;
+          }
+
+          existing.forEach((listener) => {
+            if (typeof listener === 'function') {
+              listener(event);
+              return;
+            }
+            listener.handleEvent(event);
+          });
+        }
+      }
+
+      const channelRef = shallowRef(null);
+      const startSignal = ref(0);
+      const channel = new BroadcastDataChannel();
+      channelRef.value = channel;
+      channel.addEventListener('open', () => {
+        startSignal.value += 1;
+      });
+
+      createApp({
+        setup() {
+          return () => h(BattleshipGame, {
+            user,
+            peerName,
+            dataChannel: channelRef.value,
+            startSignal: startSignal.value,
+            waitingForAcceptance: false,
+          });
+        },
+      }).mount('#app');
+    </script>
+  </body>
+</html>

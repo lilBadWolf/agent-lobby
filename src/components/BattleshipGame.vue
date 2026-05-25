@@ -16,19 +16,21 @@
           <span v-if="phase === 'battle'" class="turn-indicator" :class="{ active: localTurn }">
             {{ localTurn ? 'YOUR TURN' : `${peerName} TURN` }}
           </span>
+          <span v-if="phase === 'battle'" class="tactical-feed-inline">{{ combatFeed }}</span>
         </div>
-        <div class="combat-feed">{{ combatFeed }}</div>
 
-        <div class="score-strip">
+        <div class="score-strip" v-if="phase === 'battle' || phase === 'finished'">
           <div class="score-card">
-            <div class="score-label">YOU</div>
-            <div class="score-value">H {{ localHits }} · M {{ localMisses }}</div>
-            <div class="score-meta">SUNK {{ localShipsSunk }} / {{ shipDefs.length }}</div>
+            <span class="score-label">YOU</span>
+            <span class="score-stat">H {{ localHits }}</span>
+            <span class="score-stat">M {{ localMisses }}</span>
+            <span class="score-stat">SUNK {{ localShipsSunk }} / {{ shipDefs.length }}</span>
           </div>
           <div class="score-card">
-            <div class="score-label">{{ peerName.toUpperCase() }}</div>
-            <div class="score-value">H {{ remoteHits }} · M {{ remoteMisses }}</div>
-            <div class="score-meta">SUNK {{ localShipsLost }} / {{ shipDefs.length }}</div>
+            <span class="score-label">{{ peerName.toUpperCase() }}</span>
+            <span class="score-stat">H {{ remoteHits }}</span>
+            <span class="score-stat">M {{ remoteMisses }}</span>
+            <span class="score-stat">SUNK {{ localShipsLost }} / {{ shipDefs.length }}</span>
           </div>
         </div>
 
@@ -40,6 +42,9 @@
             <button class="action-btn" type="button" @click="clearPlacement" :disabled="localReady">
               CLEAR
             </button>
+            <button class="action-btn primary" type="button" :disabled="!canReady" @click="confirmReady">
+              READY
+            </button>
           </div>
           <div class="fleet-status">
             <span v-if="nextShipToPlace">
@@ -47,9 +52,6 @@
             </span>
             <span v-else>FLEET DEPLOYED</span>
           </div>
-          <button class="action-btn primary" type="button" :disabled="!canReady" @click="confirmReady">
-            READY
-          </button>
         </div>
 
         <div class="winner-banner" v-if="phase === 'finished'">
@@ -79,7 +81,8 @@
                 :disabled="!canClickEnemyCell(cell - 1)"
                 @click="fireAtCell(cell - 1)"
               >
-                <span class="cell-marker" v-if="localShots.get(cell - 1) === 'hit'">✹</span>
+                <span class="cell-marker sunk-marker" v-if="sunkEnemyCells.has(cell - 1)">✕</span>
+                <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'hit'">✹</span>
                 <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'miss'">◌</span>
                 <span class="cell-marker" v-else-if="pendingOutgoingShot === cell - 1">◎</span>
                 <span
@@ -121,6 +124,7 @@
                   ]"
                   :style="shipSpriteStyle(ship)"
                 >
+                  <img class="ship-art" :src="shipSpriteUrls[ship.id]" :alt="`${ship.id} sprite`" draggable="false" />
                   <span class="ship-wake" aria-hidden="true"></span>
                   <span class="ship-code">{{ shipCode(ship.id) }}</span>
                 </div>
@@ -133,8 +137,13 @@
                 class="cell"
                 :class="localCellClass(cell - 1)"
                 @click="handleLocalCellClick(cell - 1)"
+                @mouseenter="setPlacementPreview(cell - 1)"
+                @focus="setPlacementPreview(cell - 1)"
+                @mouseleave="clearPlacementPreview"
+                @blur="clearPlacementPreview"
               >
-                <span class="cell-marker" v-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
+                <span class="cell-marker sunk-marker" v-if="isLocalSunkCell(cell - 1)">✕</span>
+                <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
                 <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
                 <span
                   class="shot-vector incoming"
@@ -213,10 +222,12 @@ const localShips = ref<ShipPlacement[]>([]);
 const localReady = ref(false);
 const remoteReady = ref(false);
 const remoteSunkShipIds = ref<Set<string>>(new Set());
+const sunkEnemyCells = ref<Set<number>>(new Set());
 
 const localShots = ref<Map<number, ShotOutcome>>(new Map());
 const incomingShots = ref<Map<number, ShotOutcome>>(new Map());
 const pendingOutgoingShot = ref<number | null>(null);
+const placementPreviewStart = ref<number | null>(null);
 
 const flashOutgoingHit = ref<number | null>(null);
 const flashOutgoingMiss = ref<number | null>(null);
@@ -247,6 +258,20 @@ const orientationLabel = computed(() => (orientation.value === 'horizontal' ? 'H
 const nextShipToPlace = computed(() => shipDefs.find((ship) => !localShips.value.some((placed) => placed.id === ship.id)) ?? null);
 const canReady = computed(() => nextShipToPlace.value === null && !localReady.value && !showWaitingOverlay.value);
 const canFire = computed(() => phase.value === 'battle' && localTurn.value && pendingOutgoingShot.value === null);
+const placementPreviewCells = computed(() => {
+  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+    return [] as number[];
+  }
+
+  const start = placementPreviewStart.value;
+  const nextShip = nextShipToPlace.value;
+  if (start === null || !nextShip) {
+    return [] as number[];
+  }
+
+  return canPlaceShip(start, nextShip.length) ?? [];
+});
+const placementPreviewCellSet = computed(() => new Set(placementPreviewCells.value));
 
 const localHits = computed(() => countShots(localShots.value, 'hit'));
 const localMisses = computed(() => countShots(localShots.value, 'miss'));
@@ -260,6 +285,7 @@ let currentChannel: RTCDataChannel | null = null;
 let dataChannelListener: ((event: MessageEvent) => void) | null = null;
 let readyBroadcastInterval: ReturnType<typeof setInterval> | null = null;
 let pendingShotRetryInterval: ReturnType<typeof setInterval> | null = null;
+let battleBeginRetryInterval: ReturnType<typeof setInterval> | null = null;
 let enemyImpactTimer: number | null = null;
 let localImpactTimer: number | null = null;
 let enemyShockTimer: number | null = null;
@@ -297,6 +323,10 @@ function countShots(map: Map<number, ShotOutcome>, outcome: ShotOutcome): number
 
 function countSunkShips(ships: ShipPlacement[], shots: Map<number, ShotOutcome>): number {
   return ships.filter((ship) => ship.cells.every((cell) => shots.get(cell) === 'hit')).length;
+}
+
+function findShipLengthById(shipId: string): number {
+  return shipDefs.find((ship) => ship.id === shipId)?.length ?? 0;
 }
 
 function getAudioContext(): AudioContext | null {
@@ -438,6 +468,36 @@ function stopPendingShotRetry() {
   }
 }
 
+function stopBattleBeginRetry() {
+  if (battleBeginRetryInterval) {
+    clearInterval(battleBeginRetryInterval);
+    battleBeginRetryInterval = null;
+  }
+}
+
+function startBattleBeginRetry(firstPlayer: string) {
+  stopBattleBeginRetry();
+
+  let attempts = 0;
+  sendMessage({
+    type: 'battleship-begin',
+    firstPlayer,
+  });
+
+  battleBeginRetryInterval = setInterval(() => {
+    if (phase.value === 'finished' || attempts >= 6) {
+      stopBattleBeginRetry();
+      return;
+    }
+
+    attempts += 1;
+    sendMessage({
+      type: 'battleship-begin',
+      firstPlayer,
+    });
+  }, 450);
+}
+
 function startPendingShotRetry() {
   stopPendingShotRetry();
 
@@ -503,12 +563,15 @@ function resetSession() {
   localReady.value = false;
   remoteReady.value = false;
   remoteSunkShipIds.value = new Set();
+  sunkEnemyCells.value = new Set();
   localShots.value = new Map();
   incomingShots.value = new Map();
   pendingOutgoingShot.value = null;
+  placementPreviewStart.value = null;
   clearFlashes();
   stopReadyBroadcast();
   stopPendingShotRetry();
+  stopBattleBeginRetry();
 }
 
 function isValidCell(cell: number): boolean {
@@ -551,6 +614,7 @@ function handleLocalCellClick(index: number) {
   const existingShip = shipAtCell(index);
   if (existingShip) {
     localShips.value = localShips.value.filter((ship) => ship.id !== existingShip.id);
+    placementPreviewStart.value = null;
     return;
   }
 
@@ -566,6 +630,7 @@ function handleLocalCellClick(index: number) {
   }
 
   localShips.value = [...localShips.value, { id: nextShip.id, length: nextShip.length, cells: targetCells }];
+  placementPreviewStart.value = null;
   playTone(500 + nextShip.length * 40, 0.04, 'square', 0.1);
 }
 
@@ -573,11 +638,51 @@ function toggleOrientation() {
   orientation.value = orientation.value === 'horizontal' ? 'vertical' : 'horizontal';
 }
 
+function shouldIgnoreKeybindingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function handleWindowKeydown(event: KeyboardEvent) {
+  if (event.key.toLowerCase() !== 'r' || event.defaultPrevented || shouldIgnoreKeybindingTarget(event.target)) {
+    return;
+  }
+
+  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+    return;
+  }
+
+  event.preventDefault();
+  toggleOrientation();
+}
+
 function clearPlacement() {
   if (localReady.value) {
     return;
   }
   localShips.value = [];
+  placementPreviewStart.value = null;
+}
+
+function setPlacementPreview(index: number) {
+  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+    placementPreviewStart.value = null;
+    return;
+  }
+
+  placementPreviewStart.value = index;
+}
+
+function clearPlacementPreview() {
+  placementPreviewStart.value = null;
 }
 
 function beginBattleIfReady() {
@@ -587,10 +692,7 @@ function beginBattleIfReady() {
 
   const firstPlayer = resolveFirstPlayer();
   enterBattle(firstPlayer);
-  sendMessage({
-    type: 'battleship-begin',
-    firstPlayer,
-  });
+  startBattleBeginRetry(firstPlayer);
 }
 
 function confirmReady() {
@@ -724,20 +826,30 @@ function handleIncomingShot(cell: number) {
     return;
   }
 
+  if (phase.value === 'placement' && localReady.value && remoteReady.value) {
+    enterBattle(resolveFirstPlayer());
+  }
+
   if (phase.value !== 'battle' && phase.value !== 'finished') {
     return;
   }
 
   if (incomingShots.value.has(cell)) {
     const previous = incomingShots.value.get(cell);
-    const fleetDestroyed = localShips.value.every((placedShip) =>
+    const existingShip = shipAtCell(cell);
+    const existingSunkShipId =
+      previous === 'hit' && existingShip && existingShip.cells.every((segment) => incomingShots.value.get(segment) === 'hit')
+        ? existingShip.id
+        : null;
+    const fleetDestroyed = localShips.value.length > 0 && localShips.value.every((placedShip) =>
       placedShip.cells.every((segment) => incomingShots.value.get(segment) === 'hit')
     );
     sendMessage({
       type: 'battleship-shot-result',
       cell,
       hit: previous === 'hit',
-      sunkShipId: null,
+      sunkShipId: existingSunkShipId,
+      sunkShipCells: existingSunkShipId ? existingShip?.cells ?? [] : [],
       gameOver: fleetDestroyed,
     });
     return;
@@ -758,11 +870,14 @@ function handleIncomingShot(cell: number) {
   }
 
   let sunkShipId: string | null = null;
+  let sunkShipCells: number[] = [];
   if (ship && ship.cells.every((segment) => incomingShots.value.get(segment) === 'hit')) {
     sunkShipId = ship.id;
+    sunkShipCells = [...ship.cells];
+    combatFeed.value = `TACTICAL FEED: Incoming hit at ${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}. ${ship.id.toUpperCase()} sunk.`;
   }
 
-  const gameOver = localShips.value.every((placedShip) =>
+  const gameOver = localShips.value.length > 0 && localShips.value.every((placedShip) =>
     placedShip.cells.every((segment) => incomingShots.value.get(segment) === 'hit')
   );
 
@@ -771,6 +886,7 @@ function handleIncomingShot(cell: number) {
     cell,
     hit,
     sunkShipId,
+    sunkShipCells,
     gameOver,
   });
 
@@ -789,6 +905,10 @@ function handleIncomingShot(cell: number) {
 }
 
 function handleShotResult(data: Record<string, unknown>) {
+  if (phase.value === 'placement' && localReady.value && remoteReady.value) {
+    enterBattle(resolveFirstPlayer());
+  }
+
   const cell = typeof data.cell === 'number' ? data.cell : pendingOutgoingShot.value;
   if (typeof cell !== 'number' || !isValidCell(cell)) {
     pendingOutgoingShot.value = null;
@@ -798,10 +918,26 @@ function handleShotResult(data: Record<string, unknown>) {
   const hit = Boolean(data.hit);
   localShots.value.set(cell, hit ? 'hit' : 'miss');
 
+  const sunkShipId = typeof data.sunkShipId === 'string' && data.sunkShipId ? data.sunkShipId : null;
+
   if (typeof data.sunkShipId === 'string' && data.sunkShipId) {
     const next = new Set(remoteSunkShipIds.value);
     next.add(data.sunkShipId);
     remoteSunkShipIds.value = next;
+  }
+
+  if (Array.isArray(data.sunkShipCells)) {
+    const next = new Set(sunkEnemyCells.value);
+    data.sunkShipCells.forEach((value) => {
+      if (typeof value === 'number' && isValidCell(value)) {
+        next.add(value);
+      }
+    });
+    sunkEnemyCells.value = next;
+  } else if (sunkShipId) {
+    const next = new Set(sunkEnemyCells.value);
+    next.add(cell);
+    sunkEnemyCells.value = next;
   }
 
   pendingOutgoingShot.value = null;
@@ -810,14 +946,20 @@ function handleShotResult(data: Record<string, unknown>) {
   if (hit) {
     playHitSound();
     triggerFlash('outgoing-hit', cell);
-    combatFeed.value = `TACTICAL FEED: Direct hit at ${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}.`;
+    if (sunkShipId) {
+      const sunkLength = findShipLengthById(sunkShipId);
+      combatFeed.value = `TACTICAL FEED: Direct hit at ${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}. ${sunkShipId.toUpperCase()} sunk${sunkLength ? ` (${sunkLength})` : ''}.`;
+    } else {
+      combatFeed.value = `TACTICAL FEED: Direct hit at ${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}.`;
+    }
   } else {
     playMissSound();
     triggerFlash('outgoing-miss', cell);
     combatFeed.value = `TACTICAL FEED: Splashdown at ${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}.`;
   }
 
-  const gameOver = Boolean(data.gameOver);
+  const remoteFleetConfirmedSunk = remoteSunkShipIds.value.size >= shipDefs.length;
+  const gameOver = Boolean(data.gameOver) && remoteFleetConfirmedSunk;
   if (gameOver) {
     phase.value = 'finished';
     winner.value = 'local';
@@ -880,12 +1022,7 @@ function shipSpriteStyle(ship: ShipPlacement): Record<string, string> {
   const startCell = ship.cells[0];
   const row = rowFromIndex(startCell) + 1;
   const col = colFromIndex(startCell) + 1;
-  const spriteUrl = shipSpriteUrls[ship.id];
   const sharedStyle: Record<string, string> = {
-    backgroundImage: `linear-gradient(165deg, rgba(255, 255, 255, 0.12), rgba(36, 43, 56, 0.2)), url(${spriteUrl})`,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center',
-    backgroundRepeat: 'no-repeat',
     '--ship-length': `${ship.length}`,
   };
 
@@ -908,6 +1045,8 @@ function localCellClass(index: number): Record<string, boolean> {
   const shot = incomingShots.value.get(index);
   return {
     ship: Boolean(shipAtCell(index)),
+    sunk: isLocalSunkCell(index),
+    'placement-preview': placementPreviewCellSet.value.has(index),
     hit: shot === 'hit',
     miss: shot === 'miss',
     'flash-hit': flashIncomingHit.value === index,
@@ -915,9 +1054,19 @@ function localCellClass(index: number): Record<string, boolean> {
   };
 }
 
+function isLocalSunkCell(index: number): boolean {
+  const ship = shipAtCell(index);
+  if (!ship) {
+    return false;
+  }
+
+  return ship.cells.every((segment) => incomingShots.value.get(segment) === 'hit');
+}
+
 function enemyCellClass(index: number): Record<string, boolean> {
   const shot = localShots.value.get(index);
   return {
+    sunk: sunkEnemyCells.value.has(index),
     hit: shot === 'hit',
     miss: shot === 'miss',
     pending: pendingOutgoingShot.value === index,
@@ -962,6 +1111,7 @@ function handleIncomingMessage(event: MessageEvent) {
 
   if (data.type === 'battleship-begin') {
     if (typeof data.firstPlayer === 'string' && data.firstPlayer.trim()) {
+      stopBattleBeginRetry();
       enterBattle(data.firstPlayer);
       remoteReady.value = true;
     }
@@ -1048,6 +1198,7 @@ onMounted(() => {
     resetSession();
   }
   activateGameIfReady();
+  window.addEventListener('keydown', handleWindowKeydown);
 });
 
 watch(
@@ -1065,8 +1216,10 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleWindowKeydown);
   stopReadyBroadcast();
   stopPendingShotRetry();
+  stopBattleBeginRetry();
   if (enemyImpactTimer) {
     clearTimeout(enemyImpactTimer);
   }
@@ -1133,7 +1286,6 @@ onBeforeUnmount(() => {
 
 .battleship-header,
 .status-bar,
-.combat-feed,
 .score-strip,
 .board-area,
 .controls,
@@ -1146,27 +1298,27 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   gap: 10px;
 }
 
 .title-wrap {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   color: #e4f8ff;
   text-shadow: 0 0 18px rgba(120, 221, 255, 0.46);
 }
 
 .subtitle {
-  font-size: 10px;
-  letter-spacing: 0.11em;
+  font-size: 9px;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: #a7d9ff;
 }
@@ -1175,10 +1327,10 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(118, 215, 255, 0.72);
   background: linear-gradient(180deg, rgba(15, 50, 90, 0.82), rgba(6, 22, 48, 0.82));
   color: #d9f6ff;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 9px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   box-shadow: inset 0 0 12px rgba(97, 205, 255, 0.22), 0 0 12px rgba(73, 170, 255, 0.16);
   margin-left: auto;
@@ -1199,9 +1351,9 @@ onBeforeUnmount(() => {
   background: rgba(8, 20, 42, 0.74);
   color: #d5f6ff;
   border-radius: 8px;
-  padding: 7px 11px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  padding: 5px 9px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -1229,18 +1381,6 @@ onBeforeUnmount(() => {
   text-transform: uppercase;
 }
 
-.combat-feed {
-  margin-bottom: 10px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px dashed rgba(111, 201, 255, 0.55);
-  background: rgba(7, 23, 49, 0.55);
-  color: #bfe8ff;
-  font-size: 10px;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
 .turn-indicator {
   color: #95caf0;
 }
@@ -1249,6 +1389,17 @@ onBeforeUnmount(() => {
   color: #94ffb7;
   text-shadow: 0 0 10px rgba(148, 255, 183, 0.42);
   animation: pulse-turn 1.1s ease-in-out infinite;
+}
+
+.tactical-feed-inline {
+  color: #bfe8ff;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
 }
 
 .invite-overlay {
@@ -1277,26 +1428,18 @@ onBeforeUnmount(() => {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
 }
 
 .status-bar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 8px;
   border: 1px solid rgba(118, 215, 255, 0.5);
   border-radius: 12px;
   background: rgba(10, 23, 47, 0.88);
-}
-
-.combat-feed {
-  min-height: 76px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px dashed rgba(111, 201, 255, 0.45);
-  background: rgba(7, 23, 49, 0.65);
 }
 
 .score-strip {
@@ -1308,30 +1451,31 @@ onBeforeUnmount(() => {
 .score-card {
   border: 1px solid rgba(114, 191, 238, 0.56);
   border-radius: 10px;
-  padding: 9px 11px;
+  padding: 6px 8px;
   background: linear-gradient(180deg, rgba(10, 30, 58, 0.82), rgba(7, 22, 45, 0.72));
   box-shadow: inset 0 0 12px rgba(100, 198, 255, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .score-label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 9px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #b5def2;
+  font-weight: 700;
+  flex: 0 0 auto;
 }
 
-.score-value {
-  margin-top: 2px;
-  font-size: 12px;
-  color: #d7f4ff;
-  letter-spacing: 0.08em;
-}
-
-.score-meta {
-  margin-top: 2px;
+.score-stat {
   font-size: 10px;
   color: #8ecdf0;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  flex: 0 0 auto;
 }
 
 .board-area {
@@ -1446,6 +1590,7 @@ onBeforeUnmount(() => {
 .grid {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: repeat(10, minmax(0, 1fr));
   gap: 4px;
   min-height: 0;
   flex: 1;
@@ -1457,6 +1602,7 @@ onBeforeUnmount(() => {
 .local-grid-wrap {
   position: relative;
   min-height: 0;
+  height: 100%;
   flex: 1;
 }
 
@@ -1486,6 +1632,16 @@ onBeforeUnmount(() => {
   justify-content: center;
   transform-style: preserve-3d;
   animation: ship-idle-drift 4.4s ease-in-out infinite;
+}
+
+.ship-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.96;
+  z-index: 0;
 }
 
 .ship-wake {
@@ -1648,9 +1804,15 @@ onBeforeUnmount(() => {
 }
 
 .local-grid .cell {
-  background: linear-gradient(180deg, rgba(11, 33, 65, 0.7), rgba(8, 24, 49, 0.68));
+  background: linear-gradient(180deg, rgba(11, 33, 65, 0.26), rgba(8, 24, 49, 0.22));
   border-color: rgba(123, 198, 236, 0.5);
   backdrop-filter: blur(1px);
+}
+
+.local-grid .cell.placement-preview:not(.ship):not(.hit):not(.miss):not(.sunk) {
+  background: linear-gradient(180deg, rgba(126, 236, 255, 0.5), rgba(54, 175, 226, 0.48));
+  border-color: rgba(158, 233, 255, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(191, 244, 255, 0.7), 0 0 12px rgba(82, 192, 255, 0.36);
 }
 
 .local-grid-wrap.locked .local-grid .cell {
@@ -1671,7 +1833,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 1 / 1;
+  min-height: 0;
   min-width: 0;
   padding: 0;
   transition: transform 0.12s ease, background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -1740,6 +1902,19 @@ onBeforeUnmount(() => {
 .cell.hit .cell-marker {
   color: #fff2d8;
   text-shadow: 0 0 10px rgba(255, 201, 144, 0.7), 0 0 18px rgba(255, 119, 86, 0.45);
+}
+
+.cell.sunk {
+  background: linear-gradient(180deg, rgba(255, 96, 96, 0.95), rgba(165, 24, 24, 0.96));
+  border-color: rgba(255, 133, 133, 0.95);
+  box-shadow: 0 0 16px rgba(255, 72, 72, 0.72);
+}
+
+.cell.sunk .cell-marker,
+.cell-marker.sunk-marker {
+  color: #ff5a5a;
+  font-size: 13px;
+  text-shadow: 0 0 10px rgba(255, 104, 104, 0.85), 0 0 16px rgba(255, 54, 54, 0.65);
 }
 
 .cell.miss {
@@ -1950,9 +2125,9 @@ onBeforeUnmount(() => {
 }
 
 .controls {
-  margin-top: 12px;
+  margin-top: 6px;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: 8px;
   align-items: center;
 }
@@ -1960,6 +2135,7 @@ onBeforeUnmount(() => {
 .controls-left {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 
 .action-btn {
@@ -1978,6 +2154,7 @@ onBeforeUnmount(() => {
 .action-btn.primary {
   background: rgba(97, 212, 255, 0.2);
   box-shadow: 0 0 14px rgba(99, 197, 255, 0.26);
+  min-width: 72px;
 }
 
 .action-btn:hover:not(:disabled) {
@@ -2037,10 +2214,18 @@ onBeforeUnmount(() => {
 @media (max-width: 980px) {
   .game-shell-content {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 0.26fr) minmax(0, 0.74fr);
   }
 
   .board-area {
-    grid-template-rows: repeat(2, minmax(210px, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    min-height: 0;
+  }
+
+  .sidebar {
+    min-height: 0;
+    overflow: auto;
+    padding-right: 2px;
   }
 
   .battleship-header {

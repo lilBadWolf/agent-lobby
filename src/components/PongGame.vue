@@ -2,6 +2,7 @@
   <div class="pong-game" role="application" aria-label="Pong game">
     <div class="pong-header">
       <span>🎮 PONG</span>
+      <span class="pong-scoreboard" aria-live="polite">{{ scoreboardText }}</span>
       <button class="pong-action-btn close" type="button" @click="closeGame">
         EXIT
       </button>
@@ -12,6 +13,12 @@
       tabindex="0"
     >
       <div class="pong-status">{{ statusMessage }}</div>
+      <div v-if="showCountdownOverlay" class="pong-countdown-overlay">
+        <div class="pong-countdown-card">
+          <div class="pong-countdown-subtitle">GET READY</div>
+          <div class="pong-countdown-value">{{ countdownLabel }}</div>
+        </div>
+      </div>
       <div v-if="showWaitingOverlay" class="pong-wait-overlay">
         WAITING FOR OPPONENT TO ACCEPT
       </div>
@@ -92,6 +99,20 @@ let dataChannelListener: ((event: MessageEvent) => void) | null = null;
 
 const canSend = computed(() => props.dataChannel?.readyState === 'open');
 const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunning.value);
+const roundPhase = ref<'idle' | 'countdown' | 'playing' | 'waiting' | 'paused'>('idle');
+const countdownValue = ref(0);
+const countdownTimerId = ref<number | null>(null);
+const localScore = ref(0);
+const remoteScore = ref(0);
+const pendingStartFromRemote = ref(false);
+const paddleDirection = ref<'left' | 'right' | null>(null);
+const paddleSpeed = 420;
+
+const showCountdownOverlay = computed(() => roundPhase.value === 'countdown');
+const countdownLabel = computed(() => countdownValue.value > 0 ? countdownValue.value.toString() : 'GO!');
+const scoreboardText = computed(
+  () => `${props.user} ${localScore.value} — ${remoteScore.value} ${props.peerName}`
+);
 
 watch(
   () => props.waitingForAcceptance,
@@ -254,24 +275,92 @@ function resetBallState() {
   ballVelY.value = 140;
 }
 
+function clearCountdownTimer() {
+  if (countdownTimerId.value !== null) {
+    clearTimeout(countdownTimerId.value);
+    countdownTimerId.value = null;
+  }
+}
+
+function beginPlay() {
+  clearCountdownTimer();
+  roundPhase.value = 'playing';
+  isRunning.value = true;
+  statusMessage.value = 'PONG started';
+  scheduleFrame();
+}
+
+function scheduleCountdownTick() {
+  countdownTimerId.value = window.setTimeout(() => {
+    if (countdownValue.value > 1) {
+      countdownValue.value -= 1;
+      playTone(520 + countdownValue.value * 40, 0.08, 'triangle');
+      scheduleCountdownTick();
+      return;
+    }
+
+    countdownValue.value = 0;
+    playTone(880, 0.12, 'sawtooth');
+    beginPlay();
+  }, 900);
+}
+
+function startCountdown(isRemoteStart = false) {
+  clearCountdownTimer();
+  roundPhase.value = 'countdown';
+  countdownValue.value = 3;
+  pendingStartFromRemote.value = isRemoteStart;
+  statusMessage.value = isRemoteStart ? 'Opponent has started PONG' : 'PONG starting';
+  playTone(660, 0.08, 'triangle');
+  scheduleCountdownTick();
+}
+
+function prepareNextRound(message: string, winner: 'local' | 'remote') {
+  if (winner === 'local') {
+    localScore.value += 1;
+  } else {
+    remoteScore.value += 1;
+  }
+
+  isRunning.value = false;
+  statusMessage.value = message;
+  roundPhase.value = authority.value === 'local' ? 'countdown' : 'waiting';
+  resetBallState();
+
+  if (rafId.value !== null) {
+    cancelAnimationFrame(rafId.value);
+    rafId.value = null;
+  }
+
+  if (authority.value === 'local') {
+    startCountdown(false);
+    sendStartMessage();
+  } else {
+    statusMessage.value = 'Waiting for opponent to restart PONG';
+  }
+}
+
 function startGame() {
   if (!canSend.value) {
     statusMessage.value = 'PONG requires an active direct line.';
     return;
   }
 
-  unlockAudioContext();
-  playTone(880, 0.08, 'sawtooth');
+  if (roundPhase.value === 'countdown' || roundPhase.value === 'playing') {
+    return;
+  }
 
-  if (!isRunning.value) {
-    if (!authority.value) {
-      authority.value = 'local';
-    }
-    resetBallState();
-    isRunning.value = true;
-    statusMessage.value = 'PONG started';
+  if (!authority.value) {
+    authority.value = 'local';
+  }
+
+  unlockAudioContext();
+
+  if (authority.value === 'local') {
+    startCountdown(false);
     sendStartMessage();
-    scheduleFrame();
+  } else {
+    startCountdown(true);
   }
 }
 
@@ -319,20 +408,23 @@ function closeGame() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (!isRunning.value) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
     return;
   }
 
-  const paddleStep = Math.max(24, Math.round((boardWidth - paddleWidth) * 0.12));
+  const newDirection = event.key === 'ArrowLeft' ? 'left' : 'right';
+  if (paddleDirection.value !== newDirection) {
+    paddleDirection.value = newDirection;
+  }
 
-  if (event.key === 'ArrowLeft') {
-    localPaddleX.value = clampPaddleX(localPaddleX.value - paddleStep);
-    sendPaddleUpdate();
-    event.preventDefault();
-  } else if (event.key === 'ArrowRight') {
-    localPaddleX.value = clampPaddleX(localPaddleX.value + paddleStep);
-    sendPaddleUpdate();
-    event.preventDefault();
+  event.preventDefault();
+}
+
+function handleKeyup(event: KeyboardEvent) {
+  if (event.key === 'ArrowLeft' && paddleDirection.value === 'left') {
+    paddleDirection.value = null;
+  } else if (event.key === 'ArrowRight' && paddleDirection.value === 'right') {
+    paddleDirection.value = null;
   }
 }
 
@@ -387,10 +479,8 @@ function handleIncomingMessage(event: MessageEvent) {
     if (typeof data.paddleX === 'number') {
       updateRemotePaddle(data.paddleX);
     }
-    if (!isRunning.value) {
-      isRunning.value = true;
-      statusMessage.value = 'PONG in progress';
-      scheduleFrame();
+    if (!isRunning.value && roundPhase.value !== 'playing') {
+      startCountdown(true);
     }
     return;
   }
@@ -455,6 +545,14 @@ function frame(now: number) {
   const delta = Math.min(0.05, (now - lastTick.value) / 1000);
   lastTick.value = now;
 
+  if (paddleDirection.value) {
+    const proposedX = clampPaddleX(localPaddleX.value + (paddleDirection.value === 'left' ? -paddleSpeed : paddleSpeed) * delta);
+    if (proposedX !== localPaddleX.value) {
+      localPaddleX.value = proposedX;
+      sendPaddleUpdate();
+    }
+  }
+
   ballX.value += ballVelX.value * delta;
   ballY.value += ballVelY.value * delta;
 
@@ -472,15 +570,7 @@ function frame(now: number) {
         playPongHit();
       } else {
         playPongGameOver();
-        stopGame('Remote missed the ball');
-        return;
-      }
-    } else {
-      ballY.value = 0;
-      ballVelY.value = Math.abs(ballVelY.value);
-    }
-  }
-
+            prepareNextRound('Point for you', 'local');
   if (ballY.value >= boardHeight - ballSize) {
     if (authority.value === 'local') {
       if (ballX.value + ballSize >= localPaddleX.value && ballX.value <= localPaddleX.value + paddleWidth) {
@@ -489,15 +579,7 @@ function frame(now: number) {
         playPongHit();
       } else {
         playPongGameOver();
-        stopGame('You missed the ball');
-        return;
-      }
-    } else {
-      ballY.value = boardHeight - ballSize;
-      ballVelY.value = -Math.abs(ballVelY.value);
-    }
-  }
-
+            prepareNextRound('Opponent scored', 'remote');
   sendBallUpdate();
   rafId.value = requestAnimationFrame(frame);
 }
@@ -521,6 +603,7 @@ watch(
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('keyup', handleKeyup);
   window.addEventListener('blur', pauseForFocusLoss);
   window.addEventListener('focus', resumeAfterFocusGain);
   document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -528,6 +611,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('blur', pauseForFocusLoss);
   window.removeEventListener('focus', resumeAfterFocusGain);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -587,6 +671,52 @@ onBeforeUnmount(() => {
 .pong-action-btn:hover {
   background: var(--color-accent);
   color: var(--color-on-accent);
+}
+
+.pong-scoreboard {
+  flex: 1;
+  text-align: center;
+  color: #d7ffe8;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.pong-countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.pong-countdown-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 22px;
+  border: 1px solid rgba(102, 255, 146, 0.75);
+  background: rgba(0, 12, 0, 0.9);
+  border-radius: 18px;
+  box-shadow: 0 0 30px rgba(88, 255, 118, 0.18);
+}
+
+.pong-countdown-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #a6ffac;
+}
+
+.pong-countdown-value {
+  font-size: 64px;
+  line-height: 1;
+  color: #dcffb0;
+  text-shadow: 0 0 24px rgba(255, 255, 160, 0.45);
 }
 
 .pong-board {

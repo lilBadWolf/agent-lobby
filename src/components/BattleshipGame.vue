@@ -9,95 +9,99 @@
       <button class="header-btn" type="button" @click="closeGame">EXIT</button>
     </div>
 
-    <div class="status-bar">
-      <span>{{ statusMessage }}</span>
-      <span v-if="phase === 'battle'" class="turn-indicator" :class="{ active: localTurn }">
-        {{ localTurn ? 'YOUR TURN' : `${peerName} TURN` }}
-      </span>
+    <div class="game-shell-content">
+      <aside class="sidebar">
+        <div class="status-bar">
+          <span>{{ statusMessage }}</span>
+          <span v-if="phase === 'battle'" class="turn-indicator" :class="{ active: localTurn }">
+            {{ localTurn ? 'YOUR TURN' : `${peerName} TURN` }}
+          </span>
+        </div>
+        <div class="combat-feed">{{ combatFeed }}</div>
+
+        <div class="score-strip">
+          <div class="score-card">
+            <div class="score-label">YOU</div>
+            <div class="score-value">H {{ localHits }} · M {{ localMisses }}</div>
+            <div class="score-meta">SUNK {{ localShipsSunk }} / {{ shipDefs.length }}</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">{{ peerName.toUpperCase() }}</div>
+            <div class="score-value">H {{ remoteHits }} · M {{ remoteMisses }}</div>
+            <div class="score-meta">SUNK {{ localShipsLost }} / {{ shipDefs.length }}</div>
+          </div>
+        </div>
+
+        <div class="controls" v-if="phase === 'placement'">
+          <div class="controls-left">
+            <button class="action-btn" type="button" @click="toggleOrientation">
+              ORIENTATION: {{ orientationLabel }}
+            </button>
+            <button class="action-btn" type="button" @click="clearPlacement" :disabled="localReady">
+              CLEAR
+            </button>
+          </div>
+          <div class="fleet-status">
+            <span v-if="nextShipToPlace">
+              PLACE {{ nextShipToPlace.id.toUpperCase() }} ({{ nextShipToPlace.length }})
+            </span>
+            <span v-else>FLEET DEPLOYED</span>
+          </div>
+          <button class="action-btn primary" type="button" :disabled="!canReady" @click="confirmReady">
+            READY
+          </button>
+        </div>
+
+        <div class="winner-banner" v-if="phase === 'finished'">
+          {{ winner === 'local' ? 'VICTORY' : 'DEFEAT' }}
+        </div>
+      </aside>
+
+      <div class="board-area">
+        <section class="board-panel target-board">
+          <div class="panel-title">TARGET GRID</div>
+          <div class="grid enemy" :class="{ interactive: canFire }">
+            <button
+              v-for="cell in boardCellCount"
+              :key="`enemy-${cell - 1}`"
+              type="button"
+              class="cell"
+              :class="enemyCellClass(cell - 1)"
+              :disabled="!canClickEnemyCell(cell - 1)"
+              @click="fireAtCell(cell - 1)"
+            >
+              <span class="cell-marker" v-if="localShots.get(cell - 1) === 'hit'">✹</span>
+              <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'miss'">◌</span>
+              <span class="cell-marker" v-else-if="pendingOutgoingShot === cell - 1">◎</span>
+              <span class="impact-burst" v-if="flashOutgoingHit === cell - 1" aria-hidden="true"></span>
+              <span class="splash-ring" v-if="flashOutgoingMiss === cell - 1" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="board-panel your-board">
+          <div class="panel-title">YOUR GRID</div>
+          <div class="grid" :class="{ locked: phase !== 'placement' }">
+            <button
+              v-for="cell in boardCellCount"
+              :key="`local-${cell - 1}`"
+              type="button"
+              class="cell"
+              :class="localCellClass(cell - 1)"
+              @click="handleLocalCellClick(cell - 1)"
+            >
+              <span class="cell-marker" v-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
+              <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
+              <span class="impact-burst" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
+              <span class="splash-ring" v-if="flashIncomingMiss === cell - 1" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
-    <div class="combat-feed">{{ combatFeed }}</div>
 
     <div v-if="showWaitingOverlay" class="invite-overlay">
       WAITING FOR OPPONENT TO ACCEPT
-    </div>
-
-    <div class="score-strip">
-      <div class="score-card">
-        <div class="score-label">YOU</div>
-        <div class="score-value">H {{ localHits }} · M {{ localMisses }}</div>
-        <div class="score-meta">SUNK {{ localShipsSunk }} / {{ shipDefs.length }}</div>
-      </div>
-      <div class="score-card">
-        <div class="score-label">{{ peerName.toUpperCase() }}</div>
-        <div class="score-value">H {{ remoteHits }} · M {{ remoteMisses }}</div>
-        <div class="score-meta">SUNK {{ localShipsLost }} / {{ shipDefs.length }}</div>
-      </div>
-    </div>
-
-    <div class="board-wrap">
-      <section class="board-panel">
-        <div class="panel-title">YOUR GRID</div>
-        <div class="grid" :class="{ locked: phase !== 'placement' }">
-          <button
-            v-for="cell in boardCellCount"
-            :key="`local-${cell - 1}`"
-            type="button"
-            class="cell"
-            :class="localCellClass(cell - 1)"
-            @click="handleLocalCellClick(cell - 1)"
-          >
-            <span class="cell-marker" v-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
-            <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
-            <span class="impact-burst" v-if="flashIncomingHit === cell - 1" aria-hidden="true"></span>
-            <span class="splash-ring" v-if="flashIncomingMiss === cell - 1" aria-hidden="true"></span>
-          </button>
-        </div>
-      </section>
-
-      <section class="board-panel">
-        <div class="panel-title">TARGET GRID</div>
-        <div class="grid enemy" :class="{ interactive: canFire }">
-          <button
-            v-for="cell in boardCellCount"
-            :key="`enemy-${cell - 1}`"
-            type="button"
-            class="cell"
-            :class="enemyCellClass(cell - 1)"
-            :disabled="!canClickEnemyCell(cell - 1)"
-            @click="fireAtCell(cell - 1)"
-          >
-            <span class="cell-marker" v-if="localShots.get(cell - 1) === 'hit'">✹</span>
-            <span class="cell-marker" v-else-if="localShots.get(cell - 1) === 'miss'">◌</span>
-            <span class="cell-marker" v-else-if="pendingOutgoingShot === cell - 1">◎</span>
-            <span class="impact-burst" v-if="flashOutgoingHit === cell - 1" aria-hidden="true"></span>
-            <span class="splash-ring" v-if="flashOutgoingMiss === cell - 1" aria-hidden="true"></span>
-          </button>
-        </div>
-      </section>
-    </div>
-
-    <div class="controls" v-if="phase === 'placement'">
-      <div class="controls-left">
-        <button class="action-btn" type="button" @click="toggleOrientation">
-          ORIENTATION: {{ orientationLabel }}
-        </button>
-        <button class="action-btn" type="button" @click="clearPlacement" :disabled="localReady">
-          CLEAR
-        </button>
-      </div>
-      <div class="fleet-status">
-        <span v-if="nextShipToPlace">
-          PLACE {{ nextShipToPlace.id.toUpperCase() }} ({{ nextShipToPlace.length }})
-        </span>
-        <span v-else>FLEET DEPLOYED</span>
-      </div>
-      <button class="action-btn primary" type="button" :disabled="!canReady" @click="confirmReady">
-        READY
-      </button>
-    </div>
-
-    <div class="winner-banner" v-if="phase === 'finished'">
-      {{ winner === 'local' ? 'VICTORY' : 'DEFEAT' }}
     </div>
   </div>
 </template>
@@ -750,10 +754,19 @@ watch(
 watch(
   () => props.startSignal,
   (signal) => {
-    if (signal > 0) {
-      resetSession();
-      activateGameIfReady();
+    if (signal <= 0) {
+      return;
     }
+
+    // If the game is still in invite mode, preserve any pre-accept deployment state
+    // so an initiator can place ships before the opponent accepts.
+    if (phase.value === 'invite') {
+      activateGameIfReady();
+      return;
+    }
+
+    resetSession();
+    activateGameIfReady();
   },
   { immediate: true }
 );
@@ -845,7 +858,7 @@ onBeforeUnmount(() => {
 .status-bar,
 .combat-feed,
 .score-strip,
-.board-wrap,
+.board-area,
 .controls,
 .winner-banner {
   position: relative;
@@ -976,11 +989,43 @@ onBeforeUnmount(() => {
   box-shadow: 0 14px 24px rgba(5, 25, 48, 0.45);
 }
 
+.game-shell-content {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.status-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(118, 215, 255, 0.5);
+  border-radius: 12px;
+  background: rgba(10, 23, 47, 0.88);
+}
+
+.combat-feed {
+  min-height: 76px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(111, 201, 255, 0.45);
+  background: rgba(7, 23, 49, 0.65);
+}
+
 .score-strip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-bottom: 10px;
 }
 
 .score-card {
@@ -1012,16 +1057,17 @@ onBeforeUnmount(() => {
   letter-spacing: 0.08em;
 }
 
-.board-wrap {
+.board-area {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .board-panel {
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 6px;

@@ -104,9 +104,12 @@ const audioContext = ref<AudioContext | null>(null);
 const isAudioUnlocked = ref(false);
 const dataChannelReady = ref(false);
 let currentChannel: RTCDataChannel | null = null;
-let dataChannelListener: ((event: MessageEvent) => void) | null = null;
-let dataChannelOpenListener: (() => void) | null = null;
-let dataChannelCloseListener: (() => void) | null = null;
+let previousChannelOnMessage: RTCDataChannel['onmessage'] = null;
+let previousChannelOnOpen: RTCDataChannel['onopen'] = null;
+let previousChannelOnClose: RTCDataChannel['onclose'] = null;
+let chainedChannelOnMessage: RTCDataChannel['onmessage'] = null;
+let chainedChannelOnOpen: RTCDataChannel['onopen'] = null;
+let chainedChannelOnClose: RTCDataChannel['onclose'] = null;
 
 const canSend = computed(() => dataChannelReady.value);
 const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunning.value);
@@ -575,37 +578,36 @@ function handleIncomingMessage(event: MessageEvent) {
 }
 
 function attachDataChannelListener(channel: RTCDataChannel | null) {
-  if (currentChannel) {
-    if (dataChannelListener) {
-      currentChannel.removeEventListener('message', dataChannelListener);
-    }
-    if (dataChannelOpenListener) {
-      currentChannel.removeEventListener('open', dataChannelOpenListener);
-    }
-    if (dataChannelCloseListener) {
-      currentChannel.removeEventListener('close', dataChannelCloseListener);
-    }
-  }
+  detachDataChannelListener();
 
   currentChannel = channel;
   dataChannelReady.value = Boolean(currentChannel && currentChannel.readyState === 'open');
   if (!currentChannel) {
-    dataChannelListener = null;
-    dataChannelOpenListener = null;
-    dataChannelCloseListener = null;
     return;
   }
 
-  dataChannelListener = handleIncomingMessage;
-  dataChannelOpenListener = () => {
+  const boundChannel = currentChannel;
+
+  previousChannelOnMessage = boundChannel.onmessage;
+  previousChannelOnOpen = boundChannel.onopen;
+  previousChannelOnClose = boundChannel.onclose;
+
+  chainedChannelOnMessage = (event) => {
+    previousChannelOnMessage?.call(boundChannel, event);
+    handleIncomingMessage(event);
+  };
+  chainedChannelOnOpen = (event) => {
+    previousChannelOnOpen?.call(boundChannel, event);
     dataChannelReady.value = true;
   };
-  dataChannelCloseListener = () => {
+  chainedChannelOnClose = (event) => {
+    previousChannelOnClose?.call(boundChannel, event);
     dataChannelReady.value = false;
   };
-  currentChannel.addEventListener('message', dataChannelListener);
-  currentChannel.addEventListener('open', dataChannelOpenListener);
-  currentChannel.addEventListener('close', dataChannelCloseListener);
+
+  boundChannel.onmessage = chainedChannelOnMessage;
+  boundChannel.onopen = chainedChannelOnOpen;
+  boundChannel.onclose = chainedChannelOnClose;
 }
 
 function handleVisibilityChange() {
@@ -618,21 +620,25 @@ function handleVisibilityChange() {
 
 function detachDataChannelListener() {
   if (currentChannel) {
-    if (dataChannelListener) {
-      currentChannel.removeEventListener('message', dataChannelListener);
+    if (currentChannel.onmessage === chainedChannelOnMessage) {
+      currentChannel.onmessage = previousChannelOnMessage;
     }
-    if (dataChannelOpenListener) {
-      currentChannel.removeEventListener('open', dataChannelOpenListener);
+    if (currentChannel.onopen === chainedChannelOnOpen) {
+      currentChannel.onopen = previousChannelOnOpen;
     }
-    if (dataChannelCloseListener) {
-      currentChannel.removeEventListener('close', dataChannelCloseListener);
+    if (currentChannel.onclose === chainedChannelOnClose) {
+      currentChannel.onclose = previousChannelOnClose;
     }
   }
+
   currentChannel = null;
   dataChannelReady.value = false;
-  dataChannelListener = null;
-  dataChannelOpenListener = null;
-  dataChannelCloseListener = null;
+  previousChannelOnMessage = null;
+  previousChannelOnOpen = null;
+  previousChannelOnClose = null;
+  chainedChannelOnMessage = null;
+  chainedChannelOnOpen = null;
+  chainedChannelOnClose = null;
 }
 
 function scheduleFrame() {

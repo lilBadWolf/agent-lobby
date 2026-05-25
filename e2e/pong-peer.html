@@ -62,6 +62,9 @@
         readyState = 'open';
         bus = new BroadcastChannel(`pong-e2e-link-${room}`);
         listeners = new Map();
+        onopen = null;
+        onmessage = null;
+        onclose = null;
 
         constructor() {
           this.bus.onmessage = (event) => {
@@ -74,10 +77,12 @@
               return;
             }
 
+            this.onmessage?.({ data: message.data });
             this.emit('message', { data: message.data });
           };
 
           setTimeout(() => {
+            this.onopen?.(new Event('open'));
             this.emit('open');
           }, 0);
         }
@@ -103,6 +108,12 @@
             sender: role,
             data,
           });
+        }
+
+        close() {
+          this.readyState = 'closed';
+          this.onclose?.(new Event('close'));
+          this.emit('close', new Event('close'));
         }
 
         emit(type, event = undefined) {

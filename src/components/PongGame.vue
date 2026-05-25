@@ -99,7 +99,6 @@ const pausedDueToFocusLoss = ref(false);
 const rafId = ref<number | null>(null);
 const lastTick = ref(performance.now());
 const lastPaddleSentAt = ref(0);
-const lastStateSentAt = ref(0);
 const audioContext = ref<AudioContext | null>(null);
 const isAudioUnlocked = ref(false);
 const dataChannelReady = ref(false);
@@ -125,7 +124,6 @@ const pendingStartWhenReady = ref(false);
 const remoteBallReceivedAt = ref(performance.now());
 const remoteBallSequence = ref(-1);
 const outgoingBallSequence = ref(0);
-const ballLerpSpeed = 16;
 
 const showCountdownOverlay = computed(() => roundPhase.value === 'countdown');
 const countdownLabel = computed(() => countdownValue.value > 0 ? countdownValue.value.toString() : 'GO!');
@@ -151,6 +149,7 @@ function getAudioContext(): AudioContext | null {
   }
 
   const Constructor = (window as any).AudioContext || (window as any).webkitAudioContext;
+
   if (!Constructor) {
     return null;
   }
@@ -211,6 +210,7 @@ function playPongBounce() {
 }
 
 function playPongGameOver() {
+  syncRenderedBallPosition();
   playTone(120, 0.14, 'sine');
 }
 
@@ -224,6 +224,19 @@ function clampBallX(x: number) {
 
 function clampBallY(y: number) {
   return Math.max(0, Math.min(y, boardHeight - ballSize));
+}
+
+function getRenderedBallY() {
+  if (authority.value === 'local') {
+    return clampBallY(ballY.value);
+  }
+
+  return clampBallY(boardHeight - ballSize - ballY.value);
+}
+
+function syncRenderedBallPosition() {
+  renderBallX.value = clampBallX(ballX.value);
+  renderBallY.value = getRenderedBallY();
 }
 
 function sendPongMessage(message: Record<string, unknown>) {
@@ -276,17 +289,22 @@ function sendStartMessage() {
   });
 }
 
+function sendScoreUpdate(winner: 'local' | 'remote') {
+  if (!canSend.value) {
+    return;
+  }
+
+  sendPongMessage({
+    type: 'pong-score',
+    scorer: winner === 'local' ? props.user : props.peerName,
+  });
+}
+
 function sendBallUpdate() {
   if (!canSend.value || authority.value !== 'local') {
     return;
   }
 
-  const now = performance.now();
-  if (now - lastStateSentAt.value < 33) {
-    return;
-  }
-
-  lastStateSentAt.value = now;
   outgoingBallSequence.value += 1;
   sendPongMessage({
     type: 'pong-state',
@@ -302,8 +320,7 @@ function sendBallUpdate() {
 function resetBallState() {
   ballX.value = (boardWidth - ballSize) / 2;
   ballY.value = (boardHeight - ballSize) / 2;
-  renderBallX.value = ballX.value;
-  renderBallY.value = ballY.value;
+  syncRenderedBallPosition();
   ballVelX.value = 120;
   ballVelY.value = 140;
   remoteBallReceivedAt.value = performance.now();
@@ -313,6 +330,13 @@ function clearCountdownTimer() {
   if (countdownTimerId.value !== null) {
     clearTimeout(countdownTimerId.value);
     countdownTimerId.value = null;
+  }
+}
+
+function clearAnimationFrame() {
+  if (rafId.value !== null) {
+    cancelAnimationFrame(rafId.value);
+    rafId.value = null;
   }
 }
 
@@ -341,6 +365,8 @@ function scheduleCountdownTick() {
 
 function startCountdown(isRemoteStart = false) {
   clearCountdownTimer();
+  clearAnimationFrame();
+  isRunning.value = false;
   roundPhase.value = 'countdown';
   countdownValue.value = 3;
   pendingStartFromRemote.value = isRemoteStart;
@@ -356,15 +382,14 @@ function prepareNextRound(message: string, winner: 'local' | 'remote') {
     remoteScore.value += 1;
   }
 
+  sendScoreUpdate(winner);
+
   isRunning.value = false;
   statusMessage.value = message;
   roundPhase.value = authority.value === 'local' ? 'countdown' : 'waiting';
   resetBallState();
 
-  if (rafId.value !== null) {
-    cancelAnimationFrame(rafId.value);
-    rafId.value = null;
-  }
+  clearAnimationFrame();
 
   if (authority.value === 'local') {
     startCountdown(false);
@@ -395,8 +420,7 @@ function startGame() {
     sendStartMessage();
   } else {
     authority.value = 'remote';
-    roundPhase.value = 'waiting';
-    statusMessage.value = 'Waiting for opponent to start PONG';
+    startCountdown(true);
   }
 }
 
@@ -404,10 +428,7 @@ function stopGame(message: string) {
   if (isRunning.value) {
     isRunning.value = false;
     statusMessage.value = message;
-    if (rafId.value !== null) {
-      cancelAnimationFrame(rafId.value);
-      rafId.value = null;
-    }
+    clearAnimationFrame();
   }
 }
 
@@ -416,10 +437,7 @@ function pauseForFocusLoss() {
     pausedDueToFocusLoss.value = true;
     isRunning.value = false;
     statusMessage.value = 'Paused — window lost focus';
-    if (rafId.value !== null) {
-      cancelAnimationFrame(rafId.value);
-      rafId.value = null;
-    }
+    clearAnimationFrame();
   }
 }
 
@@ -482,28 +500,8 @@ function updateBallFromMessage(data: any) {
   ballY.value = clampBallY(data.ballY);
   ballVelX.value = data.velX;
   ballVelY.value = data.velY;
+  syncRenderedBallPosition();
   remoteBallReceivedAt.value = performance.now();
-}
-
-function advanceRemoteBallPrediction(delta: number) {
-  ballX.value += ballVelX.value * delta;
-  ballY.value += ballVelY.value * delta;
-
-  if (ballX.value <= 0 || ballX.value >= boardWidth - ballSize) {
-    ballX.value = clampBallX(ballX.value);
-    ballVelX.value = -ballVelX.value;
-  }
-
-  if (ballY.value <= 0 || ballY.value >= boardHeight - ballSize) {
-    ballY.value = clampBallY(ballY.value);
-    ballVelY.value = -ballVelY.value;
-  }
-}
-
-function smoothRemoteBallRender(delta: number) {
-  const factor = Math.min(1, delta * ballLerpSpeed);
-  renderBallX.value += (ballX.value - renderBallX.value) * factor;
-  renderBallY.value += (ballY.value - renderBallY.value) * factor;
 }
 
 function handleIncomingMessage(event: MessageEvent) {
@@ -531,6 +529,16 @@ function handleIncomingMessage(event: MessageEvent) {
     return;
   }
 
+  if (data.type === 'pong-score') {
+    if (data.scorer === props.user) {
+      localScore.value += 1;
+    } else if (data.scorer === props.peerName) {
+      remoteScore.value += 1;
+    }
+
+    return;
+  }
+
   if (data.type === 'pong-start') {
     authority.value = data.authority === props.user ? 'local' : 'remote';
     if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
@@ -539,12 +547,10 @@ function handleIncomingMessage(event: MessageEvent) {
       remoteBallSequence.value = 0;
     }
     updateBallFromMessage(data);
-    renderBallX.value = ballX.value;
-    renderBallY.value = ballY.value;
     if (typeof data.paddleX === 'number') {
       updateRemotePaddle(data.paddleX);
     }
-    if (!isRunning.value && roundPhase.value !== 'playing') {
+    if (roundPhase.value !== 'countdown') {
       startCountdown(true);
     }
     return;
@@ -680,16 +686,12 @@ function frame(now: number) {
   sendPaddleUpdate(true);
 
   if (authority.value !== 'local') {
-    advanceRemoteBallPrediction(delta);
-    smoothRemoteBallRender(delta);
     rafId.value = requestAnimationFrame(frame);
     return;
   }
 
   ballX.value += ballVelX.value * delta;
   ballY.value += ballVelY.value * delta;
-  renderBallX.value = ballX.value;
-  renderBallY.value = ballY.value;
 
   if (ballX.value <= 0 || ballX.value >= boardWidth - ballSize) {
     ballX.value = clampBallX(ballX.value);
@@ -731,6 +733,7 @@ function frame(now: number) {
     }
   }
 
+  syncRenderedBallPosition();
   sendBallUpdate();
   rafId.value = requestAnimationFrame(frame);
 }
@@ -776,9 +779,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', resumeAfterFocusGain);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   detachDataChannelListener();
-  if (rafId.value !== null) {
-    cancelAnimationFrame(rafId.value);
-  }
+  clearAnimationFrame();
   clearCountdownTimer();
 });
 </script>

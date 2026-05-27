@@ -318,6 +318,29 @@ describe('PongGame multiplayer sync', () => {
     expect(bravo.find('.pong-countdown-overlay').exists()).toBe(true);
   });
 
+  it('does not revert initiator status to ready during acceptance transition', async () => {
+    const channel = new ChannelDriver();
+
+    const alpha = mount(PongGame, {
+      props: {
+        user: 'ALPHA',
+        peerName: 'BRAVO',
+        dataChannel: channel as unknown as RTCDataChannel,
+        startSignal: 0,
+        isInitiator: true,
+        waitingForAcceptance: true,
+      },
+    });
+
+    expect(alpha.text()).toContain('Waiting for opponent to accept PONG');
+
+    await alpha.setProps({ startSignal: 1, waitingForAcceptance: false });
+    await advance(50);
+
+    expect(alpha.text()).toContain('Waiting for opponent to get ready...');
+    expect(alpha.text()).not.toContain('Ready for PONG');
+  });
+
   it('restarts the remote round when a new pong-start arrives during play', async () => {
     const channel = new ChannelDriver();
 

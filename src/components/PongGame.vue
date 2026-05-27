@@ -137,7 +137,7 @@ watch(
   (waiting) => {
     if (waiting) {
       statusMessage.value = 'Waiting for opponent to accept PONG';
-    } else if (!isRunning.value) {
+    } else if (!isRunning.value && props.startSignal <= 0 && roundPhase.value === 'idle') {
       statusMessage.value = 'Ready for PONG';
     }
   },

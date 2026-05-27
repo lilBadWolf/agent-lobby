@@ -300,6 +300,7 @@ function sendReadyMessage() {
     type: 'pong-ready',
     user: props.user,
   });
+  console.log('[pong] sent pong-ready', { isInitiator: props.isInitiator, user: props.user });
 }
 
 function sendScoreUpdate(winner: 'local' | 'remote') {
@@ -365,6 +366,7 @@ function startReadyPulse() {
     }
 
     sendReadyMessage();
+    console.log('[pong] pulse tick', { isInitiator: props.isInitiator, peerReady: peerReady.value });
   }, 400);
 }
 
@@ -439,6 +441,7 @@ function startGame() {
   if (!canSend.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for direct line to start PONG...';
+    console.log('[pong] startGame: no channel yet', { isInitiator: props.isInitiator });
     return;
   }
 
@@ -448,6 +451,7 @@ function startGame() {
     roundPhase.value = 'waiting';
     statusMessage.value = 'Waiting for opponent to start PONG';
     startReadyPulse();
+    console.log('[pong] startGame: non-initiator waiting, pulse started');
     return;
   }
 
@@ -455,6 +459,7 @@ function startGame() {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for opponent to get ready...';
     startReadyPulse();
+    console.log('[pong] startGame: initiator waiting for peerReady, pulse started');
     return;
   }
 
@@ -471,6 +476,7 @@ function startGame() {
     authority.value = 'local';
     sendStartMessage();
     startCountdown(false);
+    console.log('[pong] startGame: initiator sending pong-start, countdown begun');
   } else {
     authority.value = 'remote';
   }
@@ -593,7 +599,15 @@ function handleIncomingMessage(event: MessageEvent) {
 
   if (data.type === 'pong-ready') {
     peerReady.value = true;
-    clearReadyPulseTimer();
+
+    // Only the initiator stops pulsing when it hears the peer is ready.
+    // The non-initiator must keep pulsing until beginPlay() stops it,
+    // so the initiator always eventually receives a pong-ready.
+    if (props.isInitiator) {
+      clearReadyPulseTimer();
+    }
+
+    console.log('[pong] received pong-ready', { isInitiator: props.isInitiator, pendingStart: pendingStartWhenReady.value, startSignal: props.startSignal, canSend: canSend.value });
 
     if (props.isInitiator && pendingStartWhenReady.value && !isRunning.value && props.startSignal > 0 && canSend.value) {
       startGame();
@@ -603,6 +617,7 @@ function handleIncomingMessage(event: MessageEvent) {
   }
 
   if (data.type === 'pong-start') {
+    console.log('[pong] received pong-start', { authority: data.authority, isInitiator: props.isInitiator });
     authority.value = data.authority === props.user ? 'local' : 'remote';
     if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
       remoteBallSequence.value = data.seq;
@@ -670,6 +685,7 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
     dataChannelReady.value = true;
     sendReadyMessage();
     startReadyPulse();
+    console.log('[pong] data channel opened', { isInitiator: props.isInitiator, user: props.user });
   };
   chainedChannelOnClose = (event) => {
     previousChannelOnClose?.call(boundChannel, event);

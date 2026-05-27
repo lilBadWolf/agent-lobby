@@ -150,6 +150,8 @@ describe('PongGame multiplayer sync', () => {
     await alpha.setProps({ startSignal: 1 });
     await bravo.setProps({ startSignal: 1 });
 
+    await advance(50);
+
     expect(alpha.find('.pong-countdown-overlay').exists()).toBe(true);
     expect(bravo.find('.pong-countdown-overlay').exists()).toBe(true);
 
@@ -247,7 +249,39 @@ describe('PongGame multiplayer sync', () => {
     expect(extractLeftPercent(bottomStyle)).toBeGreaterThan(40);
   });
 
-  it('recovers when non-initiator start signal arrives before channel opens', async () => {
+  it('waits for peer readiness before the initiator starts', async () => {
+    const channel = new ChannelDriver();
+    channel.readyState = 'connecting';
+
+    const alpha = mount(PongGame, {
+      props: {
+        user: 'ALPHA',
+        peerName: 'BRAVO',
+        dataChannel: channel as unknown as RTCDataChannel,
+        startSignal: 1,
+        isInitiator: true,
+        waitingForAcceptance: false,
+      },
+    });
+
+    expect(alpha.text()).toContain('Waiting for direct line to start PONG...');
+
+    channel.emitOpen();
+    await advance(50);
+
+    expect(alpha.text()).toContain('Waiting for opponent to get ready...');
+
+    channel.emit({ type: 'pong-ready', user: 'BRAVO' });
+    await advance(50);
+
+    expect(alpha.find('.pong-countdown-overlay').exists()).toBe(true);
+
+    const sentMessages = channel.send.mock.calls.map(([raw]) => JSON.parse(String(raw)));
+    expect(sentMessages.some((message) => message.type === 'pong-ready')).toBe(true);
+    expect(sentMessages.some((message) => message.type === 'pong-start')).toBe(true);
+  });
+
+  it('waits for pong-start on the non-initiator side', async () => {
     const channel = new ChannelDriver();
     channel.readyState = 'connecting';
 
@@ -256,30 +290,32 @@ describe('PongGame multiplayer sync', () => {
         user: 'BRAVO',
         peerName: 'ALPHA',
         dataChannel: channel as unknown as RTCDataChannel,
-        startSignal: 0,
+        startSignal: 1,
         isInitiator: false,
         waitingForAcceptance: false,
       },
     });
-
-    await bravo.setProps({ startSignal: 1 });
 
     expect(bravo.text()).toContain('Waiting for direct line to start PONG...');
 
     channel.emitOpen();
     await advance(50);
 
+    expect(bravo.text()).toContain('Waiting for opponent to start PONG');
+
+    channel.emit({
+      type: 'pong-start',
+      authority: 'ALPHA',
+      seq: 1,
+      ballX: 180,
+      ballY: 110,
+      velX: 120,
+      velY: 140,
+      paddleX: 100,
+    });
+    await advance(50);
+
     expect(bravo.find('.pong-countdown-overlay').exists()).toBe(true);
-
-    await advance(4000);
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
-    await advance(140);
-    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight' }));
-    await advance(40);
-
-    const sentMessages = channel.send.mock.calls.map(([raw]) => JSON.parse(String(raw)));
-    expect(sentMessages.some((message) => message.type === 'pong-paddle')).toBe(true);
   });
 
   it('restarts the remote round when a new pong-start arrives during play', async () => {
@@ -355,6 +391,8 @@ describe('PongGame multiplayer sync', () => {
 
     await alpha.setProps({ startSignal: 1 });
     await bravo.setProps({ startSignal: 1 });
+
+    await advance(50);
 
     await advance(3200);
 

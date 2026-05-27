@@ -121,6 +121,7 @@ const pendingStartFromRemote = ref(false);
 const paddleDirection = ref<'left' | 'right' | null>(null);
 const paddleSpeed = 420;
 const pendingStartWhenReady = ref(false);
+const peerReady = ref(false);
 const remoteBallReceivedAt = ref(performance.now());
 const remoteBallSequence = ref(-1);
 const outgoingBallSequence = ref(0);
@@ -289,6 +290,17 @@ function sendStartMessage() {
   });
 }
 
+function sendReadyMessage() {
+  if (!canSend.value) {
+    return;
+  }
+
+  sendPongMessage({
+    type: 'pong-ready',
+    user: props.user,
+  });
+}
+
 function sendScoreUpdate(winner: 'local' | 'remote') {
   if (!canSend.value) {
     return;
@@ -406,6 +418,20 @@ function startGame() {
     return;
   }
 
+  if (!props.isInitiator) {
+    pendingStartWhenReady.value = true;
+    authority.value = 'remote';
+    roundPhase.value = 'waiting';
+    statusMessage.value = 'Waiting for opponent to start PONG';
+    return;
+  }
+
+  if (!peerReady.value) {
+    pendingStartWhenReady.value = true;
+    statusMessage.value = 'Waiting for opponent to get ready...';
+    return;
+  }
+
   pendingStartWhenReady.value = false;
 
   if (roundPhase.value === 'countdown' || roundPhase.value === 'playing') {
@@ -416,11 +442,10 @@ function startGame() {
 
   if (props.isInitiator) {
     authority.value = 'local';
-    startCountdown(false);
     sendStartMessage();
+    startCountdown(false);
   } else {
     authority.value = 'remote';
-    startCountdown(true);
   }
 }
 
@@ -539,6 +564,16 @@ function handleIncomingMessage(event: MessageEvent) {
     return;
   }
 
+  if (data.type === 'pong-ready') {
+    peerReady.value = true;
+
+    if (props.isInitiator && pendingStartWhenReady.value && !isRunning.value && props.startSignal > 0 && canSend.value) {
+      startGame();
+    }
+
+    return;
+  }
+
   if (data.type === 'pong-start') {
     authority.value = data.authority === props.user ? 'local' : 'remote';
     if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
@@ -605,6 +640,7 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
   chainedChannelOnOpen = (event) => {
     previousChannelOnOpen?.call(boundChannel, event);
     dataChannelReady.value = true;
+    sendReadyMessage();
   };
   chainedChannelOnClose = (event) => {
     previousChannelOnClose?.call(boundChannel, event);
@@ -614,6 +650,10 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
   boundChannel.onmessage = chainedChannelOnMessage;
   boundChannel.onopen = chainedChannelOnOpen;
   boundChannel.onclose = chainedChannelOnClose;
+
+  if (boundChannel.readyState === 'open') {
+    sendReadyMessage();
+  }
 }
 
 function handleVisibilityChange() {
@@ -752,7 +792,8 @@ watch(
     if (signal > 0 && !isRunning.value) {
       startGame();
     }
-  }
+  },
+  { immediate: true }
 );
 
 watch(

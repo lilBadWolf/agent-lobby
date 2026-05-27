@@ -1,11 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.4**
+🚀 **Release highlights for agent-lobby 0.5.5**
 
-- 🏓 **Pong startup sync is much more reliable** so both players are properly aligned before a round begins.
-- 🔁 **Peer readiness is now more resilient** with better recovery from timing hiccups that previously caused stuck starts.
-- 🧪 **Observe mode is now a true production-like check** using real WebRTC data channels (with signaling only for connection setup), so what you see in testing matches real-world behavior much more closely.
-- ✅ **Multiplayer verification got stronger** with expanded automated coverage for sync, movement propagation, and round transitions.
-- 🧰 **Build and packaging dependencies were refreshed** to keep release builds stable and up to date.
+- 🏓 **Pong start flow got another reliability pass** to prevent players from getting stuck in "waiting" at match launch.
+- 🔗 **Direct-line game channel binding is more robust** so both sides stay synced to the same active game channel during startup.
+- 🛠️ **Handshake behavior was hardened** to better handle real-world timing and channel swap edge cases.
+- 👀 **Extra diagnostics were added for this cycle** to validate multiplayer startup behavior in live sessions while we finish tightening the flow.
 
-> This release is all about trustworthy Pong multiplayer flow, from first handshake to live gameplay. 🎮✨
+> This patch is focused on one thing: getting both players into the round cleanly and consistently. 🎮✅

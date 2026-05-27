@@ -123,6 +123,13 @@ const peerReady = ref(false);
 const remoteBallReceivedAt = ref(performance.now());
 const remoteBallSequence = ref(-1);
 const outgoingBallSequence = ref(0);
+const lastPongMessageSignature = ref('');
+const lastPongMessageAt = ref(0);
+
+type PongBridgeEventDetail = {
+  from?: string;
+  data?: any;
+};
 
 const showCountdownOverlay = computed(() => roundPhase.value === 'countdown');
 const countdownLabel = computed(() => countdownValue.value > 0 ? countdownValue.value.toString() : 'GO!');
@@ -299,6 +306,10 @@ function sendStartMessage() {
 }
 
 function sendReadyMessage() {
+  if (props.isInitiator) {
+    return;
+  }
+
   if (!canSend.value) {
     return;
   }
@@ -362,6 +373,10 @@ function clearReadyPulseTimer() {
 }
 
 function startReadyPulse() {
+  if (props.isInitiator) {
+    return;
+  }
+
   if (readyPulseTimerId.value !== null) {
     return;
   }
@@ -465,8 +480,7 @@ function startGame() {
   if (!peerReady.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for opponent to get ready...';
-    startReadyPulse();
-    console.log('[pong] startGame: initiator waiting for peerReady, pulse started');
+    console.log('[pong] startGame: initiator waiting for peerReady');
     return;
   }
 
@@ -569,27 +583,52 @@ function updateBallFromMessage(data: any) {
   remoteBallReceivedAt.value = performance.now();
 }
 
-function handleIncomingMessage(event: MessageEvent) {
-  if (!event.data) {
-    return;
+function usersMatch(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = left?.trim().toLowerCase();
+  const normalizedRight = right?.trim().toLowerCase();
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
   }
 
-  if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-    return;
+  return normalizedLeft === normalizedRight;
+}
+
+function isDuplicatePongMessage(data: any): boolean {
+  const signature = JSON.stringify({
+    type: data?.type,
+    seq: data?.seq,
+    x: data?.x,
+    paddleX: data?.paddleX,
+    scorer: data?.scorer,
+    authority: data?.authority,
+    ballX: data?.ballX,
+    ballY: data?.ballY,
+    velX: data?.velX,
+    velY: data?.velY,
+    user: data?.user,
+  });
+  const now = performance.now();
+
+  if (signature === lastPongMessageSignature.value && now - lastPongMessageAt.value < 40) {
+    return true;
   }
 
-  let data: any;
-  try {
-    data = JSON.parse(event.data);
-  } catch {
-    return;
-  }
+  lastPongMessageSignature.value = signature;
+  lastPongMessageAt.value = now;
+  return false;
+}
 
+function handlePongDataMessage(data: any, source: 'channel' | 'bridge') {
   if (!data?.type?.startsWith('pong-')) {
     return;
   }
 
+  if (isDuplicatePongMessage(data)) {
+    return;
+  }
+
   console.log('[pong] received message', {
+    source,
     type: data.type,
     isInitiator: props.isInitiator,
     user: props.user,
@@ -618,14 +657,11 @@ function handleIncomingMessage(event: MessageEvent) {
   if (data.type === 'pong-ready') {
     peerReady.value = true;
 
-    // Only the initiator stops pulsing when it hears the peer is ready.
-    // The non-initiator must keep pulsing until beginPlay() stops it,
-    // so the initiator always eventually receives a pong-ready.
     if (props.isInitiator) {
       clearReadyPulseTimer();
     }
 
-    console.log('[pong] received pong-ready', { isInitiator: props.isInitiator, pendingStart: pendingStartWhenReady.value, startSignal: props.startSignal, canSend: canSend.value });
+    console.log('[pong] received pong-ready', { isInitiator: props.isInitiator, pendingStart: pendingStartWhenReady.value, startSignal: props.startSignal, canSend: canSend.value, source });
 
     if (props.isInitiator && pendingStartWhenReady.value && !isRunning.value && props.startSignal > 0 && canSend.value) {
       startGame();
@@ -635,7 +671,7 @@ function handleIncomingMessage(event: MessageEvent) {
   }
 
   if (data.type === 'pong-start') {
-    console.log('[pong] received pong-start', { authority: data.authority, isInitiator: props.isInitiator });
+    console.log('[pong] received pong-start', { authority: data.authority, isInitiator: props.isInitiator, source });
     authority.value = data.authority === props.user ? 'local' : 'remote';
     if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
       remoteBallSequence.value = data.seq;
@@ -677,6 +713,36 @@ function handleIncomingMessage(event: MessageEvent) {
     }
     return;
   }
+}
+
+function handleBridgePongMessage(event: Event) {
+  const bridgeEvent = event as CustomEvent<PongBridgeEventDetail>;
+  const fromUser = bridgeEvent.detail?.from;
+  const data = bridgeEvent.detail?.data;
+  if (!usersMatch(fromUser, props.peerName)) {
+    return;
+  }
+
+  handlePongDataMessage(data, 'bridge');
+}
+
+function handleIncomingMessage(event: MessageEvent) {
+  if (!event.data) {
+    return;
+  }
+
+  if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+    return;
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+
+  handlePongDataMessage(data, 'channel');
 }
 
 function attachDataChannelListener(channel: RTCDataChannel | null) {
@@ -727,8 +793,10 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
   boundChannel.addEventListener('close', channelCloseListener as EventListener);
 
   if (boundChannel.readyState === 'open') {
-    sendReadyMessage();
-    startReadyPulse();
+    if (!props.isInitiator) {
+      sendReadyMessage();
+      startReadyPulse();
+    }
   }
 }
 
@@ -883,6 +951,7 @@ onMounted(() => {
   window.addEventListener('keyup', handleKeyup);
   window.addEventListener('blur', pauseForFocusLoss);
   window.addEventListener('focus', resumeAfterFocusGain);
+  window.addEventListener('dm-pong-message', handleBridgePongMessage as EventListener);
   document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
@@ -891,6 +960,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleKeyup);
   window.removeEventListener('blur', pauseForFocusLoss);
   window.removeEventListener('focus', resumeAfterFocusGain);
+  window.removeEventListener('dm-pong-message', handleBridgePongMessage as EventListener);
   document.removeEventListener('visibilitychange', handleVisibilityChange);
   detachDataChannelListener();
   clearAnimationFrame();

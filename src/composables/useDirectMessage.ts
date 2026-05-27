@@ -812,6 +812,15 @@ export function useDirectMessage(
             id: dataChannel.id,
             type: data.type,
           });
+
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('dm-pong-message', {
+              detail: {
+                from: otherUser,
+                data,
+              }
+            }));
+          }
         }
         const chat = activeChats.value.get(otherUser);
         if (!chat) return;

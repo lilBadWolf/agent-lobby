@@ -745,6 +745,23 @@ export function useDirectMessage(
       rtcConn.dataChannel = dataChannel;
     }
 
+    const existingChat = activeChats.value.get(otherUser);
+    if (existingChat) {
+      existingChat.dataChannel = dataChannel;
+      if (dataChannel.readyState === 'open') {
+        existingChat.isConnected = true;
+      }
+      setOrUpdateChat(otherUser, existingChat);
+    }
+
+    console.log('[DMRTC] setupDataChannel', {
+      user: otherUser,
+      id: dataChannel.id,
+      label: dataChannel.label,
+      readyState: dataChannel.readyState,
+      isInitiator: rtcConn?.isInitiator ?? null,
+    });
+
     if ('bufferedAmountLowThreshold' in dataChannel) {
       try {
         dataChannel.bufferedAmountLowThreshold = 256 * 1024;
@@ -761,6 +778,13 @@ export function useDirectMessage(
         chat.dataChannel = dataChannel;
         setOrUpdateChat(otherUser, chat);
       }
+
+      console.log('[DMRTC] dataChannel:onopen', {
+        user: otherUser,
+        id: dataChannel.id,
+        label: dataChannel.label,
+        readyState: dataChannel.readyState,
+      });
 
       flushPendingTextMessages(otherUser, dataChannel);
     };
@@ -782,6 +806,13 @@ export function useDirectMessage(
 
         // Handle text messages (JSON)
         const data = JSON.parse(event.data);
+        if (data?.type?.startsWith('pong-')) {
+          console.log('[DMRTC] dataChannel:onmessage:pong', {
+            user: otherUser,
+            id: dataChannel.id,
+            type: data.type,
+          });
+        }
         const chat = activeChats.value.get(otherUser);
         if (!chat) return;
 

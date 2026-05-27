@@ -61,6 +61,7 @@
             <div v-if="activeGame" class="pong-game-container">
               <PongGame
                 v-if="activeGame === 'pong'"
+                :key="`pong-${activeGameUser || currentTab}-${getGameChat()?.dataChannel?.id ?? 'none'}`"
                 :user="props.username"
                 :peer-name="activeGameUser || currentTab"
                 :data-channel="getGameChat()?.dataChannel ?? null"

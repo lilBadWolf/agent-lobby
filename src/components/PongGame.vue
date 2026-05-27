@@ -103,12 +103,9 @@ const audioContext = ref<AudioContext | null>(null);
 const isAudioUnlocked = ref(false);
 const dataChannelReady = ref(false);
 let currentChannel: RTCDataChannel | null = null;
-let previousChannelOnMessage: RTCDataChannel['onmessage'] = null;
-let previousChannelOnOpen: RTCDataChannel['onopen'] = null;
-let previousChannelOnClose: RTCDataChannel['onclose'] = null;
-let chainedChannelOnMessage: RTCDataChannel['onmessage'] = null;
-let chainedChannelOnOpen: RTCDataChannel['onopen'] = null;
-let chainedChannelOnClose: RTCDataChannel['onclose'] = null;
+let channelMessageListener: ((event: MessageEvent) => void) | null = null;
+let channelOpenListener: ((event: Event) => void) | null = null;
+let channelCloseListener: ((event: Event) => void) | null = null;
 
 const canSend = computed(() => dataChannelReady.value);
 const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunning.value);
@@ -247,6 +244,16 @@ function sendPongMessage(message: Record<string, unknown>) {
   }
 
   try {
+    if (typeof message.type === 'string' && message.type.startsWith('pong-')) {
+      console.log('[pong] sending message', {
+        type: message.type,
+        isInitiator: props.isInitiator,
+        user: props.user,
+        peerName: props.peerName,
+        channelState: currentChannel.readyState,
+        channelId: currentChannel.id
+      });
+    }
     currentChannel.send(JSON.stringify(message));
   } catch {
     // swallow non-fatal send failures
@@ -582,6 +589,17 @@ function handleIncomingMessage(event: MessageEvent) {
     return;
   }
 
+  console.log('[pong] received message', {
+    type: data.type,
+    isInitiator: props.isInitiator,
+    user: props.user,
+    peerName: props.peerName,
+    pendingStart: pendingStartWhenReady.value,
+    startSignal: props.startSignal,
+    canSend: canSend.value,
+    roundPhase: roundPhase.value
+  });
+
   if (data.type === 'pong-paddle' && typeof data.x === 'number') {
     updateRemotePaddle(data.x);
     return;
@@ -666,36 +684,47 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
 
   currentChannel = channel;
   dataChannelReady.value = Boolean(currentChannel && currentChannel.readyState === 'open');
+  console.log('[pong] attachDataChannelListener', {
+    isInitiator: props.isInitiator,
+    user: props.user,
+    peerName: props.peerName,
+    hasChannel: Boolean(currentChannel),
+    channelState: currentChannel?.readyState ?? 'none',
+    channelId: currentChannel?.id ?? null
+  });
   if (!currentChannel) {
     return;
   }
 
   const boundChannel = currentChannel;
 
-  previousChannelOnMessage = boundChannel.onmessage;
-  previousChannelOnOpen = boundChannel.onopen;
-  previousChannelOnClose = boundChannel.onclose;
+  channelMessageListener = (event) => {
+    if (typeof event.data === 'string' && event.data.includes('pong-')) {
+      console.log('[pong] channel onmessage event', {
+        isInitiator: props.isInitiator,
+        user: props.user,
+        peerName: props.peerName,
+        readyState: boundChannel.readyState,
+        payloadPreview: event.data.slice(0, 160)
+      });
+    }
 
-  chainedChannelOnMessage = (event) => {
-    previousChannelOnMessage?.call(boundChannel, event);
     handleIncomingMessage(event);
   };
-  chainedChannelOnOpen = (event) => {
-    previousChannelOnOpen?.call(boundChannel, event);
+  channelOpenListener = () => {
     dataChannelReady.value = true;
     sendReadyMessage();
     startReadyPulse();
-    console.log('[pong] data channel opened', { isInitiator: props.isInitiator, user: props.user });
+    console.log('[pong] data channel opened', { isInitiator: props.isInitiator, user: props.user, channelId: boundChannel.id });
   };
-  chainedChannelOnClose = (event) => {
-    previousChannelOnClose?.call(boundChannel, event);
+  channelCloseListener = () => {
     dataChannelReady.value = false;
     clearReadyPulseTimer();
   };
 
-  boundChannel.onmessage = chainedChannelOnMessage;
-  boundChannel.onopen = chainedChannelOnOpen;
-  boundChannel.onclose = chainedChannelOnClose;
+  boundChannel.addEventListener('message', channelMessageListener as EventListener);
+  boundChannel.addEventListener('open', channelOpenListener as EventListener);
+  boundChannel.addEventListener('close', channelCloseListener as EventListener);
 
   if (boundChannel.readyState === 'open') {
     sendReadyMessage();
@@ -713,25 +742,22 @@ function handleVisibilityChange() {
 
 function detachDataChannelListener() {
   if (currentChannel) {
-    if (currentChannel.onmessage === chainedChannelOnMessage) {
-      currentChannel.onmessage = previousChannelOnMessage;
+    if (channelMessageListener) {
+      currentChannel.removeEventListener('message', channelMessageListener as EventListener);
     }
-    if (currentChannel.onopen === chainedChannelOnOpen) {
-      currentChannel.onopen = previousChannelOnOpen;
+    if (channelOpenListener) {
+      currentChannel.removeEventListener('open', channelOpenListener as EventListener);
     }
-    if (currentChannel.onclose === chainedChannelOnClose) {
-      currentChannel.onclose = previousChannelOnClose;
+    if (channelCloseListener) {
+      currentChannel.removeEventListener('close', channelCloseListener as EventListener);
     }
   }
 
   currentChannel = null;
   dataChannelReady.value = false;
-  previousChannelOnMessage = null;
-  previousChannelOnOpen = null;
-  previousChannelOnClose = null;
-  chainedChannelOnMessage = null;
-  chainedChannelOnOpen = null;
-  chainedChannelOnClose = null;
+  channelMessageListener = null;
+  channelOpenListener = null;
+  channelCloseListener = null;
 }
 
 function scheduleFrame() {

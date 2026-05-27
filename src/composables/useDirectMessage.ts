@@ -1468,7 +1468,7 @@ export function useDirectMessage(
 
   function setOrUpdateChat(user: string, chat: DMChat) {
     const nextChats = new Map(activeChats.value);
-    nextChats.set(user, chat);
+    nextChats.set(user, { ...chat });
     activeChats.value = nextChats;
   }
 

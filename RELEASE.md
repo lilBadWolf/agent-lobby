@@ -1,10 +1,11 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.3**
+🚀 **Release highlights for agent-lobby 0.5.4**
 
-- 🏓 **Pong** is now much easier to follow in observe mode: Alpha and Bravo show the ball from opposite perspectives, so you can actually see one side going down while the other goes up.
-- 🧮 **Score updates** now sync to both sides, so when a point is awarded the Bravo pane reflects it too.
-- 🎯 Match starts and round restarts are more reliable, so the remote side no longer gets stuck continuing an old round.
-- 🔁 Paddle movement stays in sync while the ball state is being shared every frame, making the whole match feel far more consistent.
+- 🏓 **Pong startup sync is much more reliable** so both players are properly aligned before a round begins.
+- 🔁 **Peer readiness is now more resilient** with better recovery from timing hiccups that previously caused stuck starts.
+- 🧪 **Observe mode is now a true production-like check** using real WebRTC data channels (with signaling only for connection setup), so what you see in testing matches real-world behavior much more closely.
+- ✅ **Multiplayer verification got stronger** with expanded automated coverage for sync, movement propagation, and round transitions.
+- 🧰 **Build and packaging dependencies were refreshed** to keep release builds stable and up to date.
 
-> This update focuses on clearer Pong observation, tighter score sync, and more trustworthy multiplayer flow. 🎮✨
+> This release is all about trustworthy Pong multiplayer flow, from first handshake to live gameplay. 🎮✨

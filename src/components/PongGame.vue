@@ -115,6 +115,7 @@ const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunni
 const roundPhase = ref<'idle' | 'countdown' | 'playing' | 'waiting' | 'paused'>('idle');
 const countdownValue = ref(0);
 const countdownTimerId = ref<number | null>(null);
+const readyPulseTimerId = ref<number | null>(null);
 const localScore = ref(0);
 const remoteScore = ref(0);
 const pendingStartFromRemote = ref(false);
@@ -345,6 +346,28 @@ function clearCountdownTimer() {
   }
 }
 
+function clearReadyPulseTimer() {
+  if (readyPulseTimerId.value !== null) {
+    clearInterval(readyPulseTimerId.value);
+    readyPulseTimerId.value = null;
+  }
+}
+
+function startReadyPulse() {
+  if (readyPulseTimerId.value !== null) {
+    return;
+  }
+
+  readyPulseTimerId.value = window.setInterval(() => {
+    if (!canSend.value || isRunning.value || roundPhase.value === 'playing' || roundPhase.value === 'countdown') {
+      clearReadyPulseTimer();
+      return;
+    }
+
+    sendReadyMessage();
+  }, 400);
+}
+
 function clearAnimationFrame() {
   if (rafId.value !== null) {
     cancelAnimationFrame(rafId.value);
@@ -354,6 +377,7 @@ function clearAnimationFrame() {
 
 function beginPlay() {
   clearCountdownTimer();
+  clearReadyPulseTimer();
   roundPhase.value = 'playing';
   isRunning.value = true;
   statusMessage.value = '';
@@ -423,16 +447,19 @@ function startGame() {
     authority.value = 'remote';
     roundPhase.value = 'waiting';
     statusMessage.value = 'Waiting for opponent to start PONG';
+    startReadyPulse();
     return;
   }
 
   if (!peerReady.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for opponent to get ready...';
+    startReadyPulse();
     return;
   }
 
   pendingStartWhenReady.value = false;
+  clearReadyPulseTimer();
 
   if (roundPhase.value === 'countdown' || roundPhase.value === 'playing') {
     return;
@@ -566,6 +593,7 @@ function handleIncomingMessage(event: MessageEvent) {
 
   if (data.type === 'pong-ready') {
     peerReady.value = true;
+    clearReadyPulseTimer();
 
     if (props.isInitiator && pendingStartWhenReady.value && !isRunning.value && props.startSignal > 0 && canSend.value) {
       startGame();
@@ -641,10 +669,12 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
     previousChannelOnOpen?.call(boundChannel, event);
     dataChannelReady.value = true;
     sendReadyMessage();
+    startReadyPulse();
   };
   chainedChannelOnClose = (event) => {
     previousChannelOnClose?.call(boundChannel, event);
     dataChannelReady.value = false;
+    clearReadyPulseTimer();
   };
 
   boundChannel.onmessage = chainedChannelOnMessage;
@@ -653,6 +683,7 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
 
   if (boundChannel.readyState === 'open') {
     sendReadyMessage();
+    startReadyPulse();
   }
 }
 
@@ -822,6 +853,7 @@ onBeforeUnmount(() => {
   detachDataChannelListener();
   clearAnimationFrame();
   clearCountdownTimer();
+  clearReadyPulseTimer();
 });
 </script>
 

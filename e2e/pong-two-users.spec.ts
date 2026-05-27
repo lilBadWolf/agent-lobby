@@ -70,6 +70,10 @@ test('two isolated users can control paddles across peers', async ({ browser, ba
     { timeout: 5_000 }
   ).toBeGreaterThan(1.5);
 
+  // Wait for both peers to be actively playing before the second control round.
+  await waitForBallMotion(host);
+  await waitForBallMotion(guest);
+
   const guestRemoteBefore = await paddleLeftPercent(guest, '.pong-top-paddle');
   await host.click('.pong-board');
   await host.keyboard.down('ArrowRight');

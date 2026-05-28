@@ -277,7 +277,7 @@ describe('PongGame multiplayer sync', () => {
     expect(alpha.find('.pong-countdown-overlay').exists()).toBe(true);
 
     const sentMessages = channel.send.mock.calls.map(([raw]) => JSON.parse(String(raw)));
-    expect(sentMessages.some((message) => message.type === 'pong-ready')).toBe(true);
+    expect(sentMessages.some((message) => message.type === 'pong-ready')).toBe(false);
     expect(sentMessages.some((message) => message.type === 'pong-start')).toBe(true);
   });
 
@@ -470,5 +470,36 @@ describe('PongGame multiplayer sync', () => {
 
     expect(extractLeftPercent(alphaRemote)).toBeGreaterThan(35);
     expect(extractLeftPercent(bravoRemote)).toBeGreaterThan(35);
+  });
+
+  it('starts from DM bridge pong-ready when channel message listeners miss events', async () => {
+    const channel = new ChannelDriver();
+
+    const alpha = mount(PongGame, {
+      props: {
+        user: 'ALPHA',
+        peerName: 'BRAVO',
+        dataChannel: channel as unknown as RTCDataChannel,
+        startSignal: 1,
+        isInitiator: true,
+        waitingForAcceptance: false,
+      },
+    });
+
+    await advance(40);
+    expect(alpha.text()).toContain('Waiting for opponent to get ready...');
+
+    window.dispatchEvent(new CustomEvent('dm-pong-message', {
+      detail: {
+        from: 'BRAVO',
+        data: {
+          type: 'pong-ready',
+          user: 'BRAVO',
+        }
+      }
+    }));
+    await advance(50);
+
+    expect(alpha.find('.pong-countdown-overlay').exists()).toBe(true);
   });
 });

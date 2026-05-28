@@ -107,4 +107,38 @@ describe('BattleshipGame multiplayer sync', () => {
 
     expect(alpha.text()).toContain('BRAVO is targeting');
   });
+
+  it('enters battle when remote ready arrives through DM bridge fallback', async () => {
+    const alpha = mount(BattleshipGame, {
+      props: {
+        user: 'ALPHA',
+        peerName: 'BRAVO',
+        dataChannel: null,
+        startSignal: 1,
+        waitingForAcceptance: false,
+      },
+    });
+
+    await flush(50);
+    await placeFleet(alpha);
+
+    await alpha.find('.controls .action-btn.primary').trigger('click');
+    await flush(60);
+
+    expect(alpha.find('.phase-chip').text()).toContain('DEPLOYMENT');
+
+    window.dispatchEvent(new CustomEvent('dm-battleship-message', {
+      detail: {
+        from: 'BRAVO',
+        data: {
+          type: 'battleship-ready',
+          ready: true,
+          ships: 5,
+        }
+      }
+    }));
+    await flush(80);
+
+    expect(alpha.find('.phase-chip').text()).toContain('ENGAGED');
+  });
 });

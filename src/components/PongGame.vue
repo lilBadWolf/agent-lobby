@@ -251,16 +251,6 @@ function sendPongMessage(message: Record<string, unknown>) {
   }
 
   try {
-    if (typeof message.type === 'string' && message.type.startsWith('pong-')) {
-      console.log('[pong] sending message', {
-        type: message.type,
-        isInitiator: props.isInitiator,
-        user: props.user,
-        peerName: props.peerName,
-        channelState: currentChannel.readyState,
-        channelId: currentChannel.id
-      });
-    }
     currentChannel.send(JSON.stringify(message));
   } catch {
     // swallow non-fatal send failures
@@ -318,7 +308,6 @@ function sendReadyMessage() {
     type: 'pong-ready',
     user: props.user,
   });
-  console.log('[pong] sent pong-ready', { isInitiator: props.isInitiator, user: props.user });
 }
 
 function sendScoreUpdate(winner: 'local' | 'remote') {
@@ -388,7 +377,6 @@ function startReadyPulse() {
     }
 
     sendReadyMessage();
-    console.log('[pong] pulse tick', { isInitiator: props.isInitiator, peerReady: peerReady.value });
   }, 400);
 }
 
@@ -463,7 +451,6 @@ function startGame() {
   if (!canSend.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for direct line to start PONG...';
-    console.log('[pong] startGame: no channel yet', { isInitiator: props.isInitiator });
     return;
   }
 
@@ -473,14 +460,12 @@ function startGame() {
     roundPhase.value = 'waiting';
     statusMessage.value = 'Waiting for opponent to start PONG';
     startReadyPulse();
-    console.log('[pong] startGame: non-initiator waiting, pulse started');
     return;
   }
 
   if (!peerReady.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for opponent to get ready...';
-    console.log('[pong] startGame: initiator waiting for peerReady');
     return;
   }
 
@@ -497,7 +482,6 @@ function startGame() {
     authority.value = 'local';
     sendStartMessage();
     startCountdown(false);
-    console.log('[pong] startGame: initiator sending pong-start, countdown begun');
   } else {
     authority.value = 'remote';
   }
@@ -627,18 +611,6 @@ function handlePongDataMessage(data: any, source: 'channel' | 'bridge') {
     return;
   }
 
-  console.log('[pong] received message', {
-    source,
-    type: data.type,
-    isInitiator: props.isInitiator,
-    user: props.user,
-    peerName: props.peerName,
-    pendingStart: pendingStartWhenReady.value,
-    startSignal: props.startSignal,
-    canSend: canSend.value,
-    roundPhase: roundPhase.value
-  });
-
   if (data.type === 'pong-paddle' && typeof data.x === 'number') {
     updateRemotePaddle(data.x);
     return;
@@ -661,8 +633,6 @@ function handlePongDataMessage(data: any, source: 'channel' | 'bridge') {
       clearReadyPulseTimer();
     }
 
-    console.log('[pong] received pong-ready', { isInitiator: props.isInitiator, pendingStart: pendingStartWhenReady.value, startSignal: props.startSignal, canSend: canSend.value, source });
-
     if (props.isInitiator && pendingStartWhenReady.value && !isRunning.value && props.startSignal > 0 && canSend.value) {
       startGame();
     }
@@ -671,7 +641,6 @@ function handlePongDataMessage(data: any, source: 'channel' | 'bridge') {
   }
 
   if (data.type === 'pong-start') {
-    console.log('[pong] received pong-start', { authority: data.authority, isInitiator: props.isInitiator, source });
     authority.value = data.authority === props.user ? 'local' : 'remote';
     if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
       remoteBallSequence.value = data.seq;
@@ -750,14 +719,6 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
 
   currentChannel = channel;
   dataChannelReady.value = Boolean(currentChannel && currentChannel.readyState === 'open');
-  console.log('[pong] attachDataChannelListener', {
-    isInitiator: props.isInitiator,
-    user: props.user,
-    peerName: props.peerName,
-    hasChannel: Boolean(currentChannel),
-    channelState: currentChannel?.readyState ?? 'none',
-    channelId: currentChannel?.id ?? null
-  });
   if (!currentChannel) {
     return;
   }
@@ -765,23 +726,12 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
   const boundChannel = currentChannel;
 
   channelMessageListener = (event) => {
-    if (typeof event.data === 'string' && event.data.includes('pong-')) {
-      console.log('[pong] channel onmessage event', {
-        isInitiator: props.isInitiator,
-        user: props.user,
-        peerName: props.peerName,
-        readyState: boundChannel.readyState,
-        payloadPreview: event.data.slice(0, 160)
-      });
-    }
-
     handleIncomingMessage(event);
   };
   channelOpenListener = () => {
     dataChannelReady.value = true;
     sendReadyMessage();
     startReadyPulse();
-    console.log('[pong] data channel opened', { isInitiator: props.isInitiator, user: props.user, channelId: boundChannel.id });
   };
   channelCloseListener = () => {
     dataChannelReady.value = false;

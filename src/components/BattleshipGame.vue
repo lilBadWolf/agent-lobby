@@ -187,6 +187,11 @@ interface ShipPlacement {
   cells: number[];
 }
 
+type BattleshipBridgeEventDetail = {
+  from?: string;
+  data?: any;
+};
+
 type ShotOutcome = 'hit' | 'miss';
 
 type GamePhase = 'invite' | 'placement' | 'battle' | 'finished';
@@ -290,6 +295,8 @@ let enemyImpactTimer: number | null = null;
 let localImpactTimer: number | null = null;
 let enemyShockTimer: number | null = null;
 let localShockTimer: number | null = null;
+let lastBattleshipMessageSignature = '';
+let lastBattleshipMessageAt = 0;
 
 const shipSpriteUrls: Record<string, string> = {
   carrier: battleshipCarrier,
@@ -1075,19 +1082,35 @@ function enemyCellClass(index: number): Record<string, boolean> {
   };
 }
 
-function handleIncomingMessage(event: MessageEvent) {
-  if (!event.data || event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-    return;
+function isDuplicateBattleshipMessage(data: any): boolean {
+  const signature = JSON.stringify({
+    type: data?.type,
+    ready: data?.ready,
+    ships: data?.ships,
+    firstPlayer: data?.firstPlayer,
+    cell: data?.cell,
+    hit: data?.hit,
+    sunkShipId: data?.sunkShipId,
+    gameOver: data?.gameOver,
+    sunkShipCells: Array.isArray(data?.sunkShipCells) ? data.sunkShipCells : null,
+  });
+
+  const now = performance.now();
+  if (signature === lastBattleshipMessageSignature && now - lastBattleshipMessageAt < 40) {
+    return true;
   }
 
-  let data: any;
-  try {
-    data = JSON.parse(event.data);
-  } catch {
-    return;
-  }
+  lastBattleshipMessageSignature = signature;
+  lastBattleshipMessageAt = now;
+  return false;
+}
 
+function handleBattleshipDataMessage(data: any) {
   if (!data?.type?.startsWith('battleship-')) {
+    return;
+  }
+
+  if (isDuplicateBattleshipMessage(data)) {
     return;
   }
 
@@ -1127,8 +1150,32 @@ function handleIncomingMessage(event: MessageEvent) {
     statusMessage.value = `${props.peerName} canceled the game.`;
     combatFeed.value = 'TACTICAL FEED: Link terminated by remote command.';
     phase.value = 'invite';
+  }
+}
+
+function handleBridgeBattleshipMessage(event: Event) {
+  const bridgeEvent = event as CustomEvent<BattleshipBridgeEventDetail>;
+  const fromUser = bridgeEvent.detail?.from;
+  if (!fromUser || normalizeHandle(fromUser) !== normalizeHandle(props.peerName)) {
     return;
   }
+
+  handleBattleshipDataMessage(bridgeEvent.detail?.data);
+}
+
+function handleIncomingMessage(event: MessageEvent) {
+  if (!event.data || event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+    return;
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+
+  handleBattleshipDataMessage(data);
 }
 
 function attachDataChannelListener(channel: RTCDataChannel | null) {
@@ -1199,6 +1246,7 @@ onMounted(() => {
   }
   activateGameIfReady();
   window.addEventListener('keydown', handleWindowKeydown);
+  window.addEventListener('dm-battleship-message', handleBridgeBattleshipMessage as EventListener);
 });
 
 watch(
@@ -1217,6 +1265,7 @@ watch(
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleWindowKeydown);
+  window.removeEventListener('dm-battleship-message', handleBridgeBattleshipMessage as EventListener);
   stopReadyBroadcast();
   stopPendingShotRetry();
   stopBattleBeginRetry();

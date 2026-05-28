@@ -72,6 +72,7 @@
               />
               <BattleshipGame
                 v-else
+                :key="`battleship-${activeGameUser || currentTab}-${getGameChat()?.dataChannel?.id ?? 'none'}`"
                 :user="props.username"
                 :peer-name="activeGameUser || currentTab"
                 :data-channel="getGameChat()?.dataChannel ?? null"

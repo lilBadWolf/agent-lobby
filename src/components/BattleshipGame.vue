@@ -416,12 +416,12 @@ function cellFromRowCol(row: number, col: number): number {
 }
 
 function sendMessage(payload: Record<string, unknown>) {
-  if (!props.dataChannel || props.dataChannel.readyState !== 'open') {
+  if (!currentChannel || currentChannel.readyState !== 'open') {
     return;
   }
 
   try {
-    props.dataChannel.send(JSON.stringify(payload));
+    currentChannel.send(JSON.stringify(payload));
   } catch {
     // Ignore transient send errors.
   }

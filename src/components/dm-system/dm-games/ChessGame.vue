@@ -36,7 +36,7 @@
               class="captured-piece-chip"
               :class="pieceClass(piece)"
             >
-              <img class="captured-piece-image" :src="pieceAsset(piece)" :alt="pieceAlt(piece)" draggable="false" />
+              <span class="chess-piece-sprite" :class="pieceSpriteClass(piece)" aria-hidden="true" />
             </span>
           </div>
         </div>
@@ -50,7 +50,7 @@
               class="captured-piece-chip"
               :class="pieceClass(piece)"
             >
-              <img class="captured-piece-image" :src="pieceAsset(piece)" :alt="pieceAlt(piece)" draggable="false" />
+              <span class="chess-piece-sprite" :class="pieceSpriteClass(piece)" aria-hidden="true" />
             </span>
           </div>
         </div>
@@ -82,14 +82,16 @@
               v-if="displayedBoard[square.index]"
               class="chess-piece"
               :class="pieceClass(displayedBoard[square.index]!)"
+              :title="pieceName(displayedBoard[square.index]!)"
+              :aria-label="pieceName(displayedBoard[square.index]!)"
             >
-              <img class="chess-piece-image" :src="pieceAsset(displayedBoard[square.index]!)" :alt="pieceAlt(displayedBoard[square.index]!)" draggable="false" />
+              <span class="chess-piece-sprite" :class="pieceSpriteClass(displayedBoard[square.index]!)" aria-hidden="true" />
             </span>
           </button>
 
           <div v-if="remoteAnimation" class="piece-animation">
             <span ref="movingPieceRef" class="chess-piece animated-piece moving-piece" :class="pieceClass(remoteAnimation.piece)" :style="remoteAnimation.movingStyle">
-              <img class="chess-piece-image" :src="pieceAsset(remoteAnimation.piece)" :alt="pieceAlt(remoteAnimation.piece)" draggable="false" />
+              <span class="chess-piece-sprite" :class="pieceSpriteClass(remoteAnimation.piece)" aria-hidden="true" />
             </span>
             <span
               v-if="remoteAnimation.capturedPiece"
@@ -98,7 +100,7 @@
               :class="pieceClass(remoteAnimation.capturedPiece)"
               :style="remoteAnimation.capturedStyle"
             >
-              <img class="chess-piece-image" :src="pieceAsset(remoteAnimation.capturedPiece)" :alt="pieceAlt(remoteAnimation.capturedPiece)" draggable="false" />
+              <span class="chess-piece-sprite" :class="pieceSpriteClass(remoteAnimation.capturedPiece)" aria-hidden="true" />
             </span>
           </div>
         </div>
@@ -350,41 +352,25 @@ function pieceClass(piece: Piece) {
   return [`piece-${piece.color}`, `piece-${piece.type}`];
 }
 
-const pieceAssets: Record<Color, Record<PieceType, string>> = {
-  w: {
-    p: new URL('./assets/chess-pieces/white-pawn.svg', import.meta.url).href,
-    n: new URL('./assets/chess-pieces/white-knight.svg', import.meta.url).href,
-    b: new URL('./assets/chess-pieces/white-bishop.svg', import.meta.url).href,
-    r: new URL('./assets/chess-pieces/white-rook.svg', import.meta.url).href,
-    q: new URL('./assets/chess-pieces/white-queen.svg', import.meta.url).href,
-    k: new URL('./assets/chess-pieces/white-king.svg', import.meta.url).href,
-  },
-  b: {
-    p: new URL('./assets/chess-pieces/black-pawn.svg', import.meta.url).href,
-    n: new URL('./assets/chess-pieces/black-knight.svg', import.meta.url).href,
-    b: new URL('./assets/chess-pieces/black-bishop.svg', import.meta.url).href,
-    r: new URL('./assets/chess-pieces/black-rook.svg', import.meta.url).href,
-    q: new URL('./assets/chess-pieces/black-queen.svg', import.meta.url).href,
-    k: new URL('./assets/chess-pieces/black-king.svg', import.meta.url).href,
-  },
-};
+const whiteSpriteSheet = new URL('./assets/chess-pieces/chess-pieces-white.png', import.meta.url).href;
+const blackSpriteSheet = new URL('./assets/chess-pieces/chess-pieces-black.png', import.meta.url).href;
 
-function pieceAsset(piece: Piece) {
-  return pieceAssets[piece.color][piece.type];
+function pieceSpriteClass(piece: Piece) {
+  return [`sprite-color-${piece.color}`, `sprite-type-${piece.type}`];
 }
 
-function pieceAlt(piece: Piece) {
+function pieceName(piece: Piece) {
   const colorLabel = piece.color === 'w' ? 'White' : 'Black';
-  const pieceLabel: Record<PieceType, string> = {
-    p: 'pawn',
-    n: 'knight',
-    b: 'bishop',
-    r: 'rook',
-    q: 'queen',
-    k: 'king',
+  const typeLabel: Record<PieceType, string> = {
+    p: 'Pawn',
+    r: 'Rook',
+    n: 'Knight',
+    b: 'Bishop',
+    q: 'Queen',
+    k: 'King',
   };
 
-  return `${colorLabel} ${pieceLabel[piece.type]}`;
+  return `${colorLabel} ${typeLabel[piece.type]}`;
 }
 
 function materialScoreFor(color: Color, board: Array<Piece | null>) {
@@ -1616,12 +1602,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-.captured-piece-image {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
 .status-card {
   min-height: 76px;
   padding: 10px;
@@ -1665,20 +1645,23 @@ onBeforeUnmount(() => {
   padding: 0;
   display: grid;
   place-items: center;
-  cursor: pointer;
   transition: filter 140ms ease;
 }
 
+.chess-cell:enabled {
+  cursor: pointer;
+}
+
+.chess-cell:disabled {
+  cursor: default;
+}
+
 .chess-cell.light {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02)),
-    color-mix(in srgb, var(--color-text-primary) 90%, #f2eadc);
+  background: color-mix(in srgb, var(--color-bg-accent, var(--color-accent)) 82%, #ffffff 18%);
 }
 
 .chess-cell.dark {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.1)),
-    color-mix(in srgb, var(--color-accent) 24%, #2c3b2f);
+  background: color-mix(in srgb, var(--color-bg-base) 92%, #000000 8%);
 }
 
 .chess-cell:hover:enabled {
@@ -1690,7 +1673,7 @@ onBeforeUnmount(() => {
 }
 
 .chess-cell.target {
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-chat-link) 18%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--color-chat-link) 56%, transparent);
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-sidebar-dm-active) 12%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--color-sidebar-dm-active) 72%, transparent);
 }
 
 .chess-cell.last-move {
@@ -1713,11 +1696,63 @@ onBeforeUnmount(() => {
   transform: translateZ(0);
 }
 
-.chess-piece-image {
+.chess-piece-sprite {
+  --sprite-x: 0%;
+  --sprite-nudge-x: 0%;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  display: block;
+  background-repeat: no-repeat;
+  background-size: 600% 100%;
+  background-position: calc(var(--sprite-x) + var(--sprite-nudge-x)) 50%;
   filter: drop-shadow(0 12px 14px rgba(0, 0, 0, 0.26));
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.chess-cell:hover:enabled .chess-piece-sprite {
+  filter: brightness(1.08) saturate(1.12) drop-shadow(0 14px 16px rgba(0, 0, 0, 0.34));
+  transform: translateY(-1px) scale(1.02);
+}
+
+.chess-cell.selected .chess-piece-sprite {
+  filter: brightness(1.12) saturate(1.18) drop-shadow(0 15px 18px rgba(0, 0, 0, 0.38));
+  transform: translateY(-1px) scale(1.04);
+}
+
+.sprite-color-w {
+  background-image: url(v-bind(whiteSpriteSheet));
+}
+
+.sprite-color-b {
+  background-image: url(v-bind(blackSpriteSheet));
+}
+
+.sprite-type-p {
+  --sprite-x: 0%;
+  --sprite-nudge-x: 4.5%;
+}
+
+.sprite-type-r {
+  --sprite-x: 20%;
+  --sprite-nudge-x: 2%;
+}
+
+.sprite-type-n {
+  --sprite-x: 40%;
+}
+
+.sprite-type-b {
+  --sprite-x: 60%;
+}
+
+.sprite-type-q {
+  --sprite-x: 80%;
+  --sprite-nudge-x: -2%;
+}
+
+.sprite-type-k {
+  --sprite-x: 100%;
+  --sprite-nudge-x: -3.5%;
 }
 
 .animated-piece {

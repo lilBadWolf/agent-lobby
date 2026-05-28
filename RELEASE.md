@@ -1,10 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.7**
+🚀 **Release highlights for agent-lobby 0.5.8**
 
-- 🧠 **Multiplayer startup reliability got a major hardening pass** for both PONG and BATTLESHIP.
-- 🛰️ **Game message fallback paths were strengthened** so matches are far less likely to stall at "ready" across different runtime timing conditions.
-- 🔗 **DM channel handoff behavior is more resilient** when game sessions are opening, reconnecting, or swapping channel instances.
-- ✅ **Regression protection was expanded** with targeted multiplayer tests focused on the exact startup-sync failures we were seeing.
+- 🎨 **The app's layout and window structure got a big cleanup**, making the lobby, DM, theme editor, and detached window areas easier to navigate and maintain.
+- 🛠️ **Theme handling received a fresh round of fixes**, including tighter ACL behavior so theme-related actions stay consistent.
+- 🧩 **Several screens and panels were reorganized behind the scenes** to better match how the app is actually used.
+- ✨ **Overall, this release is a foundation polish pass** that sets up the next round of feature work with less clutter and fewer path issues.
 
-> This release is focused on fewer false starts, fewer stuck matches, and smoother head-to-head sessions. 🎮🔥
+> This update is mostly about a cleaner structure, steadier theme behavior, and a smoother base for future features. 🌟

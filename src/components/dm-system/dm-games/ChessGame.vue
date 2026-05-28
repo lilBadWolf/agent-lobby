@@ -325,35 +325,12 @@ function cloneState(input: ChessState): ChessState {
   };
 }
 
-function pieceGlyph(piece: Piece) {
-  const map: Record<Color, Record<PieceType, string>> = {
-    w: {
-      k: '♔',
-      q: '♕',
-      r: '♖',
-      b: '♗',
-      n: '♘',
-      p: '♙',
-    },
-    b: {
-      k: '♚',
-      q: '♛',
-      r: '♜',
-      b: '♝',
-      n: '♞',
-      p: '♟',
-    },
-  };
-
-  return map[piece.color][piece.type];
-}
-
 function pieceClass(piece: Piece) {
   return [`piece-${piece.color}`, `piece-${piece.type}`];
 }
 
-const whiteSpriteSheet = new URL('./assets/chess-pieces/chess-pieces-white.png', import.meta.url).href;
-const blackSpriteSheet = new URL('./assets/chess-pieces/chess-pieces-black.png', import.meta.url).href;
+const whiteSpriteSheet = `url(${JSON.stringify(new URL('./assets/chess-pieces/chess-pieces-white.png', import.meta.url).href)})`;
+const blackSpriteSheet = `url(${JSON.stringify(new URL('./assets/chess-pieces/chess-pieces-black.png', import.meta.url).href)})`;
 
 function pieceSpriteClass(piece: Piece) {
   return [`sprite-color-${piece.color}`, `sprite-type-${piece.type}`];
@@ -1720,11 +1697,11 @@ onBeforeUnmount(() => {
 }
 
 .sprite-color-w {
-  background-image: url(v-bind(whiteSpriteSheet));
+  background-image: v-bind(whiteSpriteSheet);
 }
 
 .sprite-color-b {
-  background-image: url(v-bind(blackSpriteSheet));
+  background-image: v-bind(blackSpriteSheet);
 }
 
 .sprite-type-p {

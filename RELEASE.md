@@ -1,10 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.8**
+🚀 **Release highlights for agent-lobby 0.6.1**
 
-- 🎨 **The app's layout and window structure got a big cleanup**, making the lobby, DM, theme editor, and detached window areas easier to navigate and maintain.
-- 🛠️ **Theme handling received a fresh round of fixes**, including tighter ACL behavior so theme-related actions stay consistent.
-- 🧩 **Several screens and panels were reorganized behind the scenes** to better match how the app is actually used.
-- ✨ **Overall, this release is a foundation polish pass** that sets up the next round of feature work with less clutter and fewer path issues.
+- ♟️ **Chess got a major visual glow-up** with custom piece art support, richer interaction polish, and better in-board feedback while you play.
+- 🎯 **Piece alignment and readability were tuned up** so pieces sit cleaner on tiles and are easier to scan at a glance.
+- 🎨 **Theme integration for chess visuals is stronger** so board colors and highlights track your active preset more naturally.
+- 🔊 **Preview interactions now include sound hooks** to better mirror the feel of the live game experience.
 
-> This update is mostly about a cleaner structure, steadier theme behavior, and a smoother base for future features. 🌟
+> This release focuses on making chess feel sharper, clearer, and more fun to use moment-to-moment. 🐺✨

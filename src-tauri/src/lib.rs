@@ -1603,6 +1603,7 @@ pub fn run() {
                         .permission("fs:allow-download-write")
                         .permission("dialog:default")
                         .permission("opener:default")
+                        .permission("opener:allow-open-path")
                         .permission("core:window:allow-create")
                         .permission("core:webview:allow-create-webview-window")
                         .permission("core:window:allow-close")

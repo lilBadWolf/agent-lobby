@@ -1,10 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.5.5**
+🚀 **Release highlights for agent-lobby 0.5.6**
 
-- 🏓 **Pong start flow got another reliability pass** to prevent players from getting stuck in "waiting" at match launch.
-- 🔗 **Direct-line game channel binding is more robust** so both sides stay synced to the same active game channel during startup.
-- 🛠️ **Handshake behavior was hardened** to better handle real-world timing and channel swap edge cases.
-- 👀 **Extra diagnostics were added for this cycle** to validate multiplayer startup behavior in live sessions while we finish tightening the flow.
+- 🏓 **Pong startup reliability is improved again**, especially around direct-line readiness and game start synchronization.
+- 🔄 **Multiplayer handoff behavior was tightened** to reduce "one side starts, other side waits" edge cases.
+- ⚓ **Battleship now includes additional DM-channel hardening** so game state stays aligned when channels swap or reconnect.
+- 🧭 **Networked game flow has been smoothed end-to-end** for more consistent starts and cleaner transitions during live sessions.
 
-> This patch is focused on one thing: getting both players into the round cleanly and consistently. 🎮✅
+> This release is all about dependable multiplayer starts and stronger game-session stability. 🎮✨

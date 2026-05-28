@@ -602,7 +602,7 @@ function isDuplicatePongMessage(data: any): boolean {
   return false;
 }
 
-function handlePongDataMessage(data: any, source: 'channel' | 'bridge') {
+function handlePongDataMessage(data: any) {
   if (!data?.type?.startsWith('pong-')) {
     return;
   }
@@ -692,7 +692,7 @@ function handleBridgePongMessage(event: Event) {
     return;
   }
 
-  handlePongDataMessage(data, 'bridge');
+  handlePongDataMessage(data);
 }
 
 function handleIncomingMessage(event: MessageEvent) {
@@ -711,7 +711,7 @@ function handleIncomingMessage(event: MessageEvent) {
     return;
   }
 
-  handlePongDataMessage(data, 'channel');
+  handlePongDataMessage(data);
 }
 
 function attachDataChannelListener(channel: RTCDataChannel | null) {

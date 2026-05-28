@@ -6,17 +6,17 @@ import {
 } from './messageEffectHelpers';
 import TypewriterEffect from '../components/effects/TypewriterEffect.vue';
 import ScanEffect from '../components/effects/ScanEffect.vue';
-import CodexEffect from '../components/dm-effects/CodexEffect.vue';
-import GlitchEffect from '../components/dm-effects/GlitchEffect.vue';
-import FlamesEffect from '../components/dm-effects/FlamesEffect.vue';
-import RustEffect from '../components/dm-effects/RustEffect.vue';
-import PacmanEffect from '../components/dm-effects/PacmanEffect.vue';
-import MsPacmanEffect from '../components/dm-effects/MsPacmanEffect.vue';
-import StarmapEffect from '../components/dm-effects/StarmapEffect.vue';
-import BubbleEffect from '../components/dm-effects/BubbleEffect.vue';
-import PowderEffect from '../components/dm-effects/PowderEffect.vue';
-import InfernoEffect from '../components/dm-effects/InfernoEffect.vue';
-import CookieMonsterEffect from '../components/dm-effects/CookieMonsterEffect.vue';
+import CodexEffect from '../components/dm-system/dm-effects/CodexEffect.vue';
+import GlitchEffect from '../components/dm-system/dm-effects/GlitchEffect.vue';
+import FlamesEffect from '../components/dm-system/dm-effects/FlamesEffect.vue';
+import RustEffect from '../components/dm-system/dm-effects/RustEffect.vue';
+import PacmanEffect from '../components/dm-system/dm-effects/PacmanEffect.vue';
+import MsPacmanEffect from '../components/dm-system/dm-effects/MsPacmanEffect.vue';
+import StarmapEffect from '../components/dm-system/dm-effects/StarmapEffect.vue';
+import BubbleEffect from '../components/dm-system/dm-effects/BubbleEffect.vue';
+import PowderEffect from '../components/dm-system/dm-effects/PowderEffect.vue';
+import InfernoEffect from '../components/dm-system/dm-effects/InfernoEffect.vue';
+import CookieMonsterEffect from '../components/dm-system/dm-effects/CookieMonsterEffect.vue';
 
 const effectComponentMap: Record<Exclude<AnimationEffect, 'none'>, any> = {
   typewriter: TypewriterEffect,

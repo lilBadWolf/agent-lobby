@@ -1,11 +1,11 @@
 import { createApp } from "vue";
 import * as THREE from 'three';
 import App from "./App.vue";
-import DMWindowApp from "./DMWindowApp.vue";
-import AgentAmpWindowApp from "./AgentAmpWindowApp.vue";
-import PinnedVideoWindowApp from "./PinnedVideoWindowApp.vue";
-import MediaLibraryWindowApp from "./MediaLibraryWindowApp.vue";
-import ThemeEditorWindowApp from "./ThemeEditorWindowApp.vue";
+import DMWindowApp from "./windows/DMWindowApp.vue";
+import AgentAmpWindowApp from "./windows/AgentAmpWindowApp.vue";
+import PinnedVideoWindowApp from "./windows/PinnedVideoWindowApp.vue";
+import MediaLibraryWindowApp from "./windows/MediaLibraryWindowApp.vue";
+import ThemeEditorWindowApp from "./windows/ThemeEditorWindowApp.vue";
 import "./styles/global.css";
 import { runAutoUpdater } from "./composables/useAutoUpdater";
 import { resolvePersistedThemeSync } from "./composables/useTheme";

@@ -340,15 +340,15 @@ import type { ActiveMedia, AudioConfig } from './types/chat';
 import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
-import AuthScreen from './components/AuthScreen.vue';
-import AuthBackground from './components/AuthBackground.vue';
-import ChatArea from './components/ChatArea.vue';
-import Sidebar from './components/Sidebar.vue';
-import SettingsModal from './components/SettingsModal.vue';
-import ProfileSettingsModal from './components/ProfileSettingsModal.vue';
-import NetworkConfigModal from './components/NetworkConfigModal.vue';
-import DMRequestStack from './components/DMRequestStack.vue';
-import AgentAmpPlayer from './components/AgentAmpPlayer.vue';
+import AuthScreen from './components/lobby/AuthScreen.vue';
+import AuthBackground from './components/lobby/backgrounds/AuthBackground.vue';
+import ChatArea from './components/lobby/ChatArea.vue';
+import Sidebar from './components/lobby/Sidebar.vue';
+import SettingsModal from './components/modals/SettingsModal.vue';
+import ProfileSettingsModal from './components/modals/ProfileSettingsModal.vue';
+import NetworkConfigModal from './components/modals/NetworkConfigModal.vue';
+import DMRequestStack from './components/dm-system/DMRequestStack.vue';
+import AgentAmpPlayer from './components/agentamp/AgentAmpPlayer.vue';
 
 const {
   username,

@@ -108,7 +108,7 @@ export function useDirectMessage(
 
   function pushNotice(
     message: string,
-    type?: 'audio-call' | 'video-call' | 'call-status' | 'pong-request' | 'pong-accept' | 'pong-reject' | 'pong-cancel' | 'battleship-request' | 'battleship-accept' | 'battleship-reject' | 'battleship-cancel' | 'info' | 'file-offer',
+    type?: 'audio-call' | 'video-call' | 'call-status' | 'pong-request' | 'pong-accept' | 'pong-reject' | 'pong-cancel' | 'battleship-request' | 'battleship-accept' | 'battleship-reject' | 'battleship-cancel' | 'tictactoe-request' | 'tictactoe-accept' | 'tictactoe-reject' | 'tictactoe-cancel' | 'chess-request' | 'chess-accept' | 'chess-reject' | 'chess-cancel' | 'info' | 'file-offer',
     from?: string,
     fileId?: string,
     timeout = 4000
@@ -187,6 +187,46 @@ export function useDirectMessage(
   function sendBattleshipCancel(user: string) {
     if (isPresenceRuntime) return;
     sendDataChannelMessage(user, { type: 'battleship-cancel' });
+  }
+
+  function sendTicTacToeRequest(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'tictactoe-request' });
+  }
+
+  function sendTicTacToeAccept(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'tictactoe-accept' });
+  }
+
+  function sendTicTacToeReject(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'tictactoe-reject' });
+  }
+
+  function sendTicTacToeCancel(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'tictactoe-cancel' });
+  }
+
+  function sendChessRequest(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'chess-request' });
+  }
+
+  function sendChessAccept(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'chess-accept' });
+  }
+
+  function sendChessReject(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'chess-reject' });
+  }
+
+  function sendChessCancel(user: string) {
+    if (isPresenceRuntime) return;
+    sendDataChannelMessage(user, { type: 'chess-cancel' });
   }
 
   // Start call duration timer
@@ -813,6 +853,28 @@ export function useDirectMessage(
           }
         }
 
+        if (data?.type?.startsWith('ttt-') || data?.type?.startsWith('tictactoe-')) {
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('dm-tictactoe-message', {
+              detail: {
+                from: otherUser,
+                data,
+              }
+            }));
+          }
+        }
+
+        if (data?.type?.startsWith('chess-')) {
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('dm-chess-message', {
+              detail: {
+                from: otherUser,
+                data,
+              }
+            }));
+          }
+        }
+
         const chat = activeChats.value.get(otherUser);
         if (!chat) return;
 
@@ -874,11 +936,59 @@ export function useDirectMessage(
           return;
         }
 
+        if (data.type === 'tictactoe-request') {
+          pushNotice(`${otherUser} wants to play TIC-TAC-TOE`, 'tictactoe-request', otherUser, undefined, 10000);
+          return;
+        }
+
+        if (data.type === 'tictactoe-accept') {
+          pushNotice(`${otherUser} accepted your TIC-TAC-TOE request`, 'tictactoe-accept', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'tictactoe-reject') {
+          pushNotice(`${otherUser} declined your TIC-TAC-TOE request`, 'tictactoe-reject', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'tictactoe-cancel') {
+          pushNotice(`${otherUser} canceled the TIC-TAC-TOE request`, 'tictactoe-cancel', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'chess-request') {
+          pushNotice(`${otherUser} wants to play CHESS`, 'chess-request', otherUser, undefined, 10000);
+          return;
+        }
+
+        if (data.type === 'chess-accept') {
+          pushNotice(`${otherUser} accepted your CHESS request`, 'chess-accept', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'chess-reject') {
+          pushNotice(`${otherUser} declined your CHESS request`, 'chess-reject', otherUser, undefined, 4000);
+          return;
+        }
+
+        if (data.type === 'chess-cancel') {
+          pushNotice(`${otherUser} canceled the CHESS request`, 'chess-cancel', otherUser, undefined, 4000);
+          return;
+        }
+
         if (data.type?.startsWith('pong-')) {
           return;
         }
 
         if (data.type?.startsWith('battleship-')) {
+          return;
+        }
+
+        if (data.type?.startsWith('ttt-') || data.type?.startsWith('tictactoe-')) {
+          return;
+        }
+
+        if (data.type?.startsWith('chess-')) {
           return;
         }
 
@@ -2422,6 +2532,14 @@ export function useDirectMessage(
     sendBattleshipAccept,
     sendBattleshipReject,
     sendBattleshipCancel,
+    sendTicTacToeRequest,
+    sendTicTacToeAccept,
+    sendTicTacToeReject,
+    sendTicTacToeCancel,
+    sendChessRequest,
+    sendChessAccept,
+    sendChessReject,
+    sendChessCancel,
     cleanup
   };
 }

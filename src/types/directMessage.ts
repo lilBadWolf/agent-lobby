@@ -63,6 +63,14 @@ export interface DMNotice {
     | 'battleship-accept'
     | 'battleship-reject'
     | 'battleship-cancel'
+    | 'tictactoe-request'
+    | 'tictactoe-accept'
+    | 'tictactoe-reject'
+    | 'tictactoe-cancel'
+    | 'chess-request'
+    | 'chess-accept'
+    | 'chess-reject'
+    | 'chess-cancel'
     | 'info'
     | 'file-offer';
   from?: string;

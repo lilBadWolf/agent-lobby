@@ -781,7 +781,7 @@ fn is_valid_custom_theme_css(theme_name: &str, css_content: &str) -> bool {
 
     css.contains(&expected_selector_single)
         || css.contains(&expected_selector_double)
-        || (css.contains(":root[data-theme=") && css.contains("--color-"))
+        || css.contains(":root[data-theme=")
 }
 
 fn discover_custom_themes(app_data_dir: &Path) -> Vec<CustomAssetEntry> {

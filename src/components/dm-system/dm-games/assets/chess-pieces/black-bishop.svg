@@ -1,0 +1,17 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' role='img' aria-label='Black wood bishop'>
+  <defs>
+    <radialGradient id='body' cx='35%' cy='20%' r='70%'>
+      <stop offset='0%' stop-color='#816243'/>
+      <stop offset='50%' stop-color='#4d301d'/>
+      <stop offset='100%' stop-color='#1e120b'/>
+    </radialGradient>
+  </defs>
+  <ellipse cx='128' cy='238' rx='74' ry='13' fill='#000' opacity='0.36'/>
+  <path d='M128 42c16 0 28 12 28 28c0 9-4 17-11 23c14 11 24 30 24 52c0 41-18 72-41 72s-41-31-41-72c0-22 10-41 24-52c-7-6-11-14-11-23c0-16 12-28 28-28z' fill='url(#body)' stroke='#e2c6aa' stroke-width='4'/>
+  <path d='M146 76l-26 45' stroke='#e7d0b8' stroke-width='6.6' stroke-linecap='round' opacity='0.64'/>
+  <path d='M149 74l-27 47' stroke='#f8ebd7' stroke-width='2' stroke-linecap='round' opacity='0.3'/>
+  <path d='M142 79l-20 35' stroke='#25160d' stroke-width='3' stroke-linecap='round' opacity='0.58'/>
+  <path d='M128 51v24M118 63h20M112 120c11 10 21 19 32 28' stroke='#f8ecd9' stroke-width='5.5' stroke-linecap='round' opacity='0.3'/>
+  <path d='M96 138c18-10 47-10 64 0M94 157c20-12 50-12 68 0' fill='none' stroke='#d0b28f' stroke-width='2.4' opacity='0.38'/>
+  <rect x='70' y='208' width='116' height='16' rx='8' fill='#3f2719' stroke='#e2c6aa' stroke-width='4'/>
+</svg>

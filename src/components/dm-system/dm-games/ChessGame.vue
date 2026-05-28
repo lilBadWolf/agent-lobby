@@ -11,13 +11,48 @@
 
     <div class="chess-main">
       <div class="chess-sidebar">
+        <div class="scoreboard-card">
+          <div class="scoreboard-label">BOARD STATE</div>
+          <div class="scoreboard-rows">
+            <div class="scoreboard-row">
+              <span class="score-pill score-pill-white">WHITE {{ whiteMaterial }}</span>
+              <span class="score-pill score-pill-black">BLACK {{ blackMaterial }}</span>
+            </div>
+            <div class="scoreboard-row scoreboard-meta">
+              <span>Move {{ state.moveNumber }}</span>
+              <span>{{ scoreboardStateLabel }}</span>
+            </div>
+          </div>
+          <div class="scoreboard-note">{{ materialLeadLabel }}</div>
+        </div>
+
         <div class="player-card" :class="{ active: localColor === 'w' }">
           <span class="player-color">WHITE</span>
           <span class="player-name">{{ whitePlayer }}</span>
+          <div class="captured-tray" aria-label="White lost pieces">
+            <span
+              v-for="(piece, index) in lostWhitePieces"
+              :key="`lost-white-${index}`"
+              class="captured-piece-chip"
+              :class="pieceClass(piece)"
+            >
+              <img class="captured-piece-image" :src="pieceAsset(piece)" :alt="pieceAlt(piece)" draggable="false" />
+            </span>
+          </div>
         </div>
         <div class="player-card" :class="{ active: localColor === 'b' }">
           <span class="player-color">BLACK</span>
           <span class="player-name">{{ blackPlayer }}</span>
+          <div class="captured-tray" aria-label="Black lost pieces">
+            <span
+              v-for="(piece, index) in lostBlackPieces"
+              :key="`lost-black-${index}`"
+              class="captured-piece-chip"
+              :class="pieceClass(piece)"
+            >
+              <img class="captured-piece-image" :src="pieceAsset(piece)" :alt="pieceAlt(piece)" draggable="false" />
+            </span>
+          </div>
         </div>
         <div class="status-card">{{ statusText }}</div>
         <button
@@ -48,13 +83,22 @@
               class="chess-piece"
               :class="pieceClass(displayedBoard[square.index]!)"
             >
-              {{ pieceGlyph(displayedBoard[square.index]!) }}
+              <img class="chess-piece-image" :src="pieceAsset(displayedBoard[square.index]!)" :alt="pieceAlt(displayedBoard[square.index]!)" draggable="false" />
             </span>
           </button>
 
-          <div v-if="remoteAnimation" class="piece-animation" :style="animationStyle">
-            <span class="chess-piece" :class="pieceClass(remoteAnimation.piece)">
-              {{ pieceGlyph(remoteAnimation.piece) }}
+          <div v-if="remoteAnimation" class="piece-animation">
+            <span ref="movingPieceRef" class="chess-piece animated-piece moving-piece" :class="pieceClass(remoteAnimation.piece)" :style="remoteAnimation.movingStyle">
+              <img class="chess-piece-image" :src="pieceAsset(remoteAnimation.piece)" :alt="pieceAlt(remoteAnimation.piece)" draggable="false" />
+            </span>
+            <span
+              v-if="remoteAnimation.capturedPiece"
+              ref="capturedPieceRef"
+              class="chess-piece animated-piece captured-piece"
+              :class="pieceClass(remoteAnimation.capturedPiece)"
+              :style="remoteAnimation.capturedStyle"
+            >
+              <img class="chess-piece-image" :src="pieceAsset(remoteAnimation.capturedPiece)" :alt="pieceAlt(remoteAnimation.capturedPiece)" draggable="false" />
             </span>
           </div>
         </div>
@@ -66,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 type Color = 'w' | 'b';
 type PieceType = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
@@ -116,6 +160,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>();
 
 const boardEl = ref<HTMLElement | null>(null);
+const movingPieceRef = ref<HTMLElement | null>(null);
+const capturedPieceRef = ref<HTMLElement | null>(null);
 const state = ref<ChessState>(createInitialState());
 const animationBoard = ref<Array<Piece | null> | null>(null);
 const localColor = ref<Color | null>(null);
@@ -132,12 +178,42 @@ const remoteAnimation = ref<{
   piece: Piece;
   from: number;
   to: number;
+  movingStyle: Record<string, string>;
+  capturedPiece: Piece | null;
+  capturedStyle: Record<string, string> | null;
 } | null>(null);
-const animationStyle = ref<Record<string, string>>({});
 
 const showWaitingOverlay = computed(() => Boolean(props.waitingForAcceptance));
 const canSend = computed(() => Boolean(currentChannel && currentChannel.readyState === 'open'));
 const displayedBoard = computed(() => animationBoard.value ?? state.value.board);
+const whiteMaterial = computed(() => materialScoreFor('w', state.value.board));
+const blackMaterial = computed(() => materialScoreFor('b', state.value.board));
+const lostWhitePieces = computed(() => missingPiecesFor('w', state.value.board));
+const lostBlackPieces = computed(() => missingPiecesFor('b', state.value.board));
+const materialLeadLabel = computed(() => {
+  if (whiteMaterial.value === blackMaterial.value) {
+    return 'Material is even';
+  }
+
+  const leader = whiteMaterial.value > blackMaterial.value ? 'White leads' : 'Black leads';
+  const difference = Math.abs(whiteMaterial.value - blackMaterial.value);
+  return `${leader} by ${difference}`;
+});
+const scoreboardStateLabel = computed(() => {
+  if (winner.value === 'draw') {
+    return 'Draw';
+  }
+
+  if (winner.value) {
+    return 'Checkmate';
+  }
+
+  if (checkColor.value) {
+    return 'Check';
+  }
+
+  return state.value.turn === localColor.value ? 'Your turn' : 'Waiting';
+});
 const whitePlayer = computed(() => (localColor.value === 'w' ? props.user : props.peerName));
 const blackPlayer = computed(() => (localColor.value === 'b' ? props.user : props.peerName));
 const turnLabel = computed(() => (state.value.turn === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE'));
@@ -272,6 +348,94 @@ function pieceGlyph(piece: Piece) {
 
 function pieceClass(piece: Piece) {
   return [`piece-${piece.color}`, `piece-${piece.type}`];
+}
+
+const pieceAssets: Record<Color, Record<PieceType, string>> = {
+  w: {
+    p: new URL('./assets/chess-pieces/white-pawn.svg', import.meta.url).href,
+    n: new URL('./assets/chess-pieces/white-knight.svg', import.meta.url).href,
+    b: new URL('./assets/chess-pieces/white-bishop.svg', import.meta.url).href,
+    r: new URL('./assets/chess-pieces/white-rook.svg', import.meta.url).href,
+    q: new URL('./assets/chess-pieces/white-queen.svg', import.meta.url).href,
+    k: new URL('./assets/chess-pieces/white-king.svg', import.meta.url).href,
+  },
+  b: {
+    p: new URL('./assets/chess-pieces/black-pawn.svg', import.meta.url).href,
+    n: new URL('./assets/chess-pieces/black-knight.svg', import.meta.url).href,
+    b: new URL('./assets/chess-pieces/black-bishop.svg', import.meta.url).href,
+    r: new URL('./assets/chess-pieces/black-rook.svg', import.meta.url).href,
+    q: new URL('./assets/chess-pieces/black-queen.svg', import.meta.url).href,
+    k: new URL('./assets/chess-pieces/black-king.svg', import.meta.url).href,
+  },
+};
+
+function pieceAsset(piece: Piece) {
+  return pieceAssets[piece.color][piece.type];
+}
+
+function pieceAlt(piece: Piece) {
+  const colorLabel = piece.color === 'w' ? 'White' : 'Black';
+  const pieceLabel: Record<PieceType, string> = {
+    p: 'pawn',
+    n: 'knight',
+    b: 'bishop',
+    r: 'rook',
+    q: 'queen',
+    k: 'king',
+  };
+
+  return `${colorLabel} ${pieceLabel[piece.type]}`;
+}
+
+function materialScoreFor(color: Color, board: Array<Piece | null>) {
+  return board.reduce((score, piece) => {
+    if (!piece || piece.color !== color) {
+      return score;
+    }
+
+    return score + pieceValue(piece.type);
+  }, 0);
+}
+
+function pieceValue(type: PieceType) {
+  const values: Record<PieceType, number> = {
+    p: 1,
+    n: 3,
+    b: 3,
+    r: 5,
+    q: 9,
+    k: 0,
+  };
+
+  return values[type];
+}
+
+function missingPiecesFor(color: Color, board: Array<Piece | null>) {
+  const initialCounts: Record<PieceType, number> = {
+    p: 8,
+    n: 2,
+    b: 2,
+    r: 2,
+    q: 1,
+    k: 1,
+  };
+  const remaining: Record<PieceType, number> = { ...initialCounts };
+
+  for (const piece of board) {
+    if (piece && piece.color === color) {
+      remaining[piece.type] -= 1;
+    }
+  }
+
+  const pieces: Piece[] = [];
+  (Object.keys(remaining) as PieceType[]).forEach((type) => {
+    const count = initialCounts[type] - remaining[type];
+    for (let index = 0; index < count; index += 1) {
+      pieces.push({ color, type });
+    }
+  });
+
+  return pieces;
 }
 
 function fileLabel(file: number) {
@@ -456,40 +620,219 @@ function animateRemoteMove(move: Move) {
   }
 
   const next = applyMove(state.value, move);
-  animationBoard.value = state.value.board.map((entry, index) => {
-    if (index === move.from || index === move.to || (move.capturedAt !== undefined && index === move.capturedAt)) {
-      return null;
-    }
+  animationBoard.value = createAnimationBoard(state.value.board, move);
 
-    return entry ? { ...entry } : null;
-  });
-
-  const fromRank = rankOf(move.from);
-  const fromFile = fileOf(move.from);
-  const toRank = rankOf(move.to);
-  const toFile = fileOf(move.to);
-
-  const deltaX = (toFile - fromFile) * 100;
-  const deltaY = (toRank - fromRank) * 100;
+  const boardRect = boardEl.value.getBoundingClientRect();
+  const squareSize = boardRect.width / 8;
+  const movingPath = buildMovePath(move, piece, squareSize);
+  const movingKeyframes = buildMoveKeyframes(movingPath, squareSize);
+  const duration = Math.min(620, 360 + movingPath.length * 58);
+  const capturedPiece = state.value.board[move.to] ?? null;
+  const capturedKeyframes = capturedPiece ? buildCaptureKeyframes(move, squareSize) : null;
 
   remoteAnimation.value = {
     piece,
     from: move.from,
     to: move.to,
+    movingStyle: createOverlayStyle(movingKeyframes[0].transform as string, squareSize),
+    capturedPiece,
+    capturedStyle: capturedKeyframes ? createOverlayStyle(capturedKeyframes[0].transform as string, squareSize) : null,
   };
 
-  animationStyle.value = {
-    '--from-rank': `${fromRank}`,
-    '--from-file': `${fromFile}`,
-    '--delta-x': `${deltaX}`,
-    '--delta-y': `${deltaY}`,
-  };
+  void nextTick(() => {
+    if (movingPieceRef.value) {
+      movingPieceRef.value.animate(movingKeyframes, {
+        duration,
+        easing: 'cubic-bezier(0.2, 0.82, 0.18, 1)',
+        fill: 'forwards',
+      });
+    }
+
+    if (capturedPieceRef.value && capturedKeyframes) {
+      capturedPieceRef.value.animate(capturedKeyframes, {
+        duration,
+        easing: 'cubic-bezier(0.18, 0.76, 0.2, 1)',
+        fill: 'forwards',
+      });
+    }
+  });
 
   animationTimer = setTimeout(() => {
     remoteAnimation.value = null;
     animationBoard.value = null;
     commitStateAfterMove(next, move);
-  }, 360);
+  }, duration + 20);
+}
+
+function createAnimationBoard(board: Array<Piece | null>, move: Move) {
+  return board.map((entry, index) => {
+    if (index === move.from || index === move.to || index === move.capturedAt) {
+      return null;
+    }
+
+    if (entry && move.from === toIndex(7, 4) && move.to === toIndex(7, 6) && index === toIndex(7, 7)) {
+      return null;
+    }
+
+    if (entry && move.from === toIndex(7, 4) && move.to === toIndex(7, 2) && index === toIndex(7, 0)) {
+      return null;
+    }
+
+    if (entry && move.from === toIndex(0, 4) && move.to === toIndex(0, 6) && index === toIndex(0, 7)) {
+      return null;
+    }
+
+    if (entry && move.from === toIndex(0, 4) && move.to === toIndex(0, 2) && index === toIndex(0, 0)) {
+      return null;
+    }
+
+    return entry ? { ...entry } : null;
+  });
+}
+
+function createOverlayStyle(transform: string, squareSize: number) {
+  const pieceSize = squareSize * 0.86;
+
+  return {
+    width: `${pieceSize}px`,
+    height: `${pieceSize}px`,
+    transform,
+  };
+}
+
+function buildMovePath(move: Move, piece: Piece, squareSize: number) {
+  const points = buildBoardPathPoints(move, piece);
+
+  if (points.length === 2 && piece.type !== 'n') {
+    const start = points[0];
+    const end = points[1];
+    const lift = squareSize * 0.18;
+    const mid = {
+      x: (start.x + end.x) / 2,
+      y: (start.y + end.y) / 2 - lift,
+    };
+
+    return [start, mid, end];
+  }
+
+  return points;
+}
+
+function buildBoardPathPoints(move: Move, piece: Piece) {
+  const fromRank = rankOf(move.from);
+  const fromFile = fileOf(move.from);
+  const toRank = rankOf(move.to);
+  const toFile = fileOf(move.to);
+
+  const squareCenters = (index: number) => ({
+    x: (fileOf(index) + 0.5) / 8,
+    y: (rankOf(index) + 0.5) / 8,
+  });
+
+  if (piece.type === 'n') {
+    const start = squareCenters(move.from);
+    const end = squareCenters(move.to);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const lift = 0.18;
+    return [
+      start,
+      {
+        x: (start.x + end.x) / 2 - (dy / length) * lift,
+        y: (start.y + end.y) / 2 + (dx / length) * lift - 0.03,
+      },
+      end,
+    ];
+  }
+
+  if (fromRank !== toRank && fromFile !== toFile && Math.abs(fromRank - toRank) !== Math.abs(fromFile - toFile)) {
+    return [squareCenters(move.from), squareCenters(move.to)];
+  }
+
+  const points = [squareCenters(move.from)];
+  const stepRank = Math.sign(toRank - fromRank);
+  const stepFile = Math.sign(toFile - fromFile);
+  let currentRank = fromRank + stepRank;
+  let currentFile = fromFile + stepFile;
+
+  while (currentRank !== toRank || currentFile !== toFile) {
+    points.push({ x: (currentFile + 0.5) / 8, y: (currentRank + 0.5) / 8 });
+    currentRank += stepRank;
+    currentFile += stepFile;
+  }
+
+  points.push(squareCenters(move.to));
+  return points;
+}
+
+function buildMoveKeyframes(points: Array<{ x: number; y: number }>, squareSize: number) {
+  const pieceSize = squareSize * 0.86;
+  const absolutePoints = points.map((point, index) => ({
+    x: point.x * squareSize * 8 - pieceSize / 2,
+    y: point.y * squareSize * 8 - pieceSize / 2,
+    scale: index === 0 || index === points.length - 1 ? 1 : 1.06,
+  }));
+
+  const totalDistance = absolutePoints.reduce((sum, point, index) => {
+    if (index === 0) {
+      return 0;
+    }
+
+    const previous = absolutePoints[index - 1];
+    return sum + Math.hypot(point.x - previous.x, point.y - previous.y);
+  }, 0) || 1;
+
+  let travelled = 0;
+  return absolutePoints.map((point, index) => {
+    if (index > 0) {
+      const previous = absolutePoints[index - 1];
+      travelled += Math.hypot(point.x - previous.x, point.y - previous.y);
+    }
+
+    return {
+      offset: travelled / totalDistance,
+      transform: `translate3d(${point.x}px, ${point.y}px, 0) scale(${point.scale})`,
+      filter: index === 0 || index === absolutePoints.length - 1 ? 'drop-shadow(0 14px 18px rgba(0, 0, 0, 0.28))' : 'drop-shadow(0 18px 22px rgba(0, 0, 0, 0.22))',
+    } satisfies Keyframe;
+  });
+}
+
+function buildCaptureKeyframes(move: Move, squareSize: number) {
+  const pieceSize = squareSize * 0.86;
+  const from = {
+    x: (fileOf(move.from) + 0.5) * squareSize - pieceSize / 2,
+    y: (rankOf(move.from) + 0.5) * squareSize - pieceSize / 2,
+  };
+  const to = {
+    x: (fileOf(move.to) + 0.5) * squareSize - pieceSize / 2,
+    y: (rankOf(move.to) + 0.5) * squareSize - pieceSize / 2,
+  };
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const pushX = (dx / length) * squareSize * 0.22;
+  const pushY = (dy / length) * squareSize * 0.22;
+  const driftX = -(dy / length) * squareSize * 0.08;
+  const driftY = (dx / length) * squareSize * 0.08;
+
+  return [
+    {
+      offset: 0,
+      transform: `translate3d(${to.x}px, ${to.y}px, 0) rotate(0deg) scale(1)`,
+      opacity: 1,
+    },
+    {
+      offset: 0.34,
+      transform: `translate3d(${to.x + pushX * 0.45 + driftX}px, ${to.y + pushY * 0.45 + driftY}px, 0) rotate(7deg) scale(0.98)`,
+      opacity: 1,
+    },
+    {
+      offset: 1,
+      transform: `translate3d(${to.x + pushX}px, ${to.y + pushY}px, 0) rotate(18deg) scale(0.84)`,
+      opacity: 0,
+    },
+  ] satisfies Keyframe[];
 }
 
 function commitStateAfterMove(next: ChessState, move: Move) {
@@ -1161,13 +1504,82 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.scoreboard-card,
+.player-card,
+.status-card {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-chat-surface) 72%, transparent), color-mix(in srgb, var(--color-chat-surface-strong) 80%, transparent)),
+    color-mix(in srgb, var(--color-bg-base) 60%, black);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.scoreboard-card {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.scoreboard-label {
+  color: var(--color-text-secondary);
+  letter-spacing: 0.18em;
+  font-size: 0.66rem;
+}
+
+.scoreboard-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.scoreboard-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scoreboard-meta {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.score-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  border: 1px solid transparent;
+}
+
+.score-pill-white {
+  color: #2a1d13;
+  background: linear-gradient(180deg, #f2e8d7, #d8c1a1);
+  border-color: rgba(118, 84, 46, 0.45);
+}
+
+.score-pill-black {
+  color: #eff5ff;
+  background: linear-gradient(180deg, #5b6b82, #202633);
+  border-color: rgba(208, 225, 255, 0.24);
+}
+
+.scoreboard-note {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+}
+
 .player-card {
   display: grid;
   gap: 4px;
   padding: 10px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 24%, transparent);
-  background: color-mix(in srgb, var(--color-chat-surface) 68%, transparent);
 }
 
 .player-card.active {
@@ -1186,12 +1598,33 @@ onBeforeUnmount(() => {
   letter-spacing: 0.05em;
 }
 
+.captured-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 20px;
+  padding-top: 2px;
+}
+
+.captured-piece-chip {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.captured-piece-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 .status-card {
   min-height: 76px;
   padding: 10px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 24%, transparent);
-  background: color-mix(in srgb, var(--color-chat-surface-strong) 74%, transparent);
   color: var(--color-text-primary);
   text-transform: none;
   line-height: 1.34;
@@ -1209,6 +1642,8 @@ onBeforeUnmount(() => {
   aspect-ratio: 1;
   display: grid;
   grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
@@ -1221,6 +1656,10 @@ onBeforeUnmount(() => {
 
 .chess-cell {
   position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   border: none;
   margin: 0;
   padding: 0;
@@ -1231,11 +1670,15 @@ onBeforeUnmount(() => {
 }
 
 .chess-cell.light {
-  background: color-mix(in srgb, var(--color-text-primary) 90%, #f2eadc);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02)),
+    color-mix(in srgb, var(--color-text-primary) 90%, #f2eadc);
 }
 
 .chess-cell.dark {
-  background: color-mix(in srgb, var(--color-accent) 24%, #2c3b2f);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.1)),
+    color-mix(in srgb, var(--color-accent) 24%, #2c3b2f);
 }
 
 .chess-cell:hover:enabled {
@@ -1243,17 +1686,11 @@ onBeforeUnmount(() => {
 }
 
 .chess-cell.selected {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
-  outline-offset: -2px;
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-accent) 20%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--color-accent) 72%, transparent);
 }
 
-.chess-cell.target::after {
-  content: '';
-  position: absolute;
-  width: 28%;
-  height: 28%;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-accent) 42%, transparent);
+.chess-cell.target {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-chat-link) 18%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--color-chat-link) 56%, transparent);
 }
 
 .chess-cell.last-move {
@@ -1269,29 +1706,41 @@ onBeforeUnmount(() => {
   z-index: 2;
   width: 84%;
   height: 84%;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: clamp(1.35rem, 4.1vw, 2.4rem);
-  line-height: 1;
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 0, 0, 0.25);
-  border: 1px solid transparent;
+  overflow: visible;
+  isolation: isolate;
+  transform: translateZ(0);
 }
 
-.piece-w {
-  color: #20170f;
-  background:
-    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.92), rgba(230, 213, 192, 0.96) 58%, rgba(184, 152, 116, 0.98));
-  border-color: rgba(130, 95, 62, 0.62);
-  box-shadow: 0 8px 12px rgba(85, 60, 35, 0.32);
+.chess-piece-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 14px rgba(0, 0, 0, 0.26));
 }
 
-.piece-b {
-  color: #f7f8fb;
-  background:
-    radial-gradient(circle at 30% 24%, rgba(98, 119, 154, 0.94), rgba(41, 52, 68, 0.98) 60%, rgba(15, 20, 28, 1));
-  border-color: rgba(212, 229, 255, 0.28);
-  box-shadow: 0 8px 12px rgba(5, 8, 16, 0.52);
+.animated-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 14;
+  width: 86%;
+  height: 86%;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.piece-animation {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+
+.captured-piece {
+  filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.24));
 }
 
 .board-coordinate,
@@ -1313,24 +1762,6 @@ onBeforeUnmount(() => {
   right: 4px;
   bottom: 2px;
   text-transform: lowercase;
-}
-
-.piece-animation {
-  position: absolute;
-  width: 12.5%;
-  height: 12.5%;
-  left: calc(var(--from-file) * 12.5%);
-  top: calc(var(--from-rank) * 12.5%);
-  z-index: 12;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  animation: chess-slide 340ms cubic-bezier(0.25, 0.76, 0.2, 1) forwards;
-}
-
-.piece-animation .chess-piece {
-  width: 88%;
-  height: 88%;
 }
 
 .chess-action-btn {
@@ -1368,15 +1799,6 @@ onBeforeUnmount(() => {
   font-size: 0.84rem;
 }
 
-@keyframes chess-slide {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  to {
-    transform: translate3d(calc(var(--delta-x) * 1%), calc(var(--delta-y) * 1%), 0) scale(1.03);
-  }
-}
-
 @media (max-width: 860px) {
   .chess-main {
     grid-template-columns: 1fr;
@@ -1394,6 +1816,10 @@ onBeforeUnmount(() => {
   .chess-action-btn.rematch {
     grid-column: span 2;
   }
+
+  .scoreboard-card {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 620px) {
@@ -1404,6 +1830,16 @@ onBeforeUnmount(() => {
   .chess-header {
     grid-template-columns: 1fr;
     justify-items: start;
+  }
+
+  .chess-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .scoreboard-card,
+  .status-card,
+  .rematch {
+    grid-column: span 1;
   }
 
   .chess-board {

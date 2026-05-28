@@ -1,0 +1,15 @@
+﻿<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256' role='img' aria-label='White wood king'>
+  <defs>
+    <linearGradient id='body' x1='0' y1='0' x2='0' y2='1'>
+      <stop offset='0%' stop-color='#f8e8cf'/>
+      <stop offset='52%' stop-color='#d2ab80'/>
+      <stop offset='100%' stop-color='#7f5431'/>
+    </linearGradient>
+  </defs>
+  <ellipse cx='128' cy='238' rx='82' ry='13' fill='#000' opacity='0.23'/>
+  <path d='M128 22v34M111 39h34' stroke='#6d4829' stroke-width='8' stroke-linecap='round'/>
+  <path d='M72 84l20-22l20 34l16-48l16 48l20-34l20 22c-8 25-13 55-11 120H83c2-65-3-95-11-120z' fill='url(#body)' stroke='#6d4829' stroke-width='5'/>
+  <path d='M94 112c15-8 53-8 68 0M92 132c17-9 56-9 72 0M90 152c18-10 60-10 76 0' fill='none' stroke='#754d2d' stroke-width='3' opacity='0.45'/>
+  <rect x='64' y='206' width='128' height='18' rx='9' fill='#b98960' stroke='#58371f' stroke-width='5'/>
+  <path d='M128 24v30M114 39h28M94 104h68' stroke='#fff3df' stroke-width='6' stroke-linecap='round' opacity='0.4'/>
+</svg>

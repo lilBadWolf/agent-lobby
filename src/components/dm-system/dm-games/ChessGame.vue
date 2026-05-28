@@ -76,8 +76,8 @@
             :disabled="!canClickSquare(square.index)"
             @click="handleSquareClick(square.index)"
           >
-            <span class="board-coordinate" v-if="square.file === 0">{{ 8 - square.rank }}</span>
-            <span class="board-file" v-if="square.rank === 7">{{ fileLabel(square.file) }}</span>
+            <span class="board-coordinate" v-if="square.file === 0">{{ square.labelRank }}</span>
+            <span class="board-file" v-if="square.rank === 7">{{ square.labelFile }}</span>
             <span
               v-if="displayedBoard[square.index]"
               class="chess-piece"
@@ -220,6 +220,7 @@ const whitePlayer = computed(() => (localColor.value === 'w' ? props.user : prop
 const blackPlayer = computed(() => (localColor.value === 'b' ? props.user : props.peerName));
 const turnLabel = computed(() => (state.value.turn === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE'));
 const turnClass = computed(() => (state.value.turn === 'w' ? 'turn-white' : 'turn-black'));
+const isBoardFlipped = computed(() => localColor.value === 'b');
 const canInteract = computed(() => {
   if (showWaitingOverlay.value || winner.value || remoteAnimation.value || !localColor.value) {
     return false;
@@ -255,10 +256,18 @@ const statusText = computed(() => {
 });
 
 const boardSquares = computed(() => {
-  const values: Array<{ index: number; rank: number; file: number }> = [];
-  for (let rank = 0; rank < 8; rank += 1) {
-    for (let file = 0; file < 8; file += 1) {
-      values.push({ index: toIndex(rank, file), rank, file });
+  const values: Array<{ index: number; rank: number; file: number; labelRank: number; labelFile: string }> = [];
+  for (let viewRank = 0; viewRank < 8; viewRank += 1) {
+    for (let viewFile = 0; viewFile < 8; viewFile += 1) {
+      const boardRank = isBoardFlipped.value ? 7 - viewRank : viewRank;
+      const boardFile = isBoardFlipped.value ? 7 - viewFile : viewFile;
+      values.push({
+        index: toIndex(boardRank, boardFile),
+        rank: viewRank,
+        file: viewFile,
+        labelRank: 8 - boardRank,
+        labelFile: fileLabel(boardFile),
+      });
     }
   }
   return values;
@@ -403,6 +412,20 @@ function missingPiecesFor(color: Color, board: Array<Piece | null>) {
 
 function fileLabel(file: number) {
   return String.fromCharCode(97 + file);
+}
+
+function boardPositionFromIndex(index: number) {
+  const rank = rankOf(index);
+  const file = fileOf(index);
+
+  if (!isBoardFlipped.value) {
+    return { rank, file };
+  }
+
+  return {
+    rank: 7 - rank,
+    file: 7 - file,
+  };
 }
 
 function squareClass(index: number) {
@@ -682,15 +705,20 @@ function buildMovePath(move: Move, piece: Piece, squareSize: number) {
 }
 
 function buildBoardPathPoints(move: Move, piece: Piece) {
-  const fromRank = rankOf(move.from);
-  const fromFile = fileOf(move.from);
-  const toRank = rankOf(move.to);
-  const toFile = fileOf(move.to);
+  const fromPos = boardPositionFromIndex(move.from);
+  const toPos = boardPositionFromIndex(move.to);
+  const fromRank = fromPos.rank;
+  const fromFile = fromPos.file;
+  const toRank = toPos.rank;
+  const toFile = toPos.file;
 
-  const squareCenters = (index: number) => ({
-    x: (fileOf(index) + 0.5) / 8,
-    y: (rankOf(index) + 0.5) / 8,
-  });
+  const squareCenters = (index: number) => {
+    const pos = boardPositionFromIndex(index);
+    return {
+      x: (pos.file + 0.5) / 8,
+      y: (pos.rank + 0.5) / 8,
+    };
+  };
 
   if (piece.type === 'n') {
     const start = squareCenters(move.from);
@@ -763,13 +791,15 @@ function buildMoveKeyframes(points: Array<{ x: number; y: number }>, squareSize:
 
 function buildCaptureKeyframes(move: Move, squareSize: number) {
   const pieceSize = squareSize * 0.86;
+  const fromPos = boardPositionFromIndex(move.from);
+  const toPos = boardPositionFromIndex(move.to);
   const from = {
-    x: (fileOf(move.from) + 0.5) * squareSize - pieceSize / 2,
-    y: (rankOf(move.from) + 0.5) * squareSize - pieceSize / 2,
+    x: (fromPos.file + 0.5) * squareSize - pieceSize / 2,
+    y: (fromPos.rank + 0.5) * squareSize - pieceSize / 2,
   };
   const to = {
-    x: (fileOf(move.to) + 0.5) * squareSize - pieceSize / 2,
-    y: (rankOf(move.to) + 0.5) * squareSize - pieceSize / 2,
+    x: (toPos.file + 0.5) * squareSize - pieceSize / 2,
+    y: (toPos.rank + 0.5) * squareSize - pieceSize / 2,
   };
   const dx = to.x - from.x;
   const dy = to.y - from.y;

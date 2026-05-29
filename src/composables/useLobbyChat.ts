@@ -89,8 +89,33 @@ const TEXT_DECODER = new TextDecoder();
 
 let lobbyCryptoKeyPromise: Promise<CryptoKey | null> | null = null;
 
+function getWebCrypto(): Crypto | null {
+  if (typeof globalThis === 'undefined') {
+    return null;
+  }
+
+  const cryptoApi = (globalThis as typeof globalThis & { crypto?: Crypto }).crypto;
+  return typeof cryptoApi === 'object' && cryptoApi !== null ? cryptoApi : null;
+}
+
+function normalizeBase64Input(input: string): string {
+  const trimmed = input.trim();
+  const withoutQuotes = (
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  )
+    ? trimmed.slice(1, -1)
+    : trimmed;
+
+  const collapsed = withoutQuotes.replace(/\s+/g, '');
+  const standard = collapsed.replace(/-/g, '+').replace(/_/g, '/');
+  const padLength = (4 - (standard.length % 4)) % 4;
+  return standard + '='.repeat(padLength);
+}
+
 function base64ToBytes(base64: string): ArrayBuffer {
-  const binary = atob(base64);
+  const normalized = normalizeBase64Input(base64);
+  const binary = atob(normalized);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
     bytes[i] = binary.charCodeAt(i);
@@ -115,24 +140,32 @@ async function getLobbyCryptoKey(): Promise<CryptoKey | null> {
     return null;
   }
 
-  const hasWebCrypto = typeof crypto === 'object' && crypto !== null && typeof crypto.subtle === 'object' && typeof crypto.subtle.importKey === 'function' && typeof crypto.getRandomValues === 'function';
+  const cryptoApi = getWebCrypto();
+  const hasWebCrypto =
+    typeof cryptoApi?.subtle === 'object'
+    && typeof cryptoApi.subtle.importKey === 'function'
+    && typeof cryptoApi.getRandomValues === 'function';
   if (!hasWebCrypto) {
     console.warn('[LobbyChat] Web Crypto unavailable; lobby encryption disabled for this runtime.');
     return null;
   }
 
   if (!lobbyCryptoKeyPromise) {
-    const keyBytes = base64ToBytes(LOBBY_ENCRYPTION_KEY);
-    lobbyCryptoKeyPromise = crypto.subtle.importKey(
-      'raw',
-      keyBytes,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt', 'decrypt']
-    ).catch((error) => {
-      console.error('[LobbyChat] failed to import lobby encryption key', error);
-      return null;
-    });
+    lobbyCryptoKeyPromise = (async () => {
+      try {
+        const keyBytes = base64ToBytes(LOBBY_ENCRYPTION_KEY);
+        return await cryptoApi.subtle.importKey(
+          'raw',
+          keyBytes,
+          { name: 'AES-GCM' },
+          false,
+          ['encrypt', 'decrypt']
+        );
+      } catch (error) {
+        console.error('[LobbyChat] failed to import lobby encryption key', error);
+        return null;
+      }
+    })();
   }
 
   return lobbyCryptoKeyPromise;
@@ -144,8 +177,13 @@ async function encryptLobbyPayload(payload: string): Promise<string> {
     return payload;
   }
 
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt(
+  const cryptoApi = getWebCrypto();
+  if (!cryptoApi?.subtle || typeof cryptoApi.getRandomValues !== 'function') {
+    return payload;
+  }
+
+  const iv = cryptoApi.getRandomValues(new Uint8Array(12));
+  const ciphertext = await cryptoApi.subtle.encrypt(
     { name: 'AES-GCM', iv: iv.buffer },
     key,
     TEXT_ENCODER.encode(payload)
@@ -167,6 +205,11 @@ async function decryptLobbyPayload(raw: string): Promise<string> {
     return raw;
   }
 
+  const cryptoApi = getWebCrypto();
+  if (!cryptoApi?.subtle) {
+    return raw;
+  }
+
   try {
     const payload = JSON.parse(raw) as { iv: string; ct: string };
     if (!payload || !payload.iv || !payload.ct) {
@@ -175,7 +218,7 @@ async function decryptLobbyPayload(raw: string): Promise<string> {
 
     const iv = base64ToBytes(payload.iv);
     const ciphertext = base64ToBytes(payload.ct);
-    const plaintext = await crypto.subtle.decrypt(
+    const plaintext = await cryptoApi.subtle.decrypt(
       { name: 'AES-GCM', iv },
       key,
       ciphertext

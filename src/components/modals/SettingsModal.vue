@@ -499,9 +499,6 @@ import { dmEffectOptions } from '../../composables/messageEffectHelpers';
 import { NO_WEBCAM_DEVICE_ID, NO_MIC_DEVICE_ID, useMediaDevices } from '../../composables/useMediaDevices';
 import { useTheme } from '../../composables/useTheme';
 
-type TauriPathModule = typeof import('@tauri-apps/api/path');
-type TauriOpenerModule = typeof import('@tauri-apps/plugin-opener');
-
 const DEFAULT_THEME = 'retro-terminal';
 
 const RESERVED_SLASH_COMMANDS = new Set([
@@ -1054,51 +1051,18 @@ async function toggleVideoPreview() {
 }
 
 async function openThemesFolder() {
-  await openCustomAssetFolder('themes', 'themes');
+  try {
+    await tauriInvoke('open_themes_folder');
+  } catch (error) {
+    console.error('Failed to open themes folder:', error);
+  }
 }
 
 async function openSoundpacksFolder() {
-  await openCustomAssetFolder('soundpacks', 'soundpacks');
-}
-
-let tauriFolderApisPromise: Promise<{
-  path: TauriPathModule;
-  opener: TauriOpenerModule;
-} | null> | null = null;
-
-async function getTauriFolderApis() {
-  if (!isTauriRuntime()) {
-    return null;
-  }
-
-  if (!tauriFolderApisPromise) {
-    tauriFolderApisPromise = Promise.all([
-      import('@tauri-apps/api/path'),
-      import('@tauri-apps/plugin-opener'),
-    ])
-      .then(([path, opener]) => ({ path, opener }))
-      .catch((error) => {
-        console.error('Failed to load Tauri folder APIs:', error);
-        tauriFolderApisPromise = null;
-        return null;
-      });
-  }
-
-  return tauriFolderApisPromise;
-}
-
-async function openCustomAssetFolder(folderName: 'themes' | 'soundpacks', label: string) {
   try {
-    const apis = await getTauriFolderApis();
-    if (!apis?.opener?.openPath) {
-      return;
-    }
-
-    const appDataPath = await apis.path.appDataDir();
-    const folderPath = await apis.path.join(appDataPath, folderName);
-    await apis.opener.openPath(folderPath);
+    await tauriInvoke('open_soundpacks_folder');
   } catch (error) {
-    console.error(`Failed to open ${label} folder:`, error);
+    console.error('Failed to open soundpacks folder:', error);
   }
 }
 

@@ -1,10 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.6.2**
+🚀 **Release highlights for agent-lobby 0.6.3**
 
-- ♟️ **Chess visuals are now much cleaner and more consistent** with your custom piece assets displaying correctly in production builds.
-- 🧭 **Board perspective feels more natural** since each player now sees their own pieces from the bottom of the board.
-- 🎨 **Theme-driven board colors and move highlights were tightened up** so tile tones and move cues better match active presets.
-- ✨ **Interaction polish got sharper** with improved piece hover/selection feedback and clearer move targeting.
+- 🎨 **Theme customization flow is smoother on desktop** with more reliable shortcuts for opening your Themes folder directly from Settings.
+- 🔊 **Soundpack management is easier** with improved folder-open behavior so you can jump into custom audio tweaks faster.
+- 🌐 **Web client compatibility got a nice stability bump** for encrypted lobby chat, especially when keys come from different formats.
+- ✉️ **Fewer frustrating chat edge-cases** when joining with pasted/shared keys, so conversations start cleaner and stay readable.
 
-> This update focuses on making chess feel more intuitive, reliable, and visually aligned with your theme choices. 🐺✨
+> This release is all about reducing setup friction and keeping cross-platform chat sessions feeling seamless. 🐺✨

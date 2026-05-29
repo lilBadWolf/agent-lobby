@@ -139,8 +139,6 @@
               SPECTATING LIVE: {{ activeGamePlayersLabel }}
             </div>
           </div>
-
-          <button type="button" class="secondary-btn stop-board" @click="stopGame">CLOSE GAMEBOARD</button>
         </section>
 
         <section class="group-panel chat-panel" :class="{ 'chat-primary': !showGameboard }">
@@ -393,6 +391,11 @@ watch(
       }
 
       if (!activeGame.value.players.includes(event.from)) {
+        continue;
+      }
+
+      if (event.from === username.value) {
+        relayCursor.value = event.sequence;
         continue;
       }
 
@@ -729,7 +732,7 @@ onBeforeUnmount(() => {
 }
 
 .group-main.with-gameboard {
-  grid-template-rows: minmax(0, 1.25fr) minmax(210px, 0.75fr);
+  grid-template-rows: minmax(0, 1.7fr) minmax(160px, 0.45fr);
 }
 
 .group-panel {
@@ -884,6 +887,7 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: stretch;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   position: relative;
 }

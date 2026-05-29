@@ -363,7 +363,7 @@ export function useGroupDirectMessage(
 
         element = document.createElement('audio');
         element.autoplay = true;
-        element.playsInline = true;
+        element.setAttribute('playsinline', 'true');
         element.style.display = 'none';
         document.body.appendChild(element);
         remoteAudioElements.set(otherUser, element);

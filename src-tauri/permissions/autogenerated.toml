@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-open-themes-folder"
+description = "Allow opening themes folder"
+commands.allow = ["open_themes_folder"]
+
+[[permission]]
+identifier = "allow-open-soundpacks-folder"
+description = "Allow opening soundpacks folder"
+commands.allow = ["open_soundpacks_folder"]

@@ -2,7 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "dm-window-*", "agentamp-window", "media-library", "theme-editor-window"],
+  "windows": [
+    "main",
+    "dm-window-*",
+    "agentamp-window",
+    "media-library",
+    "theme-editor-window"
+  ],
   "permissions": [
     "process:allow-exit",
     "process:allow-restart",
@@ -35,6 +41,8 @@
     "updater:allow-download",
     "updater:allow-install",
     "updater:allow-download-and-install",
-    "store:default"
+    "store:default",
+    "allow-open-themes-folder",
+    "allow-open-soundpacks-folder"
   ]
 }

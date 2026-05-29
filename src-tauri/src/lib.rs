@@ -1581,8 +1581,6 @@ pub fn run() {
 
             #[cfg(not(dev))]
             let url = {
-                use std::io::ErrorKind::PermissionDenied;
-
                 let url: Url = format!("http://localhost:{}", port).parse().unwrap();
 
                 app.add_capability(

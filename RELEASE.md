@@ -1,9 +1,11 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.6.4**
+🚀 **Release highlights for agent-lobby 0.6.5**
 
-- 🎨 **Theme Editor now properly detects your custom themes in packaged builds** instead of only showing built-in presets.
-- 🔐 **Production permissions were tightened up for theme actions**, so loading, reading, and saving custom themes is now consistent and reliable.
-- 🧰 **Theme discovery is more resilient** and no longer drops valid theme files due to overly strict filtering.
+- 🧪 **Group DM beta is here!** You can now spin up shared group spaces and bring more than one person into the same tunnel.
+- 🎮 **Challenge flow is now built in** with direct player-vs-player game challenges inside Group DM.
+- 👀 **Live spectator mode is active** so non-playing members can watch matches unfold in real time.
+- 🔊 **Group Audio beta landed** with join/leave and mute controls so group sessions feel more like a real hangout.
+- 🧹 **Polish + reliability fixes** for invite behavior, group controls, and detached Group DM window flow.
 
-> This is a focused hotfix release to deliver the custom theme behavior that was intended for 0.6.3. 🐺✨
+> This is a beta-forward release focused on making Group DM fun, social, and ready for more playtesting. Keep the feedback coming! 🐺💬✨

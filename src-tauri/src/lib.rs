@@ -1588,6 +1588,8 @@ pub fn run() {
 
             #[cfg(not(dev))]
             let url = {
+                use std::io::ErrorKind::PermissionDenied;
+
                 let url: Url = format!("http://localhost:{}", port).parse().unwrap();
 
                 app.add_capability(
@@ -1625,7 +1627,9 @@ pub fn run() {
                         .permission("updater:allow-download-and-install")
                         .permission("store:default")
                         .permission("process:allow-exit")
-                        .permission("process:allow-restart"),
+                        .permission("process:allow-restart")
+                        .permission("allow-open-themes-folder")
+                        .permission("allow-open-soundpacks-folder")
                 )?;
 
                 WebviewUrl::External(url)

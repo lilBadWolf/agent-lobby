@@ -1,10 +1,9 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.6.3**
+🚀 **Release highlights for agent-lobby 0.6.4**
 
-- 🎨 **Theme customization flow is smoother on desktop** with more reliable shortcuts for opening your Themes folder directly from Settings.
-- 🔊 **Soundpack management is easier** with improved folder-open behavior so you can jump into custom audio tweaks faster.
-- 🌐 **Web client compatibility got a nice stability bump** for encrypted lobby chat, especially when keys come from different formats.
-- ✉️ **Fewer frustrating chat edge-cases** when joining with pasted/shared keys, so conversations start cleaner and stay readable.
+- 🎨 **Theme Editor now properly detects your custom themes in packaged builds** instead of only showing built-in presets.
+- 🔐 **Production permissions were tightened up for theme actions**, so loading, reading, and saving custom themes is now consistent and reliable.
+- 🧰 **Theme discovery is more resilient** and no longer drops valid theme files due to overly strict filtering.
 
-> This release is all about reducing setup friction and keeping cross-platform chat sessions feeling seamless. 🐺✨
+> This is a focused hotfix release to deliver the custom theme behavior that was intended for 0.6.3. 🐺✨

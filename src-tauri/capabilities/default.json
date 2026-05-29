@@ -42,6 +42,9 @@
     "updater:allow-install",
     "updater:allow-download-and-install",
     "store:default",
+    "allow-discover-custom-assets",
+    "allow-get-theme-source",
+    "allow-save-custom-theme",
     "allow-open-themes-folder",
     "allow-open-soundpacks-folder"
   ]

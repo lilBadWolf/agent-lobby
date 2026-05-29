@@ -770,18 +770,8 @@ fn init_custom_folders(app: &tauri::AppHandle, app_data_dir: &PathBuf) {
     }
 }
 
-fn is_valid_custom_theme_css(theme_name: &str, css_content: &str) -> bool {
-    let css = css_content.trim();
-    if css.is_empty() || !css.contains('{') || !css.contains('}') {
-        return false;
-    }
-
-    let expected_selector_single = format!(":root[data-theme='{}']", theme_name);
-    let expected_selector_double = format!(":root[data-theme=\"{}\"]", theme_name);
-
-    css.contains(&expected_selector_single)
-        || css.contains(&expected_selector_double)
-        || css.contains(":root[data-theme=")
+fn is_valid_custom_theme_css(css_content: &str) -> bool {
+    !css_content.trim().is_empty()
 }
 
 fn discover_custom_themes(app_data_dir: &Path) -> Vec<CustomAssetEntry> {
@@ -806,8 +796,11 @@ fn discover_custom_themes(app_data_dir: &Path) -> Vec<CustomAssetEntry> {
                 return None;
             }
 
-            let css_content = fs::read_to_string(&path).ok()?;
-            if !is_valid_custom_theme_css(&theme_name, &css_content) {
+            // Accept any non-empty CSS file so user-provided themes are not silently filtered out.
+            // Use lossy decoding to handle files saved with uncommon encodings.
+            let css_bytes = fs::read(&path).ok()?;
+            let css_content = String::from_utf8_lossy(&css_bytes);
+            if !is_valid_custom_theme_css(&css_content) {
                 return None;
             }
 
@@ -1628,6 +1621,9 @@ pub fn run() {
                         .permission("store:default")
                         .permission("process:allow-exit")
                         .permission("process:allow-restart")
+                        .permission("allow-discover-custom-assets")
+                        .permission("allow-get-theme-source")
+                        .permission("allow-save-custom-theme")
                         .permission("allow-open-themes-folder")
                         .permission("allow-open-soundpacks-folder")
                 )?;

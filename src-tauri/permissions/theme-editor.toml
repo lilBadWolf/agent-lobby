@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-discover-custom-assets"
+description = "Allow discovering custom themes and soundpacks"
+commands.allow = ["discover_custom_assets"]
+
+[[permission]]
+identifier = "allow-get-theme-source"
+description = "Allow reading theme source content"
+commands.allow = ["get_theme_source"]
+
+[[permission]]
+identifier = "allow-save-custom-theme"
+description = "Allow saving custom theme files"
+commands.allow = ["save_custom_theme"]

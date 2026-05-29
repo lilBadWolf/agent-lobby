@@ -99,7 +99,8 @@ async function loadCustomThemes() {
       link.href = themeHref;
       document.head.appendChild(link);
     }
-  } catch {
+  } catch (error) {
+    console.warn('[theme] Failed to load custom themes; falling back to built-ins.', error);
     setAvailableThemes(BUILTIN_THEMES);
   }
 }

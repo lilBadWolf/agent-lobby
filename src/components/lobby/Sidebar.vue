@@ -128,7 +128,7 @@
             REQUEST TUNNEL
           </button>
           <button
-            v-if="hoveredUser.dmAvailable && !hoveredUser.isAway && getGroupButtonMode(hoveredUser.username) !== 'hidden'"
+            v-if="hoveredUser.dmAvailable && !hoveredUser.isAway && !isCurrentUser(hoveredUser.username) && getGroupButtonMode(hoveredUser.username) !== 'hidden'"
             type="button"
             class="request-tunnel-btn group-tunnel-btn"
             :aria-label="getGroupButtonMode(hoveredUser.username) === 'invite' ? `Invite ${hoveredUser.username} to active group tunnel` : `Request group tunnel with ${hoveredUser.username}`"
@@ -583,8 +583,28 @@ function handleDmRequest(username: string) {
   emit('dmRequest', username);
 }
 
+function isCurrentUser(value: string): boolean {
+  const current = props.currentUsername?.trim().toLowerCase();
+  if (!current) {
+    return false;
+  }
+
+  return value.trim().toLowerCase() === current;
+}
+
+function normalizeUsername(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function getGroupButtonMode(user: string): 'request' | 'invite' | 'hidden' {
+  const normalizedUser = normalizeUsername(user);
+  const activeMemberSet = new Set(props.groupDmActiveMembers.map(normalizeUsername));
+
   if (props.groupDmCanCreate) {
+    if (activeMemberSet.has(normalizedUser)) {
+      return 'hidden';
+    }
+
     return 'request';
   }
 
@@ -592,7 +612,7 @@ function getGroupButtonMode(user: string): 'request' | 'invite' | 'hidden' {
     return 'hidden';
   }
 
-  if (props.groupDmActiveMembers.includes(user)) {
+  if (activeMemberSet.has(normalizedUser)) {
     return 'hidden';
   }
 
@@ -600,6 +620,10 @@ function getGroupButtonMode(user: string): 'request' | 'invite' | 'hidden' {
 }
 
 function handleGroupDmRequest(username: string) {
+  if (isCurrentUser(username)) {
+    return;
+  }
+
   const mode = getGroupButtonMode(username);
   if (mode === 'hidden') {
     return;

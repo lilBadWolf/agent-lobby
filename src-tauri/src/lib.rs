@@ -1586,7 +1586,7 @@ pub fn run() {
                 app.add_capability(
                     CapabilityBuilder::new("localhost")
                         .remote(url.to_string())
-                        .windows(["main", "dm-window-*", "agentamp-window", "media-library", "pinned-video-window", "theme-editor-window"])
+                        .windows(["main", "dm-window-*", "group-dm-window", "agentamp-window", "media-library", "pinned-video-window", "theme-editor-window"])
                         .permission("core:default")
                         .permission("core:event:allow-emit-to")
                         .permission("core:event:allow-listen")

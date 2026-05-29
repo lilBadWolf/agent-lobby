@@ -9,23 +9,38 @@
         </div>
       </div>
     </div>
+
+    <div v-for="invite in groupPendingInvites" :key="`group-${invite.id}`" class="request-card">
+      <div class="request-inline-row">
+        <div class="request-body">{{ invite.from }} invited you to a group tunnel.</div>
+        <div class="request-actions">
+          <button class="accept-btn" @click="emit('acceptGroupInvite', invite.id)">✅</button>
+          <button class="reject-btn" @click="emit('rejectGroupInvite', invite.id)">❌</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { DMRequest } from '../../types/directMessage';
+import type { GroupDMInvite } from '../../types/groupDirectMessage';
 
 const props = defineProps<{
   pendingRequests: DMRequest[];
+  groupPendingInvites?: GroupDMInvite[];
 }>();
 
 const emit = defineEmits<{
   acceptDm: [user: string];
   rejectDm: [user: string];
+  acceptGroupInvite: [inviteId: string];
+  rejectGroupInvite: [inviteId: string];
 }>();
 
-const hasEntries = computed(() => props.pendingRequests.length > 0);
+const groupPendingInvites = computed(() => props.groupPendingInvites ?? []);
+const hasEntries = computed(() => props.pendingRequests.length > 0 || groupPendingInvites.value.length > 0);
 </script>
 
 <style scoped>

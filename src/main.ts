@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import * as THREE from 'three';
 import App from "./App.vue";
 import DMWindowApp from "./windows/DMWindowApp.vue";
+import GroupDMWindowApp from "./windows/GroupDMWindowApp.vue";
 import AgentAmpWindowApp from "./windows/AgentAmpWindowApp.vue";
 import PinnedVideoWindowApp from "./windows/PinnedVideoWindowApp.vue";
 import MediaLibraryWindowApp from "./windows/MediaLibraryWindowApp.vue";
@@ -20,13 +21,14 @@ window.THREE = THREE;
 
 const params = new URLSearchParams(window.location.search);
 const isDMWindow = params.get('view') === 'dm';
+const isGroupDMWindow = params.get('view') === 'group-dm';
 const isAgentAmpWindow = params.get('view') === 'agentamp';
 const isPinnedVideoWindow = params.get('view') === 'pinned-video';
 const isMediaLibraryWindow = params.get('view') === 'media-library';
 const isThemeEditorWindow = params.get('view') === 'theme-editor';
 
 if (typeof document !== 'undefined') {
-	const viewName = isDMWindow ? 'dm' : isAgentAmpWindow ? 'agentamp' : isPinnedVideoWindow ? 'pinned-video' : isMediaLibraryWindow ? 'media-library' : isThemeEditorWindow ? 'theme-editor' : 'main';
+	const viewName = isDMWindow ? 'dm' : isGroupDMWindow ? 'group-dm' : isAgentAmpWindow ? 'agentamp' : isPinnedVideoWindow ? 'pinned-video' : isMediaLibraryWindow ? 'media-library' : isThemeEditorWindow ? 'theme-editor' : 'main';
 	document.documentElement.setAttribute('data-app-view', viewName);
 	document.body.setAttribute('data-app-view', viewName);
 
@@ -38,6 +40,7 @@ if (typeof document !== 'undefined') {
 
 createApp(
 	isDMWindow ? DMWindowApp
+	: isGroupDMWindow ? GroupDMWindowApp
 	: isAgentAmpWindow ? AgentAmpWindowApp
 	: isPinnedVideoWindow ? PinnedVideoWindowApp
 	: isMediaLibraryWindow ? MediaLibraryWindowApp

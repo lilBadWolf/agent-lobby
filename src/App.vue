@@ -69,8 +69,11 @@ declare global {
     <DMRequestStack
       v-if="!showAuth"
       :pending-requests="dmPendingRequests"
+      :group-pending-invites="groupDmInvites"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
+      @accept-group-invite="handleAcceptGroupInvite"
+      @reject-group-invite="handleRejectGroupInvite"
     />
 
     <AuthScreen
@@ -128,9 +131,13 @@ declare global {
           :is-away="isAway"
           :dm-bubble-states="dmBubbleStates"
           :show-dm-launcher="hasDMActivity"
+          :group-dm-active-members="groupDmActiveMembers"
+          :group-dm-can-create="canRequestGroupTunnel"
+          :group-dm-can-invite="canInviteGroupTunnel"
           :is-compact="!isSidebarVisible"
           @disconnect="handleDisconnect"
           @dm-request="handleDMRequest"
+          @group-dm-request="handleGroupDMRequest"
           @show-dm-window="handleShowDMWindow"
           @mention-request="handleMentionRequest"
           @pin-user-media="handlePinUserMedia"
@@ -335,10 +342,12 @@ import { isTauriRuntime, tauriInvoke, tauriGetCurrentWindow } from './composable
 import { useLobbyChat } from './composables/useLobbyChat';
 import { useTheme } from './composables/useTheme';
 import { useDirectMessage } from './composables/useDirectMessage';
+import { useGroupDirectMessage } from './composables/useGroupDirectMessage';
 import { getPersistedValue, setPersistedValue } from './composables/usePlatformStorage';
 import type { ActiveMedia, AudioConfig } from './types/chat';
 import type { FileTransferState } from './types/directMessage';
 import type { DMWindowAction, DMWindowStatePayload, SerializedDMChat } from './types/dmWindowBridge';
+import type { GroupDMWindowAction, GroupDMWindowStatePayload } from './types/groupDmWindowBridge';
 import { installAvailableUpdate, startAutoUpdaterPulse, stopAutoUpdaterPulse, useAutoUpdaterState } from './composables/useAutoUpdater';
 import AuthScreen from './components/lobby/AuthScreen.vue';
 import AuthBackground from './components/lobby/backgrounds/AuthBackground.vue';
@@ -486,6 +495,7 @@ async function applyAgentConfPayload(payload: AgentConfPayload) {
     }
 
     await closeAllDMWindows();
+    await closeGroupDMWindow();
     disconnect();
   }
 
@@ -513,10 +523,18 @@ const DM_WINDOW_LABEL = 'dm-window';
 const DM_WINDOW_STATE_EVENT = 'dm-window-state';
 const DM_WINDOW_ACTION_EVENT = 'dm-window-action';
 const DM_WEB_CHANNEL = 'agent-lobby-dm-window';
+const GROUP_DM_WINDOW_LABEL = 'group-dm-window';
+const GROUP_DM_WINDOW_STATE_EVENT = 'group-dm-window-state';
+const GROUP_DM_WINDOW_ACTION_EVENT = 'group-dm-window-action';
+const GROUP_DM_WEB_CHANNEL = 'agent-lobby-group-dm-window';
 const DM_WINDOW_DEFAULT_WIDTH = 640;
 const DM_WINDOW_DEFAULT_HEIGHT = 400;
 const DM_WINDOW_MIN_WIDTH = 320;
 const DM_WINDOW_MIN_HEIGHT = 200;
+const GROUP_DM_WINDOW_DEFAULT_WIDTH = 720;
+const GROUP_DM_WINDOW_DEFAULT_HEIGHT = 520;
+const GROUP_DM_WINDOW_MIN_WIDTH = 420;
+const GROUP_DM_WINDOW_MIN_HEIGHT = 320;
 const AGENTAMP_WINDOW_LABEL = 'agentamp-window';
 const AGENTAMP_WINDOW_DEFAULT_WIDTH = 860;
 const AGENTAMP_WINDOW_DEFAULT_HEIGHT = 320;
@@ -528,6 +546,7 @@ const AGENTAMP_STOP_CHANNEL = 'agent-lobby-agentamp-stop';
 const AGENTAMP_FORCE_CLOSE_CHANNEL = 'agent-lobby-agentamp-force-close';
 const AGENTAMP_PLAYING_STORAGE_KEY = 'agent_agentamp_playing';
 const DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-dm-force-close';
+const GROUP_DM_WINDOW_FORCE_CLOSE_CHANNEL = 'agent-lobby-group-dm-force-close';
 
 type AgentAmpPinnedVideo = {
   sourceKey: string;
@@ -586,6 +605,7 @@ watch(activeMediaSource, (next) => {
   setActiveMedia(next);
 }, { immediate: true });
 let cleanupDMActionListener: (() => void) | null = null;
+let cleanupGroupDMActionListener: (() => void) | null = null;
 let webMessageListenerBound = false;
 const focusedDMUser = ref<string | null>(null);
 const mentionRequest = ref<{ username: string; nonce: number } | null>(null);
@@ -593,6 +613,12 @@ const isAgentAmpPlaying = ref(false);
 type DMType = ReturnType<typeof useDirectMessage>;
 const dm = shallowRef<DMType | null>(null);
 const dmWindowOpen = computed(() => openDMWindowUsers.value.size > 0);
+type GroupDMType = ReturnType<typeof useGroupDirectMessage>;
+const groupDm = shallowRef<GroupDMType | null>(null);
+const groupDmWindowOpen = ref(false);
+let groupDmPopupWindow: Window | null = null;
+let groupDmPopupWatchIntervalId: number | null = null;
+let groupDmWebChannel: BroadcastChannel | null = null;
 
 function normalizeDMUser(value: string | null | undefined): string | null {
   const normalized = value?.trim();
@@ -649,6 +675,20 @@ const dmNotices = computed(() => dm.value?.notices.value || []);
 const connectedDMUsers = computed(() =>
   Array.from(dmActiveChats.value.keys()).sort()
 );
+const activeGroupDm = computed(() => groupDm.value?.activeGroup.value ?? null);
+const groupDmInvites = computed(() => groupDm.value?.pendingInvites.value ?? []);
+const groupDmMessages = computed(() => groupDm.value?.messages.value ?? []);
+const groupDmPendingChallenges = computed(() => groupDm.value?.pendingGameChallenges.value ?? []);
+const groupDmGameEvents = computed(() => groupDm.value?.gameEvents.value ?? []);
+const groupDmActiveMembers = computed(() => activeGroupDm.value?.members ?? []);
+const canRequestGroupTunnel = computed(() => isConnected.value && !activeGroupDm.value);
+const canInviteGroupTunnel = computed(() => {
+  if (!activeGroupDm.value) {
+    return false;
+  }
+
+  return activeGroupDm.value.members.length < (groupDm.value?.maxMembers ?? 5);
+});
 const hasDMActivity = computed(() => connectedDMUsers.value.length > 0);
 const dmBubbleStates = computed<Record<string, 'active' | 'pending' | 'denied'>>(() => {
   const states: Record<string, 'active' | 'pending' | 'denied'> = {};
@@ -765,9 +805,20 @@ watch(isConnected, (connected) => {
       config.value,
       { runtimeMode: 'presence' }
     );
+
+    groupDm.value = useGroupDirectMessage(
+      { value: username.value },
+      roomId,
+      mqttClient,
+      connectedCallback,
+    );
   } else if (!connected && dm.value) {
     dm.value.cleanup();
     dm.value = null;
+    groupDm.value?.cleanup();
+    groupDm.value = null;
+    groupDmWindowOpen.value = false;
+    void closeGroupDMWindow();
   }
 });
 
@@ -1336,7 +1387,9 @@ onMounted(async () => {
   initializeAgentAmpActionBridge();
   initializePinnedVideoActionBridge();
   initializeWebDMBridge();
+  initializeWebGroupDMBridge();
   await initializeDMWindowActionListener();
+  await initializeGroupDMWindowActionListener();
   await initializeAgentConfFileListener();
   await restorePersistedAuthHandle();
   attemptAutoInitialize();
@@ -1359,16 +1412,26 @@ onBeforeUnmount(() => {
   }
   dmPopupWatchIntervals.clear();
   dmPopupWindows.clear();
+  if (groupDmPopupWatchIntervalId !== null) {
+    window.clearInterval(groupDmPopupWatchIntervalId);
+    groupDmPopupWatchIntervalId = null;
+  }
+  groupDmPopupWindow = null;
+  groupDmWebChannel?.close();
+  groupDmWebChannel = null;
   clearMediaLibraryAutoScanInterval();
   openDMWindowUsers.value = new Set();
   dmWebChannel?.close();
   dmWebChannel = null;
   if (webMessageListenerBound) {
     window.removeEventListener('message', handleWebPopupMessage);
+    window.removeEventListener('message', handleWebGroupDMPopupMessage);
     webMessageListenerBound = false;
   }
   cleanupDMActionListener?.();
   cleanupDMActionListener = null;
+  cleanupGroupDMActionListener?.();
+  cleanupGroupDMActionListener = null;
 });
 
 watch(
@@ -1394,6 +1457,43 @@ watch(
   () => {
     if (dmWindowOpen.value) {
       void emitDMWindowState();
+    }
+  },
+  { deep: true }
+);
+
+watch(
+  [
+    activeGroupDm,
+    groupDmInvites,
+    groupDmMessages,
+    groupDmPendingChallenges,
+    groupDmGameEvents,
+    () => username.value,
+  ],
+  () => {
+    if (activeGroupDm.value || groupDmInvites.value.length > 0) {
+      groupDmWindowOpen.value = true;
+      void openGroupDMWindow();
+    }
+
+    if (groupDmWindowOpen.value) {
+      void emitGroupDMWindowState();
+    }
+  },
+  { deep: true }
+);
+
+watch(
+  () => ({ hasGroup: Boolean(activeGroupDm.value), invites: groupDmInvites.value.length }),
+  (nextState) => {
+    if (!groupDmWindowOpen.value) {
+      return;
+    }
+
+    if (!nextState.hasGroup && nextState.invites === 0) {
+      groupDmWindowOpen.value = false;
+      void closeGroupDMWindow();
     }
   },
   { deep: true }
@@ -1561,6 +1661,7 @@ function quit() {
       // captured and properly closed.
       const allWindows = await getAllWebviewWindows();
       const dmWindowHandles = allWindows.filter((w) => w.label.startsWith(DM_WINDOW_LABEL + '-'));
+      const groupDmWindow = await WebviewWindow.getByLabel(GROUP_DM_WINDOW_LABEL);
       const agentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL);
       const hasDmWindows = dmWindowHandles.length > 0;
 
@@ -1577,11 +1678,18 @@ function quit() {
         dmChannel.close();
       }
 
+      if (groupDmWindow) {
+        const groupDmChannel = new BroadcastChannel(GROUP_DM_WINDOW_FORCE_CLOSE_CHANNEL);
+        groupDmChannel.postMessage('force-close');
+        groupDmChannel.close();
+      }
+
       await new Promise<void>((resolve) => {
         const expectedAgentAmp = agentAmpWindow ? 1 : 0;
         const expectedDm = hasDmWindows ? dmWindowHandles.length : 0;
+        const expectedGroupDm = groupDmWindow ? 1 : 0;
 
-        if (expectedAgentAmp + expectedDm === 0) {
+        if (expectedAgentAmp + expectedDm + expectedGroupDm === 0) {
           resolve();
           return;
         }
@@ -1589,12 +1697,14 @@ function quit() {
         const checkInterval = setInterval(async () => {
           const currentAll = await getAllWebviewWindows().catch(() => [] as typeof allWindows);
           const currentDmStillOpen = currentAll.some((w) => w.label.startsWith(DM_WINDOW_LABEL + '-'));
+          const currentGroupDmWindow = await WebviewWindow.getByLabel(GROUP_DM_WINDOW_LABEL).catch(() => null);
           const currentAgentAmpWindow = await WebviewWindow.getByLabel(AGENTAMP_WINDOW_LABEL).catch(() => null);
 
           const agentAmpDone = !agentAmpWindow || !currentAgentAmpWindow;
           const dmDone = !hasDmWindows || !currentDmStillOpen;
+          const groupDmDone = !groupDmWindow || !currentGroupDmWindow;
 
-          if (agentAmpDone && dmDone) {
+          if (agentAmpDone && dmDone && groupDmDone) {
             clearInterval(checkInterval);
             resolve();
           }
@@ -1690,6 +1800,56 @@ function handleShowDMWindow() {
   }
 
   void openDMWindow(targetUser);
+}
+
+function handleGroupDMRequest(user: string) {
+  if (!groupDm.value || !isConnected.value) {
+    return;
+  }
+
+  const currentGroup = groupDm.value.activeGroup.value;
+  if (!currentGroup) {
+    const created = groupDm.value.requestGroupTunnel(user);
+    if (created) {
+      groupDmWindowOpen.value = true;
+      void openGroupDMWindow();
+    }
+    return;
+  }
+
+  if (currentGroup.members.length >= groupDm.value.maxMembers) {
+    return;
+  }
+
+  if (currentGroup.members.includes(user)) {
+    return;
+  }
+
+  const invited = groupDm.value.inviteToGroup(user);
+  if (invited) {
+    groupDmWindowOpen.value = true;
+    void openGroupDMWindow();
+  }
+}
+
+function handleAcceptGroupInvite(inviteId: string) {
+  if (!groupDm.value) {
+    return;
+  }
+
+  const accepted = groupDm.value.acceptInvite(inviteId);
+  if (accepted) {
+    groupDmWindowOpen.value = true;
+    void openGroupDMWindow();
+  }
+}
+
+function handleRejectGroupInvite(inviteId: string) {
+  if (!groupDm.value) {
+    return;
+  }
+
+  groupDm.value.rejectInvite(inviteId);
 }
 
 function handleShowAgentAmpWindow() {
@@ -2012,6 +2172,7 @@ function handleCancelPendingMessages(user: string) {
 function initializeWebDMBridge() {
   if (!webMessageListenerBound) {
     window.addEventListener('message', handleWebPopupMessage);
+    window.addEventListener('message', handleWebGroupDMPopupMessage);
     webMessageListenerBound = true;
   }
 
@@ -2039,6 +2200,288 @@ function handleWebPopupMessage(event: MessageEvent) {
   }
 
   handleDMWindowAction(message.payload as DMWindowAction);
+}
+
+function initializeWebGroupDMBridge() {
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+
+  groupDmWebChannel = new BroadcastChannel(GROUP_DM_WEB_CHANNEL);
+  groupDmWebChannel.onmessage = (event: MessageEvent) => {
+    const message = event.data as { type?: string; payload?: unknown };
+    if (message?.type === 'group-dm-action') {
+      handleGroupDMWindowAction(message.payload as GroupDMWindowAction);
+    }
+  };
+}
+
+function handleWebGroupDMPopupMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const message = event.data as { type?: string; payload?: unknown };
+  if (message?.type !== 'group-dm-action') {
+    return;
+  }
+
+  handleGroupDMWindowAction(message.payload as GroupDMWindowAction);
+}
+
+function startGroupDMWebPopupHeartbeat() {
+  if (groupDmPopupWatchIntervalId !== null) {
+    return;
+  }
+
+  groupDmPopupWatchIntervalId = window.setInterval(() => {
+    if (!groupDmPopupWindow || groupDmPopupWindow.closed) {
+      groupDmPopupWindow = null;
+      groupDmWindowOpen.value = false;
+      window.clearInterval(groupDmPopupWatchIntervalId!);
+      groupDmPopupWatchIntervalId = null;
+    }
+  }, 750);
+}
+
+async function initializeGroupDMWindowActionListener() {
+  if (!hasTauriWindow) {
+    return;
+  }
+
+  const { listen } = await import('@tauri-apps/api/event');
+  cleanupGroupDMActionListener = await listen<GroupDMWindowAction>(GROUP_DM_WINDOW_ACTION_EVENT, (event) => {
+    handleGroupDMWindowAction(event.payload);
+  });
+}
+
+function buildGroupDMWindowStatePayload(): GroupDMWindowStatePayload {
+  return {
+    username: username.value,
+    activeGroup: activeGroupDm.value,
+    pendingInvites: groupDmInvites.value,
+    messages: groupDmMessages.value,
+    activeGame: groupDm.value?.activeGame.value ?? null,
+    audioStates: groupDm.value?.audioStates.value ?? [],
+    pendingGameChallenges: groupDmPendingChallenges.value,
+    gameEvents: groupDmGameEvents.value,
+  };
+}
+
+async function emitGroupDMWindowState() {
+  if (!groupDmWindowOpen.value) {
+    return;
+  }
+
+  const payload = buildGroupDMWindowStatePayload();
+
+  if (hasTauriWindow) {
+    const { emitTo } = await import('@tauri-apps/api/event');
+    await emitTo(GROUP_DM_WINDOW_LABEL, GROUP_DM_WINDOW_STATE_EVENT, payload);
+    return;
+  }
+
+  const popup = groupDmPopupWindow;
+  if (popup && !popup.closed) {
+    popup.postMessage({ type: 'group-dm-state', payload }, window.location.origin);
+  }
+
+  groupDmWebChannel?.postMessage({ type: 'group-dm-state', payload });
+}
+
+async function focusGroupDMWindow(): Promise<boolean> {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(GROUP_DM_WINDOW_LABEL);
+    if (!existingWindow) {
+      return false;
+    }
+
+    if (await existingWindow.isMinimized()) {
+      await existingWindow.unminimize();
+    }
+
+    await existingWindow.show();
+    await existingWindow.setFocus();
+    groupDmWindowOpen.value = true;
+    await emitGroupDMWindowState();
+    return true;
+  }
+
+  if (groupDmPopupWindow && !groupDmPopupWindow.closed) {
+    groupDmPopupWindow.focus();
+    groupDmWindowOpen.value = true;
+    await emitGroupDMWindowState();
+    return true;
+  }
+
+  return false;
+}
+
+async function closeGroupDMWindow() {
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const existingWindow = await WebviewWindow.getByLabel(GROUP_DM_WINDOW_LABEL);
+    if (existingWindow) {
+      try {
+        await existingWindow.close();
+      } catch (error) {
+        console.debug('Unable to close GroupDM window:', error);
+      }
+    }
+    groupDmWindowOpen.value = false;
+    return;
+  }
+
+  if (groupDmPopupWindow && !groupDmPopupWindow.closed) {
+    groupDmPopupWindow.close();
+  }
+
+  groupDmPopupWindow = null;
+  groupDmWindowOpen.value = false;
+  if (groupDmPopupWatchIntervalId !== null) {
+    window.clearInterval(groupDmPopupWatchIntervalId);
+    groupDmPopupWatchIntervalId = null;
+  }
+}
+
+async function openGroupDMWindow() {
+  const focused = await focusGroupDMWindow();
+  if (focused) {
+    return;
+  }
+
+  groupDmWindowOpen.value = true;
+
+  if (hasTauriWindow) {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const groupDmWindowUrl = new URL(window.location.href);
+    groupDmWindowUrl.searchParams.set('view', 'group-dm');
+
+    const windowHandle = new WebviewWindow(GROUP_DM_WINDOW_LABEL, {
+      url: groupDmWindowUrl.toString(),
+      title: 'AGENT // GROUP DM',
+      width: GROUP_DM_WINDOW_DEFAULT_WIDTH,
+      height: GROUP_DM_WINDOW_DEFAULT_HEIGHT,
+      minWidth: GROUP_DM_WINDOW_MIN_WIDTH,
+      minHeight: GROUP_DM_WINDOW_MIN_HEIGHT,
+      center: true,
+      resizable: true,
+      decorations: false,
+      transparent: false,
+      useHttpsScheme: true,
+      dragDropEnabled: false,
+    });
+
+    windowHandle.once('tauri://created', () => {
+      groupDmWindowOpen.value = true;
+      void emitGroupDMWindowState();
+    });
+
+    windowHandle.once('tauri://destroyed', () => {
+      groupDmWindowOpen.value = false;
+    });
+
+    windowHandle.once('tauri://error', (error) => {
+      console.error('Failed to create GroupDM window:', error);
+      groupDmWindowOpen.value = false;
+    });
+
+    return;
+  }
+
+  const popupUrl = `${window.location.pathname}?view=group-dm`;
+  const popupFeatures = [
+    'popup=yes',
+    `width=${GROUP_DM_WINDOW_DEFAULT_WIDTH}`,
+    `height=${GROUP_DM_WINDOW_DEFAULT_HEIGHT}`,
+    'toolbar=no',
+    'menubar=no',
+    'location=no',
+    'status=no',
+    'scrollbars=yes',
+    'resizable=yes',
+  ].join(',');
+
+  if (!webMessageListenerBound) {
+    window.addEventListener('message', handleWebPopupMessage);
+    window.addEventListener('message', handleWebGroupDMPopupMessage);
+    webMessageListenerBound = true;
+  }
+
+  groupDmPopupWindow = window.open(popupUrl, GROUP_DM_WINDOW_LABEL, popupFeatures);
+  if (!groupDmPopupWindow) {
+    groupDmWindowOpen.value = false;
+    return;
+  }
+
+  startGroupDMWebPopupHeartbeat();
+  await emitGroupDMWindowState();
+}
+
+function handleGroupDMWindowAction(action: GroupDMWindowAction | undefined) {
+  if (!action || !groupDm.value) {
+    return;
+  }
+
+  switch (action.type) {
+    case 'windowReady':
+      groupDmWindowOpen.value = true;
+      void emitGroupDMWindowState();
+      break;
+    case 'sendMessage':
+      groupDm.value.sendGroupMessage(action.message);
+      break;
+    case 'requestGroupTunnel':
+      handleGroupDMRequest(action.user);
+      break;
+    case 'inviteUser':
+      groupDm.value.inviteToGroup(action.user);
+      break;
+    case 'acceptInvite':
+      if (groupDm.value.acceptInvite(action.inviteId)) {
+        groupDmWindowOpen.value = true;
+        void openGroupDMWindow();
+      }
+      break;
+    case 'rejectInvite':
+      groupDm.value.rejectInvite(action.inviteId);
+      break;
+    case 'joinAudio':
+      groupDm.value.joinAudio();
+      break;
+    case 'leaveAudio':
+      groupDm.value.leaveAudio();
+      break;
+    case 'setMicMuted':
+      groupDm.value.setMicMuted(action.muted);
+      break;
+    case 'setSoundMuted':
+      groupDm.value.setSoundMuted(action.muted);
+      break;
+    case 'challengeUserToGame':
+      groupDm.value.challengeUserToGame(action.user, action.kind);
+      break;
+    case 'respondGameChallenge':
+      groupDm.value.respondGameChallenge(action.challengeId, action.accepted);
+      break;
+    case 'relayGameMessage':
+      groupDm.value.relayGameMessage(action.payload);
+      break;
+    case 'stopGame':
+      groupDm.value.stopGame();
+      break;
+    case 'leaveGroup':
+      groupDm.value.leaveGroup();
+      if (!groupDm.value.activeGroup.value && groupDm.value.pendingInvites.value.length === 0) {
+        groupDmWindowOpen.value = false;
+        void closeGroupDMWindow();
+      }
+      break;
+    case 'windowClosed':
+      groupDmWindowOpen.value = false;
+      break;
+  }
 }
 
 function startWebPopupHeartbeat(user: string) {

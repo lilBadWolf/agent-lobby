@@ -5,6 +5,7 @@
   "windows": [
     "main",
     "dm-window-*",
+    "group-dm-window",
     "agentamp-window",
     "media-library",
     "theme-editor-window"

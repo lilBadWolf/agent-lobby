@@ -127,6 +127,15 @@
           >
             REQUEST TUNNEL
           </button>
+          <button
+            v-if="hoveredUser.dmAvailable && !hoveredUser.isAway && getGroupButtonMode(hoveredUser.username) !== 'hidden'"
+            type="button"
+            class="request-tunnel-btn group-tunnel-btn"
+            :aria-label="getGroupButtonMode(hoveredUser.username) === 'invite' ? `Invite ${hoveredUser.username} to active group tunnel` : `Request group tunnel with ${hoveredUser.username}`"
+            @click.stop="handleGroupDmRequest(hoveredUser.username)"
+          >
+            {{ getGroupButtonMode(hoveredUser.username) === 'invite' ? 'INVITE' : 'REQUEST GROUP TUNNEL' }}
+          </button>
         </div>
         <div v-if="hoveredUserMediaActive" class="user-details-media-section">
           <hr class="user-details-divider" />
@@ -176,18 +185,25 @@ const props = withDefaults(defineProps<{
   isAway?: boolean;
   dmBubbleStates?: Record<string, 'active' | 'pending' | 'denied'>;
   showDmLauncher?: boolean;
+  groupDmActiveMembers?: string[];
+  groupDmCanCreate?: boolean;
+  groupDmCanInvite?: boolean;
   isCompact?: boolean;
 }>(), {
   users: () => ({}), // Default to an empty object
   isAway: false,
   dmBubbleStates: () => ({}),
   showDmLauncher: false,
+  groupDmActiveMembers: () => [],
+  groupDmCanCreate: false,
+  groupDmCanInvite: false,
   isCompact: false,
 });
 
 const emit = defineEmits<{
   disconnect: [];
   dmRequest: [user: string];
+  groupDmRequest: [user: string];
   mentionRequest: [user: string];
   pinUserMedia: [{ url: string; currentTime?: number }];
   showDmWindow: [];
@@ -567,6 +583,31 @@ function handleDmRequest(username: string) {
   emit('dmRequest', username);
 }
 
+function getGroupButtonMode(user: string): 'request' | 'invite' | 'hidden' {
+  if (props.groupDmCanCreate) {
+    return 'request';
+  }
+
+  if (!props.groupDmCanInvite) {
+    return 'hidden';
+  }
+
+  if (props.groupDmActiveMembers.includes(user)) {
+    return 'hidden';
+  }
+
+  return 'invite';
+}
+
+function handleGroupDmRequest(username: string) {
+  const mode = getGroupButtonMode(username);
+  if (mode === 'hidden') {
+    return;
+  }
+
+  emit('groupDmRequest', username);
+}
+
 // Watch for DM bubble state changes to stop ringback-tone
 watch(
   () => props.dmBubbleStates,
@@ -844,6 +885,11 @@ watch(
 
 .request-tunnel-btn:hover {
   background: rgba(120, 138, 255, 0.12);
+}
+
+.group-tunnel-btn {
+  margin-top: 8px;
+  font-size: 11px;
 }
 
 .compact-dm-btn {

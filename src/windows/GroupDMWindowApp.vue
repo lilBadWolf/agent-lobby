@@ -384,7 +384,17 @@ watch(
       return;
     }
 
+    if (events.length === 0) {
+      relayCursor.value = 0;
+      return;
+    }
+
     const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+    const latestSequence = sorted[sorted.length - 1]?.sequence ?? 0;
+    if (latestSequence < relayCursor.value) {
+      relayCursor.value = 0;
+    }
+
     for (const event of sorted) {
       if (event.sequence <= relayCursor.value) {
         continue;

@@ -1,11 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.6.5**
+🚀 **Release highlights for agent-lobby 0.6.6**
 
-- 🧪 **Group DM beta is here!** You can now spin up shared group spaces and bring more than one person into the same tunnel.
-- 🎮 **Challenge flow is now built in** with direct player-vs-player game challenges inside Group DM.
-- 👀 **Live spectator mode is active** so non-playing members can watch matches unfold in real time.
-- 🔊 **Group Audio beta landed** with join/leave and mute controls so group sessions feel more like a real hangout.
-- 🧹 **Polish + reliability fixes** for invite behavior, group controls, and detached Group DM window flow.
+- 🤫 **Silent polish pass** focused on Group DM game flow stability.
+- 🎯 **Game handoff smoothing** so matches feel more consistent once boards go live.
+- 🛠️ **Battleship reliability touch-ups** to reduce stuck-turn moments in group sessions.
+- ✨ **Under-the-hood quality bump** with no major UI changes, just a steadier feel.
 
-> This is a beta-forward release focused on making Group DM fun, social, and ready for more playtesting. Keep the feedback coming! 🐺💬✨
+> Quiet release, better flow. Thanks for stress-testing Group DM with us 💚🛰️🐺

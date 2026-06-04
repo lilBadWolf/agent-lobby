@@ -605,7 +605,7 @@ onMounted(async () => {
       }
 
       event.preventDefault();
-      void appWindow.hide();
+      void handleClose();
     });
 
     await sendAction({ type: 'windowReady' });

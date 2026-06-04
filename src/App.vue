@@ -2479,6 +2479,7 @@ function handleGroupDMWindowAction(action: GroupDMWindowAction | undefined) {
       }
       break;
     case 'windowClosed':
+      groupDm.value.leaveGroup();
       groupDmWindowOpen.value = false;
       break;
   }

@@ -3018,6 +3018,8 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--color-accent);
   height: 36px;
   background: var(--color-chat-bg);
+  position: relative;
+  z-index: 0;
 }
 
 .input-bar:focus-within {

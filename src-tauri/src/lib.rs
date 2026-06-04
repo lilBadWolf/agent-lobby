@@ -1595,6 +1595,7 @@ pub fn run() {
                         .permission("fs:allow-open")
                         .permission("fs:allow-download-write")
                         .permission("dialog:default")
+                        .permission("dialog:allow-confirm")
                         .permission("opener:default")
                         .permission("opener:allow-open-path")
                         .permission("core:window:allow-create")
@@ -1624,6 +1625,7 @@ pub fn run() {
                         .permission("allow-save-custom-theme")
                         .permission("allow-open-themes-folder")
                         .permission("allow-open-soundpacks-folder")
+                        .permission("allow-load-media-library-state")
                 )?;
 
                 WebviewUrl::External(url)

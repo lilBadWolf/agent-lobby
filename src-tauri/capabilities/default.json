@@ -14,6 +14,7 @@
     "process:allow-exit",
     "process:allow-restart",
     "dialog:default",
+    "dialog:allow-confirm",
     "fs:default",
     "fs:allow-open",
     "opener:default",
@@ -47,6 +48,7 @@
     "allow-get-theme-source",
     "allow-save-custom-theme",
     "allow-open-themes-folder",
-    "allow-open-soundpacks-folder"
+    "allow-open-soundpacks-folder",
+    "allow-load-media-library-state"
   ]
 }

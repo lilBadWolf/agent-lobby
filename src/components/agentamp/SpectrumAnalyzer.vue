@@ -259,6 +259,21 @@ function buildSpectrumBars(requestedCount: number) {
   renderer.render(scene, camera);
 }
 
+function applyColorToMaterial(material: THREE.MeshBasicMaterial, colorStr: string) {
+  const rgbaMatch = colorStr.match(/^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i);
+  if (rgbaMatch) {
+    material.color.setRGB(
+      parseFloat(rgbaMatch[1]) / 255,
+      parseFloat(rgbaMatch[2]) / 255,
+      parseFloat(rgbaMatch[3]) / 255,
+    );
+    material.opacity = parseFloat(rgbaMatch[4]);
+  } else {
+    material.color.setStyle(colorStr);
+    material.opacity = 1;
+  }
+}
+
 function drawSpectrum(bars: number[]) {
   if (!renderer || !scene || !camera || !barMeshes.length) {
     return;
@@ -275,7 +290,7 @@ function drawSpectrum(bars: number[]) {
 
     mesh.scale.y = barHeight;
     mesh.position.y = barHeight * 0.5;
-    mesh.material.color.setStyle(getBarColor(value));
+    applyColorToMaterial(mesh.material, getBarColor(value));
   }
 
   renderer.render(scene, camera);
@@ -309,48 +324,40 @@ for (let index = 0; index < barCount; index += 1) {
   // Normalize and push
   // Note: High frequencies often have lower energy, 
   // you might want to multiply sum by a slight 'boost' as index increases.
-  bars.push(Math.min(1, (sum / sampleCount) * 4));
+  bars.push(sum / sampleCount);
 }
 
   return bars;
 }
 
-function computeLocalSpectrum(samples: Float32Array): number[] {
+function computeLocalSpectrum(): number[] {
+  if (!analyserNode) return [];
   const barCount = resolveBarCount(props.barCount);
-  const bars: number[] = [];
-  const sampleCount = Math.max(1, Math.floor(samples.length / barCount));
-
-  for (let index = 0; index < barCount; index += 1) {
-    const start = index * sampleCount;
-    const end = Math.min(samples.length, start + sampleCount);
-    let energy = 0;
-
-    for (let cursor = start; cursor < end; cursor += 1) {
-      const value = samples[cursor];
-      energy += value * value;
-    }
-
-    const average = energy / Math.max(1, end - start);
-    bars.push(Math.min(1, Math.sqrt(average) * 8));
-  }
-
-  return applySpectrumSensitivity(bars);
+  const freqData = new Float32Array(analyserNode.frequencyBinCount);
+  analyserNode.getFloatFrequencyData(freqData);
+  const min = analyserNode.minDecibels;
+  const max = analyserNode.maxDecibels;
+  const normalized = Array.from(freqData).map(
+    (db) => Math.max(0, Math.min(1, (db - min) / (max - min)))
+  );
+  return applySpectrumSensitivity(reduceSpectrumToBarCount(normalized, barCount));
 }
 
 async function computeSpectrum(samples: Float32Array): Promise<number[]> {
   const barCount = resolveBarCount(props.barCount);
 
   if (!isTauriRuntime()) {
-    return computeLocalSpectrum(samples);
+    return computeLocalSpectrum();
   }
 
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const sampleArray = Array.from(samples);
     const spectrum = await invoke<number[]>('compute_spectrum', { samples: sampleArray });
-    return applySpectrumSensitivity(reduceSpectrumToBarCount(spectrum, barCount));
+    const bars = reduceSpectrumToBarCount(spectrum, barCount).map((v) => Math.min(1, v * 4));
+    return applySpectrumSensitivity(bars);
   } catch {
-    return computeLocalSpectrum(samples);
+    return computeLocalSpectrum();
   }
 }
 
@@ -413,6 +420,8 @@ async function createAnalyzer() {
 
   const analyser = audioContext.createAnalyser();
   analyser.fftSize = resolveFftSize(props.fftSize);
+  analyser.minDecibels = -90;
+  analyser.maxDecibels = -10;
   analyser.smoothingTimeConstant = 0.68;
 
   sourceNode?.disconnect();

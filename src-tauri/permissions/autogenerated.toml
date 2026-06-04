@@ -7,3 +7,8 @@ commands.allow = ["open_themes_folder"]
 identifier = "allow-open-soundpacks-folder"
 description = "Allow opening soundpacks folder"
 commands.allow = ["open_soundpacks_folder"]
+
+[[permission]]
+identifier = "allow-load-media-library-state"
+description = "Allow loading persisted media library state"
+commands.allow = ["load_media_library_state"]

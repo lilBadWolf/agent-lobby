@@ -244,7 +244,16 @@
           </div>
           <div class="message-body">
             <span class="sender" :style="{ color: getUserColor(msg.user) }">{{ msg.user }}:</span>
+            <div
+              v-if="shouldRenderMessageAsMarkdown(index)"
+              class="text markdown-block"
+              :style="{ color: msg.user === username ? 'var(--color-accent)' : 'var(--color-text-primary)' }"
+            >
+              <div class="markdown-text" v-html="renderMarkdownMessageHtml(index)"></div>
+              <span v-if="isTyping(index)" class="cursor">█</span>
+            </div>
             <span
+              v-else
               class="text"
               :class="{ 'large-emoji': isEmojiOnlyMessage(index) }"
               :style="{ color: msg.user === username ? 'var(--color-accent)' : 'var(--color-text-primary)' }"
@@ -2303,10 +2312,16 @@ watch(
   () => props.messages.length,
   (newLength, oldLength) => {
     if (newLength > oldLength) {
-      // New message added, start typing animation
       const messageIndex = newLength - 1;
-      typingProgress.value[messageIndex] = 0;
-      animateTyping(messageIndex);
+      if (shouldRenderMessageAsMarkdown(messageIndex)) {
+        const nextMessage = props.messages[messageIndex];
+        const fullText = nextMessage ? getRenderableMessageText(nextMessage) : '';
+        typingProgress.value[messageIndex] = fullText.length;
+      } else {
+        // New message added, start typing animation for plain-text messages.
+        typingProgress.value[messageIndex] = 0;
+        animateTyping(messageIndex);
+      }
     }
 
     setTimeout(() => {
@@ -2321,7 +2336,7 @@ function animateTyping(messageIndex: number) {
   const message = props.messages[messageIndex];
   if (!message) return;
 
-  const fullText = message.message;
+  const fullText = getRenderableMessageText(message);
   const currentProgress = typingProgress.value[messageIndex] || 0;
 
   if (currentProgress < fullText.length) {
@@ -2330,36 +2345,100 @@ function animateTyping(messageIndex: number) {
   }
 }
 
-function getDisplayedText(messageIndex: number): string {
-  const message = props.messages[messageIndex];
-  if (!message) return '';
+function hasMarkdownLikeSyntax(text: string): boolean {
+  if (!text) {
+    return false;
+  }
 
+  if (text.includes('\n')) {
+    return true;
+  }
+
+  return (
+    /(^|\s)([*_]{1,2}|~~|==)[^\n]+?\2(?=\s|$|[.,!?;:])/m.test(text)
+    || /`[^`]+`/.test(text)
+    || /```[\s\S]*```/.test(text)
+    || /^\s{0,3}#{1,6}\s/m.test(text)
+    || /^\s{0,3}>\s/m.test(text)
+    || /^\s{0,3}(?:[-+*]|\d+\.)\s/m.test(text)
+    || /!\[[^\]]*\]\([^\)]+\)/.test(text)
+    || /\[[^\]]+\]\([^\)]+\)/.test(text)
+  );
+}
+
+function maybeRestoreFlattenedMarkdown(text: string): string {
+  if (!text || text.includes('\n') || text.length < 80) {
+    return text;
+  }
+
+  const hasHeadingToken = /(^|\s)#{1,6}\s+\S/.test(text);
+  const hasListToken = /(^|\s)(?:[-+*]|\d+\.)\s+\S/.test(text);
+  const hasInlineMarkdownToken = /\*\*[^*]+\*\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\([^\)]+\)/.test(text);
+
+  if (!hasHeadingToken && !(hasListToken && hasInlineMarkdownToken)) {
+    return text;
+  }
+
+  let normalized = text;
+
+  // Recover common flattened heading blocks: "... # Title ... ## Section ..."
+  normalized = normalized.replace(/\s+(?=#{1,6}\s+)/g, '\n');
+
+  const bulletMatchCount = (normalized.match(/\s[-+*]\s+/g) ?? []).length;
+  if (bulletMatchCount >= 2) {
+    normalized = normalized.replace(/\s+(?=[-+*]\s+)/g, '\n');
+  }
+
+  const orderedMatchCount = (normalized.match(/\s\d+\.\s+/g) ?? []).length;
+  if (orderedMatchCount >= 2) {
+    normalized = normalized.replace(/\s+(?=\d+\.\s+)/g, '\n');
+  }
+
+  return normalized;
+}
+
+function getRenderableMessageText(message: ChatMessage): string {
   let text = message.message;
 
-  // Remove successfully loaded image URIs from display text
+  // Remove successfully loaded image URIs from display text.
   const imageUris = extractImageUris(message.message);
   imageUris.forEach(uri => {
     const imageState = getImageState(uri);
     if (imageState?.loaded && !imageState.error) {
-      text = text.replace(uri, '').trim();
+      text = text.replace(uri, '');
     }
   });
 
-  // Remove full YouTube URLs from display text
+  // Remove embedded media URLs from display text.
   const ytUris = extractYouTubeUrls(message.message);
   ytUris.forEach(uri => {
-    text = text.replace(uri, '').trim();
+    text = text.replace(uri, '');
   });
 
   const twitchUris = extractTwitchUrls(message.message);
   twitchUris.forEach(uri => {
-    text = text.replace(uri, '').trim();
+    text = text.replace(uri, '');
   });
 
-  // Remove CSS-like blocks from display text
-  text = text.replace(/\.[\w-]+\s*\{[^}]+\}/g, '').trim();
-  // Convert :emojiName: to emoji characters
-  text = nodeEmoji.emojify(text);
+  text = text.replace(/\.[\w-]+\s*\{[^}]+\}/g, '');
+  text = maybeRestoreFlattenedMarkdown(text);
+  return nodeEmoji.emojify(text);
+}
+
+function shouldRenderMessageAsMarkdown(messageIndex: number): boolean {
+  const message = props.messages[messageIndex];
+  if (!message || message.isSystem) {
+    return false;
+  }
+
+  return hasMarkdownLikeSyntax(getRenderableMessageText(message));
+}
+
+function getDisplayedText(messageIndex: number): string {
+  const message = props.messages[messageIndex];
+  if (!message) return '';
+
+  const text = getRenderableMessageText(message);
   const progress = typingProgress.value[messageIndex] ?? text.length;
   return text.substring(0, progress);
 }
@@ -2402,9 +2481,76 @@ function pushTextWithMentions(parts: DisplayPart[], text: string, targetUsername
   }
 }
 
-function renderMarkdownHtml(text: string): string {
+function renderMarkdownHtml(text: string, asBlock = false): string {
   if (!text) return '';
-  return markdownIt.renderInline(text);
+  return asBlock ? markdownIt.render(text) : markdownIt.renderInline(text);
+}
+
+function highlightMentionText(input: string, targetUsername: string): string {
+  if (!input || !targetUsername) {
+    return input;
+  }
+
+  const mentionRegex = new RegExp(`@${escapeRegExp(targetUsername)}\\b`, 'gi');
+  return input.replace(mentionRegex, (match) => `<span class="mention-highlight">${match}</span>`);
+}
+
+function injectMentionHighlightIntoHtml(html: string, targetUsername: string): string {
+  if (!html || !targetUsername || typeof document === 'undefined') {
+    return html;
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+
+  const walk = (node: Node, isExcluded = false) => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      const tagName = element.tagName.toUpperCase();
+      const excluded = isExcluded || tagName === 'CODE' || tagName === 'PRE';
+      const children = Array.from(element.childNodes);
+      children.forEach((child) => walk(child, excluded));
+      return;
+    }
+
+    if (node.nodeType !== Node.TEXT_NODE || isExcluded) {
+      return;
+    }
+
+    const textNode = node as Text;
+    const originalText = textNode.nodeValue ?? '';
+    const highlighted = highlightMentionText(originalText, targetUsername);
+    if (highlighted === originalText) {
+      return;
+    }
+
+    const fragmentHost = document.createElement('span');
+    fragmentHost.innerHTML = highlighted;
+    const parent = textNode.parentNode;
+    if (!parent) {
+      return;
+    }
+
+    while (fragmentHost.firstChild) {
+      parent.insertBefore(fragmentHost.firstChild, textNode);
+    }
+    parent.removeChild(textNode);
+  };
+
+  Array.from(container.childNodes).forEach((child) => walk(child));
+  return container.innerHTML;
+}
+
+function renderMarkdownMessageHtml(messageIndex: number): string {
+  const text = getDisplayedText(messageIndex);
+  const html = renderMarkdownHtml(text, true);
+  const targetUsername = props.username?.trim();
+
+  if (!targetUsername) {
+    return html;
+  }
+
+  return injectMentionHighlightIntoHtml(html, targetUsername);
 }
 
 function getDisplayedParts(messageIndex: number): DisplayPart[] {
@@ -3161,6 +3307,63 @@ onBeforeUnmount(() => {
 .text {
   word-wrap: break-word;
   white-space: pre-wrap;
+}
+
+.markdown-block {
+  white-space: normal;
+}
+
+.markdown-block :deep(p),
+.markdown-block :deep(ul),
+.markdown-block :deep(ol),
+.markdown-block :deep(h1),
+.markdown-block :deep(h2),
+.markdown-block :deep(h3),
+.markdown-block :deep(h4),
+.markdown-block :deep(h5),
+.markdown-block :deep(h6),
+.markdown-block :deep(pre),
+.markdown-block :deep(blockquote) {
+  margin: 0.35rem 0;
+}
+
+.markdown-block :deep(ul),
+.markdown-block :deep(ol) {
+  padding-left: 1.2rem;
+}
+
+.markdown-block :deep(h1),
+.markdown-block :deep(h2),
+.markdown-block :deep(h3),
+.markdown-block :deep(h4),
+.markdown-block :deep(h5),
+.markdown-block :deep(h6) {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.markdown-block :deep(h1) {
+  font-size: 1.02rem;
+}
+
+.markdown-block :deep(h2) {
+  font-size: 0.96rem;
+}
+
+.markdown-block :deep(h3) {
+  font-size: 0.91rem;
+}
+
+.markdown-block :deep(h4) {
+  font-size: 0.87rem;
+}
+
+.markdown-block :deep(h5) {
+  font-size: 0.83rem;
+}
+
+.markdown-block :deep(h6) {
+  font-size: 0.79rem;
 }
 
 .mention-highlight {

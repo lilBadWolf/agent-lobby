@@ -222,7 +222,7 @@
       <button class="lobby-join-confirm" type="button" @click="submitJoinLobby">CONNECT</button>
       <button class="lobby-join-cancel" type="button" @click="cancelJoinLobby">CANCEL</button>
     </div>
-    <div ref="messagesContainer" id="messages">
+    <div ref="messagesContainer" id="messages" @click="handleMessagesContainerClick">
       <div v-for="(msg, index) in messages" :key="index">
         <div v-if="msg.isSystem" class="system-msg">
           <span class="text">[{{ getDisplayedText(index) }}<span v-if="isTyping(index)" class="cursor">█</span>]</span>
@@ -526,6 +526,21 @@ markdownIt.inline.ruler.before('emphasis', 'underline', (state: any, silent: boo
 
 markdownIt.renderer.rules.underline_open = () => '<u>';
 markdownIt.renderer.rules.underline_close = () => '</u>';
+
+const defaultMarkdownLinkOpenRenderer = markdownIt.renderer.rules.link_open
+  ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
+
+markdownIt.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx];
+  token.attrSet('target', '_blank');
+  token.attrSet('rel', 'noopener noreferrer');
+  token.attrSet('data-external-link', 'true');
+
+  const className = token.attrGet('class');
+  token.attrSet('class', className ? `${className} chat-link` : 'chat-link');
+
+  return defaultMarkdownLinkOpenRenderer(tokens, idx, options, env, self);
+};
 
 type YouTubePlayerState = {
   ready: boolean;
@@ -2483,7 +2498,14 @@ function pushTextWithMentions(parts: DisplayPart[], text: string, targetUsername
 
 function renderMarkdownHtml(text: string, asBlock = false): string {
   if (!text) return '';
-  return asBlock ? markdownIt.render(text) : markdownIt.renderInline(text);
+
+  const normalizedText = normalizeMalformedMarkdownLinks(text);
+  return asBlock ? markdownIt.render(normalizedText) : markdownIt.renderInline(normalizedText);
+}
+
+function normalizeMalformedMarkdownLinks(text: string): string {
+  // Repair occasional malformed image-like link markdown produced by LLMs, e.g. ![(]Label](https://example.com).
+  return text.replace(/!\[\(\]\s*([^\]\n]+?)\s*\]\((https?:\/\/[^\s)]+)\)/gi, '[$1]($2)');
 }
 
 function highlightMentionText(input: string, targetUsername: string): string {
@@ -2605,6 +2627,31 @@ function getDisplayedParts(messageIndex: number): DisplayPart[] {
 
 function openExternalLink(url: string) {
   void openExternalLinkAsync(url);
+}
+
+function handleMessagesContainerClick(event: MouseEvent) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const anchor = target.closest('a');
+  if (!(anchor instanceof HTMLAnchorElement)) {
+    return;
+  }
+
+  const href = anchor.getAttribute('href')?.trim();
+  if (!href || !/^https?:\/\//i.test(href)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  openExternalLink(href);
 }
 
 function getExternalLinkLabel(part: { text: string; url: string }): string {

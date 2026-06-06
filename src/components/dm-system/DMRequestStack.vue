@@ -19,17 +19,32 @@
         </div>
       </div>
     </div>
+
+    <div v-for="missed in missedCalls" :key="`missed-${missed.id}`" class="request-card missed-card">
+      <div class="request-inline-row">
+        <div class="missed-body">
+          <span class="missed-icon">📵</span>
+          <span class="missed-text">Missed tunnel from <strong>{{ missed.from }}</strong></span>
+          <span class="missed-time">{{ timeAgo(missed.timestamp, now) }}</span>
+        </div>
+        <div class="request-actions">
+          <button class="dismiss-btn" @click="emit('dismissMissedCall', missed.id)" title="Dismiss">✕</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import type { DMRequest } from '../../types/directMessage';
+import type { MissedDMCall } from '../../types/directMessage';
 import type { GroupDMInvite } from '../../types/groupDirectMessage';
 
 const props = defineProps<{
   pendingRequests: DMRequest[];
   groupPendingInvites?: GroupDMInvite[];
+  missedCalls?: MissedDMCall[];
 }>();
 
 const emit = defineEmits<{
@@ -37,10 +52,34 @@ const emit = defineEmits<{
   rejectDm: [user: string];
   acceptGroupInvite: [inviteId: string];
   rejectGroupInvite: [inviteId: string];
+  dismissMissedCall: [id: number];
 }>();
 
 const groupPendingInvites = computed(() => props.groupPendingInvites ?? []);
-const hasEntries = computed(() => props.pendingRequests.length > 0 || groupPendingInvites.value.length > 0);
+const missedCalls = computed(() => props.missedCalls ?? []);
+const hasEntries = computed(
+  () => props.pendingRequests.length > 0 || groupPendingInvites.value.length > 0 || missedCalls.value.length > 0
+);
+
+const now = ref(Date.now());
+let ticker: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  ticker = setInterval(() => { now.value = Date.now(); }, 30_000);
+});
+onUnmounted(() => {
+  if (ticker !== null) clearInterval(ticker);
+});
+
+function timeAgo(timestamp: number, currentTime: number): string {
+  const diffMs = currentTime - timestamp;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  return `${diffHr}h ago`;
+}
 </script>
 
 <style scoped>
@@ -133,6 +172,46 @@ const hasEntries = computed(() => props.pendingRequests.length > 0 || groupPendi
 }
 
 .reject-btn:hover {
+  background: var(--color-dm-request-reject-hover);
+}
+
+.missed-card {
+  opacity: 0.88;
+}
+
+.missed-body {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.missed-icon {
+  flex-shrink: 0;
+}
+
+.missed-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.missed-time {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.dismiss-btn {
+  color: var(--color-text-secondary, var(--color-text-primary));
+  font-size: 11px;
+}
+
+.dismiss-btn:hover {
+  color: var(--color-text-primary);
   background: var(--color-dm-request-reject-hover);
 }
 

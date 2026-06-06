@@ -5,6 +5,12 @@ export interface DMRequest {
   timestamp: number;
 }
 
+export interface MissedDMCall {
+  id: number;
+  from: string;
+  timestamp: number;
+}
+
 export interface AudioCallRequest {
   from: string;
   timestamp: number;

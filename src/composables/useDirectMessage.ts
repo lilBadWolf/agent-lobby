@@ -2,6 +2,7 @@ import { ref, computed } from 'vue';
 import type { AudioConfig } from '../types/chat';
 import type {
   DMRequest,
+  MissedDMCall,
   AudioCallRequest,
   VideoCallRequest,
   FileTransferState,
@@ -39,6 +40,8 @@ export function useDirectMessage(
   const outgoingRequests = ref<string[]>([]);
   const deniedRequests = ref<string[]>([]);
   const notices = ref<DMNotice[]>([]);
+  const missedDmCalls = ref<MissedDMCall[]>([]);
+  let missedCallIdCounter = 0;
   const rtcConnections = new Map<string, RTCConnection>();
   const signalQueue = new Map<string, any[]>();
   const pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
@@ -354,7 +357,10 @@ export function useDirectMessage(
       const hadPending = pendingRequests.value.some((r) => r.from === fromUser);
       pendingRequests.value = pendingRequests.value.filter((r) => r.from !== fromUser);
       if (hadPending) {
-        pushNotice(`${fromUser} cancelled the DM request.`);
+        missedDmCalls.value = [
+          ...missedDmCalls.value,
+          { id: ++missedCallIdCounter, from: fromUser, timestamp: Date.now() },
+        ];
       }
     } else if (data.type === 'close') {
       // Remote peer explicitly closed this DM thread.
@@ -2489,8 +2495,13 @@ export function useDirectMessage(
     initializeSubscriptions();
   });
 
+  function dismissMissedDmCall(id: number) {
+    missedDmCalls.value = missedDmCalls.value.filter((m) => m.id !== id);
+  }
+
   return {
     pendingRequests: computed(() => pendingRequests.value),
+    missedDmCalls: computed(() => missedDmCalls.value),
     pendingAudioCalls: computed(() => pendingAudioCalls.value),
     pendingVideoCalls: computed(() => pendingVideoCalls.value),
     outgoingAudioCalls: computed(() => outgoingAudioCalls.value),
@@ -2540,6 +2551,7 @@ export function useDirectMessage(
     sendChessAccept,
     sendChessReject,
     sendChessCancel,
+    dismissMissedDmCall,
     cleanup
   };
 }

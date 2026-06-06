@@ -70,10 +70,12 @@ declare global {
       v-if="!showAuth"
       :pending-requests="dmPendingRequests"
       :group-pending-invites="groupDmInvites"
+      :missed-calls="dmMissedCalls"
       @accept-dm="handleAcceptDM"
       @reject-dm="handleRejectDM"
       @accept-group-invite="handleAcceptGroupInvite"
       @reject-group-invite="handleRejectGroupInvite"
+      @dismiss-missed-call="handleDismissMissedCall"
     />
 
     <AuthScreen
@@ -672,6 +674,7 @@ const dmOutgoingAudioCalls = computed(() => dm.value?.outgoingAudioCalls.value |
 const dmOutgoingVideoCalls = computed(() => dm.value?.outgoingVideoCalls.value || []);
 const dmDeniedRequests = computed(() => dm.value?.deniedRequests.value || []);
 const dmNotices = computed(() => dm.value?.notices.value || []);
+const dmMissedCalls = computed(() => dm.value?.missedDmCalls.value || []);
 const connectedDMUsers = computed(() =>
   Array.from(dmActiveChats.value.keys()).sort()
 );
@@ -2096,6 +2099,12 @@ function handleAcceptDM(user: string) {
 function handleRejectDM(user: string) {
   if (dm.value) {
     dm.value.rejectDM(user);
+  }
+}
+
+function handleDismissMissedCall(id: number) {
+  if (dm.value) {
+    dm.value.dismissMissedDmCall(id);
   }
 }
 

@@ -532,9 +532,16 @@ const defaultMarkdownLinkOpenRenderer = markdownIt.renderer.rules.link_open
 
 markdownIt.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
-  token.attrSet('target', '_blank');
-  token.attrSet('rel', 'noopener noreferrer');
-  token.attrSet('data-external-link', 'true');
+  const href = token.attrGet('href')?.trim() ?? '';
+  const isVideoPlatformLink = isYouTubeOrTwitchUrl(href);
+
+  if (isVideoPlatformLink) {
+    token.attrSet('data-external-link', 'false');
+  } else {
+    token.attrSet('target', '_blank');
+    token.attrSet('rel', 'noopener noreferrer');
+    token.attrSet('data-external-link', 'true');
+  }
 
   const className = token.attrGet('class');
   token.attrSet('class', className ? `${className} chat-link` : 'chat-link');
@@ -2629,6 +2636,22 @@ function openExternalLink(url: string) {
   void openExternalLinkAsync(url);
 }
 
+function isYouTubeOrTwitchUrl(rawUrl: string): boolean {
+  if (!rawUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    return /(^|\.)youtube\.com$/.test(hostname)
+      || hostname === 'youtu.be'
+      || /(^|\.)twitch\.tv$/.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
 function handleMessagesContainerClick(event: MouseEvent) {
   if (event.defaultPrevented) {
     return;
@@ -2646,6 +2669,10 @@ function handleMessagesContainerClick(event: MouseEvent) {
 
   const href = anchor.getAttribute('href')?.trim();
   if (!href || !/^https?:\/\//i.test(href)) {
+    return;
+  }
+
+  if (isYouTubeOrTwitchUrl(href)) {
     return;
   }
 

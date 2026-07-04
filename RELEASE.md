@@ -1,9 +1,10 @@
 # Release Notes
 
-🚀 **Release highlights for agent-lobby 0.6.8**
+🚀 **Release highlights for agent-lobby 0.6.9**
 
-- ✍️ **Cleaner markdown messages** so chats render more predictably and read more smoothly.
-- 💬 **Better formatting behavior** when sharing structured notes, updates, and styled text.
-- 🎬 **Creator-friendly polish** for anyone posting announcements, patch notes, or roleplay-style posts in lobby chat.
+- 🌐 **Web-hosted lobby sync is fixed** so web users can now properly see who is online and follow live lobby chat.
+- 🔗 **Lobby links now open in new windows by default**, while YouTube/Twitch links stay in-app for media-first flow.
+- 📡 **Missed-call behavior is smoother** with better signaling polish when calls are unanswered or canceled.
+- 📝 **Markdown links are more reliable** so shared posts, updates, and creator drops render with fewer formatting hiccups.
 
-> A focused quality update for clearer conversations and better vibes 💚🛰️🐺
+> A stability-and-vibes update focused on clearer conversations across desktop and web 💚🛰️🐺

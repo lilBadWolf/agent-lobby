@@ -21,6 +21,7 @@ const MAX_GROUP_MEMBERS = 5;
 const MAX_GAME_EVENTS = 300;
 const AUDIO_RECONNECT_DELAYS_MS = [1200, 2500, 5000, 8000];
 const MAX_AUDIO_RECONNECT_ATTEMPTS = AUDIO_RECONNECT_DELAYS_MS.length;
+const MQTT_PAYLOAD_DECODER = typeof TextDecoder === 'function' ? new TextDecoder() : null;
 const RTC_AUDIO_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: ['stun:stun.l.google.com:19302'] },
@@ -28,6 +29,22 @@ const RTC_AUDIO_CONFIG: RTCConfiguration = {
     { urls: ['stun:stun2.l.google.com:19302'] },
   ],
 };
+
+function decodeMqttPayload(payload: unknown): string {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload instanceof Uint8Array && MQTT_PAYLOAD_DECODER) {
+    return MQTT_PAYLOAD_DECODER.decode(payload);
+  }
+
+  if (payload && typeof (payload as { toString?: unknown }).toString === 'function') {
+    return (payload as { toString: () => string }).toString();
+  }
+
+  return '';
+}
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1279,7 +1296,7 @@ export function useGroupDirectMessage(
       }
 
       try {
-        const parsed = JSON.parse(payload.toString()) as GroupSignalMessage;
+        const parsed = JSON.parse(decodeMqttPayload(payload)) as GroupSignalMessage;
         handleIncoming(parsed);
       } catch (error) {
         console.error('[GroupDM] Failed to parse message:', error);

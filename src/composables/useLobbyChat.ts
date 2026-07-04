@@ -88,6 +88,23 @@ const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
 let lobbyCryptoKeyPromise: Promise<CryptoKey | null> | null = null;
+const MQTT_PAYLOAD_DECODER = typeof TextDecoder === 'function' ? new TextDecoder() : null;
+
+function decodeMqttPayload(payload: unknown): string {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload instanceof Uint8Array && MQTT_PAYLOAD_DECODER) {
+    return MQTT_PAYLOAD_DECODER.decode(payload);
+  }
+
+  if (payload && typeof (payload as { toString?: unknown }).toString === 'function') {
+    return (payload as { toString: () => string }).toString();
+  }
+
+  return '';
+}
 
 function getWebCrypto(): Crypto | null {
   if (typeof globalThis === 'undefined') {
@@ -1029,7 +1046,7 @@ export function useLobbyChat() {
           return;
         }
 
-        if (payload.toString() === '') {
+        if (decodeMqttPayload(payload) === '') {
           return;
         }
 
@@ -1230,7 +1247,7 @@ export function useLobbyChat() {
     });
 
     previewClient.on('message', async (topic, payload) => {
-      const raw = payload.toString();
+      const raw = decodeMqttPayload(payload);
       const decryptedRaw = await decryptLobbyPayload(raw);
       try {
         const parsedTopic = parsePresenceTopic(topic);
@@ -1546,7 +1563,7 @@ export function useLobbyChat() {
     });
 
     client.on('message', async (topic, payload) => {
-      const raw = payload.toString();
+      const raw = decodeMqttPayload(payload);
       const decryptedRaw = await decryptLobbyPayload(raw);
 
       if (parsePresenceTopic(topic)) {

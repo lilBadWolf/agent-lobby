@@ -22,6 +22,24 @@ interface RTCConnection {
   videoReceivers: RTCRtpReceiver[];
 }
 
+const MQTT_PAYLOAD_DECODER = typeof TextDecoder === 'function' ? new TextDecoder() : null;
+
+function decodeMqttPayload(payload: unknown): string {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload instanceof Uint8Array && MQTT_PAYLOAD_DECODER) {
+    return MQTT_PAYLOAD_DECODER.decode(payload);
+  }
+
+  if (payload && typeof (payload as { toString?: unknown }).toString === 'function') {
+    return (payload as { toString: () => string }).toString();
+  }
+
+  return '';
+}
+
 export function useDirectMessage(
   username: { value: string },
   _roomId: string,
@@ -319,7 +337,7 @@ export function useDirectMessage(
 
   // Handle MQTT signaling messages
   function handleMQTTMessage(topic: string, payload: Buffer) {
-    const raw = payload.toString();
+    const raw = decodeMqttPayload(payload);
 
     // Check if it's a DM signal message
     const dmSignalMatch = topic.match(

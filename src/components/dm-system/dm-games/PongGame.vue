@@ -55,7 +55,8 @@
     </div>
 
     <div class="pong-helper-text">
-      Use ← → keys to move. The other user's paddle is shown at the top.
+      <template v-if="spectator">Spectating: {{ user }} (bottom) vs {{ peerName }} (top).</template>
+      <template v-else>Use ← → keys to move. The other user's paddle is shown at the top.</template>
     </div>
   </div>
 </template>
@@ -75,6 +76,11 @@ const props = defineProps<{
   isInitiator?: boolean;
   waitingForAcceptance?: boolean;
   autoTrackBall?: boolean;
+  /**
+   * Read-only view of a match between `user` (bottom paddle) and `peerName`
+   * (top paddle), for group DM spectators. Never simulates or sends.
+   */
+  spectator?: boolean;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -107,7 +113,11 @@ let channelMessageListener: ((event: MessageEvent) => void) | null = null;
 let channelOpenListener: ((event: Event) => void) | null = null;
 let channelCloseListener: ((event: Event) => void) | null = null;
 
-const canSend = computed(() => dataChannelReady.value);
+const canSend = computed(() => dataChannelReady.value && !props.spectator);
+// Spectator mode: ball coordinates arrive in the authority player's frame (its
+// own paddle at the bottom). True when that authority is `user`, the bottom
+// paddle here, so no flip is needed.
+const spectatorBallFrameIsUser = ref(true);
 const showWaitingOverlay = computed(() => props.waitingForAcceptance && !isRunning.value);
 const roundPhase = ref<'idle' | 'countdown' | 'playing' | 'waiting' | 'paused'>('idle');
 const countdownValue = ref(0);
@@ -233,7 +243,8 @@ function clampBallY(y: number) {
 }
 
 function getRenderedBallY() {
-  if (authority.value === 'local') {
+  const ballInLocalFrame = props.spectator ? spectatorBallFrameIsUser.value : authority.value === 'local';
+  if (ballInLocalFrame) {
     return clampBallY(ballY.value);
   }
 
@@ -448,6 +459,11 @@ function prepareNextRound(message: string, winner: 'local' | 'remote') {
 }
 
 function startGame() {
+  if (props.spectator) {
+    statusMessage.value = `Spectating ${props.user} vs ${props.peerName}`;
+    return;
+  }
+
   if (!canSend.value) {
     pendingStartWhenReady.value = true;
     statusMessage.value = 'Waiting for direct line to start PONG...';
@@ -496,6 +512,16 @@ function stopGame(message: string) {
 }
 
 function pauseForFocusLoss() {
+  // Keyup events are missed while unfocused; drop held keys so the paddle
+  // doesn't keep sliding after focus returns.
+  heldArrowKeys.length = 0;
+  paddleDirection.value = null;
+
+  // Spectators just watch; pausing would only freeze their view.
+  if (props.spectator) {
+    return;
+  }
+
   if (isRunning.value) {
     pausedDueToFocusLoss.value = true;
     isRunning.value = false;
@@ -524,25 +550,55 @@ function closeGame() {
   emit('close');
 }
 
+// Arrow keys currently held, most recent last, so releasing one key falls back
+// to the other still-held key instead of stopping the paddle.
+const heldArrowKeys: Array<'left' | 'right'> = [];
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+function syncPaddleDirectionFromKeys() {
+  paddleDirection.value = heldArrowKeys.length > 0 ? heldArrowKeys[heldArrowKeys.length - 1] : null;
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
     return;
   }
 
-  const newDirection = event.key === 'ArrowLeft' ? 'left' : 'right';
-  if (paddleDirection.value !== newDirection) {
-    paddleDirection.value = newDirection;
+  // Leave arrow keys alone while the user is typing (e.g. the chat box), and
+  // for spectators, who have no paddle.
+  if (props.spectator || isEditableTarget(event.target)) {
+    return;
   }
+
+  const direction = event.key === 'ArrowLeft' ? 'left' : 'right';
+  const existing = heldArrowKeys.indexOf(direction);
+  if (existing !== -1) {
+    heldArrowKeys.splice(existing, 1);
+  }
+  heldArrowKeys.push(direction);
+  syncPaddleDirectionFromKeys();
 
   event.preventDefault();
 }
 
 function handleKeyup(event: KeyboardEvent) {
-  if (event.key === 'ArrowLeft' && paddleDirection.value === 'left') {
-    paddleDirection.value = null;
-  } else if (event.key === 'ArrowRight' && paddleDirection.value === 'right') {
-    paddleDirection.value = null;
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+    return;
   }
+
+  const direction = event.key === 'ArrowLeft' ? 'left' : 'right';
+  const existing = heldArrowKeys.indexOf(direction);
+  if (existing !== -1) {
+    heldArrowKeys.splice(existing, 1);
+  }
+  syncPaddleDirectionFromKeys();
 }
 
 function updateRemotePaddle(x: number) {
@@ -590,6 +646,9 @@ function isDuplicatePongMessage(data: any): boolean {
     velX: data?.velX,
     velY: data?.velY,
     user: data?.user,
+    // Spectators get both players' paddle updates; identical x values from
+    // the two players must not be collapsed into one.
+    from: data?.spectatorFrom,
   });
   const now = performance.now();
 
@@ -611,15 +670,21 @@ function handlePongDataMessage(data: any) {
     return;
   }
 
+  if (props.spectator) {
+    handleSpectatorPongMessage(data);
+    return;
+  }
+
   if (data.type === 'pong-paddle' && typeof data.x === 'number') {
     updateRemotePaddle(data.x);
     return;
   }
 
   if (data.type === 'pong-score') {
-    if (data.scorer === props.user) {
+    // Same case-insensitive matching the bridge uses for sender names.
+    if (usersMatch(data.scorer, props.user)) {
       localScore.value += 1;
-    } else if (data.scorer === props.peerName) {
+    } else if (usersMatch(data.scorer, props.peerName)) {
       remoteScore.value += 1;
     }
 
@@ -684,7 +749,99 @@ function handlePongDataMessage(data: any) {
   }
 }
 
+function spectatorSender(data: any): 'user' | 'peer' | null {
+  if (usersMatch(data?.spectatorFrom, props.user)) {
+    return 'user';
+  }
+  if (usersMatch(data?.spectatorFrom, props.peerName)) {
+    return 'peer';
+  }
+  return null;
+}
+
+function setSpectatorPaddle(sender: 'user' | 'peer', x: number) {
+  if (sender === 'user') {
+    localPaddleX.value = clampPaddleX(x);
+  } else {
+    remotePaddleX.value = clampPaddleX(x);
+  }
+}
+
+/**
+ * Spectator view. `user` is the bottom paddle and `peerName` the top. Both
+ * players' paddle messages are applied to their own paddle, and the ball comes
+ * from the authority's `pong-state`. Its coordinates are in the authority's
+ * frame (its paddle at the bottom), so the view flips them when the authority
+ * is the top player. The authority (`authority.value`) stays 'remote', so
+ * frame() never simulates.
+ */
+function handleSpectatorPongMessage(data: any) {
+  const sender = spectatorSender(data);
+  if (!sender) {
+    return;
+  }
+
+  if (data.type === 'pong-paddle' && typeof data.x === 'number') {
+    setSpectatorPaddle(sender, data.x);
+    return;
+  }
+
+  if (data.type === 'pong-score') {
+    if (usersMatch(data.scorer, props.user)) {
+      localScore.value += 1;
+    } else if (usersMatch(data.scorer, props.peerName)) {
+      remoteScore.value += 1;
+    }
+    return;
+  }
+
+  if (data.type === 'pong-start') {
+    authority.value = 'remote';
+    spectatorBallFrameIsUser.value = sender === 'user';
+    remoteBallSequence.value = typeof data.seq === 'number' && Number.isFinite(data.seq) ? data.seq : 0;
+    updateBallFromMessage(data);
+    if (typeof data.paddleX === 'number') {
+      setSpectatorPaddle(sender, data.paddleX);
+    }
+    if (roundPhase.value !== 'countdown') {
+      startCountdown(true);
+    }
+    statusMessage.value = `Spectating ${props.user} vs ${props.peerName}`;
+    return;
+  }
+
+  if (data.type === 'pong-state') {
+    if (typeof data.seq === 'number' && Number.isFinite(data.seq)) {
+      if (data.seq <= remoteBallSequence.value) {
+        return;
+      }
+      remoteBallSequence.value = data.seq;
+    }
+
+    authority.value = 'remote';
+    spectatorBallFrameIsUser.value = sender === 'user';
+    if (!isRunning.value) {
+      clearCountdownTimer();
+      roundPhase.value = 'playing';
+      isRunning.value = true;
+      statusMessage.value = '';
+      scheduleFrame();
+    }
+
+    updateBallFromMessage(data);
+    if (typeof data.paddleX === 'number') {
+      setSpectatorPaddle(sender, data.paddleX);
+    }
+  }
+}
+
 function handleBridgePongMessage(event: Event) {
+  // With a directly attached channel its own listener already delivers every
+  // message; the window bridge event would be a duplicate.
+  if (currentChannel) {
+    return;
+  }
+
   const bridgeEvent = event as CustomEvent<PongBridgeEventDetail>;
   const fromUser = bridgeEvent.detail?.from;
   const data = bridgeEvent.detail?.data;
@@ -736,6 +893,9 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
   channelCloseListener = () => {
     dataChannelReady.value = false;
     clearReadyPulseTimer();
+    // Without this the authority keeps simulating against a frozen paddle and
+    // racks up points.
+    stopGame(`Link to ${props.peerName} lost`);
   };
 
   boundChannel.addEventListener('message', channelMessageListener as EventListener);

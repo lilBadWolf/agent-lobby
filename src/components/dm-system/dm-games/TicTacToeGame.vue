@@ -13,13 +13,14 @@
       <div class="ttt-status-card">
         <div class="ttt-status-line">{{ statusLine }}</div>
         <div class="ttt-meta-line">
-          <span>You: {{ localMark ?? '-' }}</span>
-          <span>{{ peerName }}: {{ remoteMark ?? '-' }}</span>
+          <span :class="{ 'is-turn': roundLive && turnMark === localMark }">{{ spectator ? user : 'You' }}: {{ localMark ?? '-' }}</span>
+          <span class="ttt-score" aria-label="Session score">{{ score.wins }} - {{ score.draws }} - {{ score.losses }}</span>
+          <span :class="{ 'is-turn': roundLive && turnMark === remoteMark }">{{ peerName }}: {{ remoteMark ?? '-' }}</span>
         </div>
       </div>
 
       <div class="ttt-board-wrap">
-        <div class="ttt-board" :class="{ 'locked': !canPlay }">
+        <div class="ttt-board" :class="{ 'locked': !canPlay, 'my-turn': canPlay }">
           <button
             v-for="index in 9"
             :key="`ttt-${index - 1}`"
@@ -34,14 +35,14 @@
         </div>
       </div>
 
-      <div class="ttt-controls">
+      <div v-if="!spectator" class="ttt-controls">
         <button
           class="ttt-action-btn rematch"
           type="button"
-          :disabled="!canSend || awaitingRematchAck"
+          :disabled="!canRequestRematch"
           @click="requestRematch"
         >
-          {{ awaitingRematchAck ? 'WAITING FOR REMATCH...' : 'REMATCH' }}
+          {{ rematchLabel }}
         </button>
       </div>
     </div>
@@ -77,6 +78,8 @@ const props = defineProps<{
   startSignal: number;
   isInitiator?: boolean;
   waitingForAcceptance?: boolean;
+  /** Read-only view of a match between `user` and `peerName` (group DM spectators). */
+  spectator?: boolean;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -90,15 +93,36 @@ const winningLine = ref<number[]>([]);
 const awaitingRematchAck = ref(false);
 const roundLive = ref(false);
 const statusMessage = ref('Stand by for game sync...');
+// Reactive mirror of the channel's readyState (the channel object itself is not reactive).
+const channelOpen = ref(false);
+const peerLeft = ref(false);
+const rematchRequestedByPeer = ref(false);
+// Who moved first in the current/last round; rematches alternate the starter so
+// both peers derive the same assignment even if their requests cross.
+const lastStarter = ref<string | null>(null);
+const score = ref({ wins: 0, losses: 0, draws: 0 });
 
 const showWaitingOverlay = computed(() => Boolean(props.waitingForAcceptance));
-const canSend = computed(() => Boolean(currentChannel && currentChannel.readyState === 'open'));
+const canSend = computed(() => channelOpen.value && !props.spectator);
 const canPlay = computed(() => {
-  if (!roundLive.value || showWaitingOverlay.value || winner.value) {
+  if (props.spectator || !roundLive.value || showWaitingOverlay.value || winner.value || peerLeft.value) {
     return false;
   }
 
   return turnMark.value === localMark.value;
+});
+const canRequestRematch = computed(() => (
+  canSend.value
+  && !peerLeft.value
+  && !roundLive.value
+  && !awaitingRematchAck.value
+  && lastStarter.value !== null
+));
+const rematchLabel = computed(() => {
+  if (awaitingRematchAck.value) {
+    return 'WAITING FOR REMATCH...';
+  }
+  return rematchRequestedByPeer.value ? 'ACCEPT REMATCH' : 'REMATCH';
 });
 
 const statusLine = computed(() => {
@@ -106,7 +130,7 @@ const statusLine = computed(() => {
     return 'Waiting for opponent to accept TIC TAC TOE';
   }
 
-  if (!roundLive.value) {
+  if (peerLeft.value) {
     return statusMessage.value;
   }
 
@@ -115,11 +139,22 @@ const statusLine = computed(() => {
   }
 
   if (winner.value) {
+    if (props.spectator) {
+      return `${winner.value === localMark.value ? props.user : props.peerName} wins this round.`;
+    }
     return winner.value === localMark.value ? 'You win this round.' : `${props.peerName} wins this round.`;
+  }
+
+  if (!roundLive.value) {
+    return statusMessage.value;
   }
 
   if (!localMark.value || !turnMark.value) {
     return 'Syncing game state...';
+  }
+
+  if (props.spectator) {
+    return `${turnMark.value === localMark.value ? props.user : props.peerName} to move (${turnMark.value})`;
   }
 
   const activeUser = turnMark.value === localMark.value ? 'Your turn' : `${props.peerName} turn`;
@@ -129,12 +164,14 @@ const statusLine = computed(() => {
 let currentChannel: RTCDataChannel | null = null;
 let messageListener: ((event: MessageEvent) => void) | null = null;
 let openListener: ((event: Event) => void) | null = null;
+let closeListener: ((event: Event) => void) | null = null;
 
 function clearBoard() {
   board.value = Array(9).fill(null);
   winner.value = null;
   winningLine.value = [];
   awaitingRematchAck.value = false;
+  rematchRequestedByPeer.value = false;
 }
 
 function randomStarterUser() {
@@ -143,8 +180,16 @@ function randomStarterUser() {
   return values[0] % 2 === 0 ? props.user : props.peerName;
 }
 
+function rematchStarterUser() {
+  if (!lastStarter.value) {
+    return randomStarterUser();
+  }
+  return lastStarter.value === props.user ? props.peerName : props.user;
+}
+
 function startNewRound(starterUser: string, broadcast = false) {
   clearBoard();
+  lastStarter.value = starterUser;
 
   const localStarts = starterUser === props.user;
   localMark.value = localStarts ? 'X' : 'O';
@@ -209,6 +254,13 @@ function applyMove(index: number, fromRemote = false) {
     return;
   }
 
+  if (outcome.winner === 'draw') {
+    score.value.draws += 1;
+  } else if (outcome.winner === localMark.value) {
+    score.value.wins += 1;
+  } else {
+    score.value.losses += 1;
+  }
   roundLive.value = false;
 }
 
@@ -248,11 +300,17 @@ function playCell(index: number) {
 }
 
 function requestRematch() {
-  if (!canSend.value) {
+  if (!canRequestRematch.value) {
+    return;
+  }
+
+  if (rematchRequestedByPeer.value) {
+    acceptRemoteRematch();
     return;
   }
 
   awaitingRematchAck.value = true;
+  statusMessage.value = `Rematch requested. Waiting for ${props.peerName}...`;
   sendGameMessage({ type: 'ttt-rematch-request' });
 }
 
@@ -263,13 +321,30 @@ function acceptRemoteRematch() {
 
   awaitingRematchAck.value = false;
   sendGameMessage({ type: 'ttt-rematch-accept' });
-  const starter = randomStarterUser();
-  startNewRound(starter, true);
+  // Deterministic (alternating) starter: if both players requested at the same
+  // time, both sides compute the same assignment instead of racing.
+  startNewRound(rematchStarterUser(), true);
+}
+
+function markPeerLeft(message: string) {
+  if (peerLeft.value) {
+    return;
+  }
+  peerLeft.value = true;
+  roundLive.value = false;
+  awaitingRematchAck.value = false;
+  rematchRequestedByPeer.value = false;
+  statusMessage.value = message;
 }
 
 function handleGameDataMessage(data: any) {
   const type = data?.type;
   if (typeof type !== 'string' || (!type.startsWith('ttt-') && !type.startsWith('tictactoe-'))) {
+    return;
+  }
+
+  if (props.spectator) {
+    handleSpectatorMessage(type, data);
     return;
   }
 
@@ -284,8 +359,20 @@ function handleGameDataMessage(data: any) {
   }
 
   if (type === 'ttt-rematch-request') {
-    statusMessage.value = `${props.peerName} requested a rematch.`;
-    acceptRemoteRematch();
+    if (roundLive.value) {
+      // Never wipe a live round on the peer's say-so.
+      sendGameMessage({ type: 'ttt-rematch-decline' });
+      return;
+    }
+
+    if (awaitingRematchAck.value) {
+      // Requests crossed: both want a rematch, so start it.
+      acceptRemoteRematch();
+      return;
+    }
+
+    rematchRequestedByPeer.value = true;
+    statusMessage.value = `${props.peerName} wants a rematch.`;
     return;
   }
 
@@ -294,13 +381,58 @@ function handleGameDataMessage(data: any) {
     return;
   }
 
+  if (type === 'ttt-rematch-decline') {
+    awaitingRematchAck.value = false;
+    return;
+  }
+
   if (type === 'ttt-cancel' || type === 'tictactoe-cancel') {
-    statusMessage.value = `${props.peerName} canceled TIC TAC TOE.`;
-    roundLive.value = false;
+    markPeerLeft(`${props.peerName} left TIC TAC TOE.`);
   }
 }
 
+/**
+ * Spectator view: `user` and `peerName` are the two players. Every message is
+ * tagged with its real sender (`spectatorFrom`), so a move is applied as the
+ * sender's move. Rematch handshakes are ignored: the accepting player always
+ * broadcasts an explicit `ttt-start`, which is all a spectator needs.
+ */
+function handleSpectatorMessage(type: string, data: any) {
+  const sender = spectatorSender(data);
+
+  if (type === 'ttt-start' && typeof data.starter === 'string') {
+    startNewRound(data.starter, false);
+    return;
+  }
+
+  if (type === 'ttt-move' && typeof data.index === 'number' && sender) {
+    applyMove(data.index, sender === 'peer');
+    return;
+  }
+
+  if ((type === 'ttt-cancel' || type === 'tictactoe-cancel') && sender) {
+    markPeerLeft(`${sender === 'user' ? props.user : props.peerName} left TIC TAC TOE.`);
+  }
+}
+
+function spectatorSender(data: any): 'user' | 'peer' | null {
+  const from = typeof data?.spectatorFrom === 'string' ? data.spectatorFrom.trim().toLowerCase() : '';
+  if (from && from === props.user.trim().toLowerCase()) {
+    return 'user';
+  }
+  if (from && from === props.peerName.trim().toLowerCase()) {
+    return 'peer';
+  }
+  return null;
+}
+
 function handleBridgeMessage(event: Event) {
+  // When we hold the data channel directly, its listener already delivers every
+  // message; the window bridge event would be a duplicate.
+  if (currentChannel) {
+    return;
+  }
+
   const bridgeEvent = event as CustomEvent<TicTacToeBridgeEventDetail>;
   if (!bridgeEvent.detail?.from || bridgeEvent.detail.from !== props.peerName) {
     return;
@@ -318,11 +450,21 @@ function attachChannel(channel: RTCDataChannel | null) {
     currentChannel.removeEventListener('open', openListener);
   }
 
+  if (currentChannel && closeListener) {
+    currentChannel.removeEventListener('close', closeListener);
+  }
+
   currentChannel = channel;
+  channelOpen.value = Boolean(channel && channel.readyState === 'open');
 
   if (!currentChannel) {
     return;
   }
+
+  closeListener = () => {
+    channelOpen.value = false;
+    markPeerLeft(props.spectator ? 'Spectator feed ended.' : `Connection to ${props.peerName} was lost.`);
+  };
 
   messageListener = (event: MessageEvent) => {
     try {
@@ -334,6 +476,7 @@ function attachChannel(channel: RTCDataChannel | null) {
   };
 
   openListener = () => {
+    channelOpen.value = true;
     if (props.isInitiator && props.startSignal > 0 && !roundLive.value && !showWaitingOverlay.value) {
       startNewRound(randomStarterUser(), true);
     }
@@ -341,6 +484,7 @@ function attachChannel(channel: RTCDataChannel | null) {
 
   currentChannel.addEventListener('message', messageListener);
   currentChannel.addEventListener('open', openListener);
+  currentChannel.addEventListener('close', closeListener);
 }
 
 function closeGame() {
@@ -390,7 +534,9 @@ watch(
 onMounted(() => {
   window.addEventListener('dm-tictactoe-message', handleBridgeMessage as EventListener);
 
-  if (!props.waitingForAcceptance) {
+  if (props.spectator) {
+    statusMessage.value = `Spectating ${props.user} vs ${props.peerName}. Waiting for the next round...`;
+  } else if (!props.waitingForAcceptance) {
     statusMessage.value = 'Ready to start TIC TAC TOE.';
   }
 
@@ -408,6 +554,10 @@ onBeforeUnmount(() => {
 
   if (currentChannel && openListener) {
     currentChannel.removeEventListener('open', openListener);
+  }
+
+  if (currentChannel && closeListener) {
+    currentChannel.removeEventListener('close', closeListener);
   }
 });
 </script>
@@ -519,6 +669,30 @@ onBeforeUnmount(() => {
 
 .ttt-board.locked {
   opacity: 0.84;
+}
+
+.ttt-board.my-turn {
+  border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
+  animation: ttt-turn-glow 1.8s ease-in-out infinite;
+}
+
+.ttt-meta-line .is-turn {
+  color: var(--color-accent);
+}
+
+.ttt-score {
+  color: var(--color-text-primary);
+  letter-spacing: 0.16em;
+}
+
+@keyframes ttt-turn-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 22px 2px color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
 }
 
 .ttt-cell {

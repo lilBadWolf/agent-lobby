@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="group-dm-window-root">
     <div data-tauri-drag-region class="custom-titlebar">
       <span class="titlebar-text">{{ pageTitle }}</span>
@@ -103,6 +103,7 @@
               :start-signal="gameStartSignal"
               :is-initiator="boardIsInitiator"
               :waiting-for-acceptance="false"
+              :spectator="isSpectator"
               @close="handleGameClose"
             />
             <BattleshipGame
@@ -112,6 +113,7 @@
               :data-channel="gameRelayChannel"
               :start-signal="gameStartSignal"
               :waiting-for-acceptance="false"
+              :spectator="isSpectator"
               @close="handleGameClose"
             />
             <TicTacToeGame
@@ -122,6 +124,7 @@
               :start-signal="gameStartSignal"
               :is-initiator="boardIsInitiator"
               :waiting-for-acceptance="false"
+              :spectator="isSpectator"
               @close="handleGameClose"
             />
             <ChessGame
@@ -132,11 +135,12 @@
               :start-signal="gameStartSignal"
               :is-initiator="boardIsInitiator"
               :waiting-for-acceptance="false"
+              :spectator="isSpectator"
               @close="handleGameClose"
             />
 
             <div v-if="isSpectator" class="spectator-overlay">
-              SPECTATING LIVE: {{ activeGamePlayersLabel }}
+              <span class="spectator-badge">SPECTATING LIVE: {{ activeGamePlayersLabel }}</span>
             </div>
           </div>
         </section>
@@ -288,6 +292,11 @@ const boardIsInitiator = computed(() => {
     return true;
   }
 
+  // A spectator must never start/drive the game (e.g. run Pong ball physics).
+  if (isSpectator.value) {
+    return false;
+  }
+
   return boardUser.value === activeGame.value.players[0];
 });
 const activeGameLabel = computed(() => {
@@ -346,6 +355,23 @@ async function sendAction(action: GroupDMWindowAction) {
   }
 
   webChannel?.postMessage({ type: 'group-dm-action', payload: action });
+}
+
+/**
+ * Spectators receive both players' messages through one channel, so each one is
+ * tagged with its real sender. Game components in spectator mode use the tag
+ * to rebuild state from both sides instead of treating everything as "peer".
+ */
+function tagSpectatorPayload(payload: string, from: string): string {
+  try {
+    const parsed = JSON.parse(payload);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return JSON.stringify({ ...parsed, spectatorFrom: from });
+    }
+  } catch {
+    // Non-JSON payloads are passed through untouched.
+  }
+  return payload;
 }
 
 function setupRelayChannel() {
@@ -410,7 +436,7 @@ watch(
       }
 
       relayCursor.value = event.sequence;
-      channel.dispatchMessage(event.payload);
+      channel.dispatchMessage(isSpectator.value ? tagSpectatorPayload(event.payload, event.from) : event.payload);
     }
   },
   { deep: true }
@@ -902,16 +928,25 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+/* Transparent click shield: the live board stays visible, but spectators
+   can't interact with it. */
 .spectator-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8px;
+  pointer-events: all;
+}
+
+.spectator-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   font-size: 12px;
   letter-spacing: 0.8px;
-  pointer-events: all;
 }
 
 .stop-board {

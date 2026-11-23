@@ -29,6 +29,10 @@ jobs:
         run: npm install
       - name: Build
         run: npm run build
+        env:
+          # Must match the key the desktop release uses (publish.yml), or the
+          # web client can't read lobby chat/presence from desktop clients.
+          VITE_LOBBY_ENCRYPTION_KEY: ${{ secrets.VITE_LOBBY_ENCRYPTION_KEY }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

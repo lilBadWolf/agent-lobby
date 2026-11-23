@@ -212,38 +212,88 @@ async function encryptLobbyPayload(payload: string): Promise<string> {
   });
 }
 
-async function decryptLobbyPayload(raw: string): Promise<string> {
-  if (!raw) {
-    return raw;
+type LobbyDecryptFailure = 'no-key' | 'insecure-context' | 'bad-key';
+
+type LobbyDecryptResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: LobbyDecryptFailure };
+
+interface EncryptedLobbyEnvelope {
+  iv: string;
+  ct: string;
+}
+
+function parseEncryptedEnvelope(raw: string): EncryptedLobbyEnvelope | null {
+  // Envelopes are always JSON objects; skip the parse for anything else.
+  if (!raw.startsWith('{')) {
+    return null;
   }
 
-  const key = await getLobbyCryptoKey();
-  if (!key) {
-    return raw;
+  try {
+    const parsed = JSON.parse(raw) as Partial<EncryptedLobbyEnvelope> | null;
+    if (parsed && typeof parsed.iv === 'string' && typeof parsed.ct === 'string') {
+      return { iv: parsed.iv, ct: parsed.ct };
+    }
+  } catch {
+    // Not JSON — treat as plaintext.
+  }
+  return null;
+}
+
+/**
+ * Decrypts a lobby payload.
+ *
+ * Plaintext payloads (from clients built without a key) pass through unchanged
+ * for compatibility. Encrypted envelopes that this client cannot open are
+ * reported as failures so callers drop them instead of parsing ciphertext as
+ * chat/presence data (which previously produced ghost users and silently
+ * swallowed messages in the web build).
+ */
+async function decryptLobbyPayload(raw: string): Promise<LobbyDecryptResult> {
+  if (!raw) {
+    return { ok: true, text: raw };
+  }
+
+  const envelope = parseEncryptedEnvelope(raw);
+  if (!envelope) {
+    return { ok: true, text: raw };
+  }
+
+  if (!LOBBY_ENCRYPTION_KEY) {
+    return { ok: false, reason: 'no-key' };
   }
 
   const cryptoApi = getWebCrypto();
   if (!cryptoApi?.subtle) {
-    return raw;
+    return { ok: false, reason: 'insecure-context' };
+  }
+
+  const key = await getLobbyCryptoKey();
+  if (!key) {
+    return { ok: false, reason: 'bad-key' };
   }
 
   try {
-    const payload = JSON.parse(raw) as { iv: string; ct: string };
-    if (!payload || !payload.iv || !payload.ct) {
-      return raw;
-    }
-
-    const iv = base64ToBytes(payload.iv);
-    const ciphertext = base64ToBytes(payload.ct);
     const plaintext = await cryptoApi.subtle.decrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv: base64ToBytes(envelope.iv) },
       key,
-      ciphertext
+      base64ToBytes(envelope.ct)
     );
-
-    return TEXT_DECODER.decode(plaintext);
+    return { ok: true, text: TEXT_DECODER.decode(plaintext) };
   } catch {
-    return raw;
+    return { ok: false, reason: 'bad-key' };
+  }
+}
+
+function describeLobbyDecryptFailure(reason: LobbyDecryptFailure): string {
+  switch (reason) {
+    case 'no-key':
+      return 'ENCRYPTED TRAFFIC DETECTED BUT THIS BUILD HAS NO LOBBY KEY. MESSAGES FROM ENCRYPTED CLIENTS CANNOT BE READ.';
+    case 'insecure-context':
+      return 'ENCRYPTED TRAFFIC DETECTED BUT THIS PAGE IS NOT A SECURE CONTEXT (HTTPS/LOCALHOST). WEB CRYPTO IS UNAVAILABLE.';
+    case 'bad-key':
+    default:
+      return 'ENCRYPTED TRAFFIC COULD NOT BE DECRYPTED. THIS CLIENT LIKELY USES A DIFFERENT LOBBY KEY.';
   }
 }
 
@@ -343,6 +393,9 @@ function normalizeSoundpackName(rawSoundpack?: unknown): string {
 }
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 30000;
+// Background tabs/webviews may throttle timers to ~1/min, so allow several
+// missed heartbeats before treating a user's retained presence as stale.
+const PRESENCE_STALE_AFTER_MS = PRESENCE_HEARTBEAT_INTERVAL_MS * 5;
 
 let activeAutoAwayListenerCleanup: (() => void) | null = null;
 let presenceHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -753,6 +806,36 @@ export function useLobbyChat() {
 
   let client: mqtt.MqttClient | null = null;
   let previewClient: mqtt.MqttClient | null = null;
+
+  // Encryption is async, so publishes and inbound handling are chained to keep
+  // MQTT ordering intact. Without this, a fast plaintext "left" ('') could be
+  // overtaken by a slower encrypted presence update, leaving a retained ghost.
+  let outboundPublishQueue: Promise<void> = Promise.resolve();
+  let inboundMessageQueue: Promise<void> = Promise.resolve();
+  let previewInboundQueue: Promise<void> = Promise.resolve();
+  const reportedDecryptFailures = new Set<LobbyDecryptFailure>();
+  // Local receive time of each user's latest presence, per lobby. Used to expire
+  // retained presence left behind by clients that crashed or lost connection in
+  // lobbies their MQTT last-will did not cover.
+  const presenceSeenAt: Record<string, Record<string, number>> = {};
+
+  function enqueueLobbyPublish(
+    mqttClient: mqtt.MqttClient,
+    topic: string,
+    plaintext: string,
+    options: mqtt.IClientPublishOptions = {}
+  ): Promise<void> {
+    outboundPublishQueue = outboundPublishQueue
+      .then(async () => {
+        const payload = plaintext === '' ? '' : await encryptLobbyPayload(plaintext);
+        mqttClient.publish(topic, payload, options);
+      })
+      .catch((error) => {
+        console.error('[LobbyChat] failed to publish lobby payload', error);
+      });
+    return outboundPublishQueue;
+  }
+
   const username = ref<string>('');
   const roomId = ref<string>(networkConfig.value.defaultLobby);
   const activeLobbyId = ref<string>(networkConfig.value.defaultLobby);
@@ -953,17 +1036,12 @@ export function useLobbyChat() {
     ensureLobbyState(targetRoomId);
 
     const payloadText = JSON.stringify(buildPresencePayload(targetRoomId));
-    void encryptLobbyPayload(payloadText)
-      .then((ciphertext) => {
-        mqttClient.publish(
-          `${getPresenceTopicPrefix(targetRoomId)}${username.value}`,
-          ciphertext,
-          { retain: true }
-        );
-      })
-      .catch((error) => {
-        console.error('[LobbyChat] failed to encrypt presence payload', error);
-      });
+    void enqueueLobbyPublish(
+      mqttClient,
+      `${getPresenceTopicPrefix(targetRoomId)}${username.value}`,
+      payloadText,
+      { retain: true }
+    );
   }
 
   function publishPresence() {
@@ -989,7 +1067,30 @@ export function useLobbyChat() {
 
     presenceHeartbeatTimer = setInterval(() => {
       publishPresence();
+      pruneStalePresence();
     }, PRESENCE_HEARTBEAT_INTERVAL_MS);
+  }
+
+  function pruneStalePresence(now = Date.now()) {
+    Object.entries(presenceSeenAt).forEach(([lobbyId, seenByUser]) => {
+      const roomUsers = lobbyUsers[lobbyId];
+      if (!roomUsers) {
+        delete presenceSeenAt[lobbyId];
+        return;
+      }
+
+      Object.entries(seenByUser).forEach(([user, seenAt]) => {
+        if (user === username.value || now - seenAt < PRESENCE_STALE_AFTER_MS) {
+          return;
+        }
+
+        delete seenByUser[user];
+        delete roomUsers[user];
+        if (lobbyId === activeLobbyId.value) {
+          delete users[user];
+        }
+      });
+    });
   }
 
   function stopPresenceHeartbeat() {
@@ -1112,8 +1213,10 @@ export function useLobbyChat() {
 
     ensureLobbyState(targetRoomId);
     const roomUsers = lobbyUsers[targetRoomId];
+    const seenByUser = presenceSeenAt[targetRoomId] ?? (presenceSeenAt[targetRoomId] = {});
 
     if (raw === '') {
+      delete seenByUser[user];
       if (roomUsers[user]) {
         if (withAlerts) {
           playAlert('part');
@@ -1130,6 +1233,11 @@ export function useLobbyChat() {
     }
 
     const parsed = JSON.parse(raw) as UserPresence;
+    if (!parsed || typeof parsed !== 'object') {
+      return;
+    }
+
+    seenByUser[user] = Date.now();
     if (!roomUsers[user] && withAlerts) {
       playAlert('join');
       if (config.value.showJoinPartMessages) {
@@ -1246,24 +1354,39 @@ export function useLobbyChat() {
       });
     });
 
-    previewClient.on('message', async (topic, payload) => {
+    const activePreviewClient = previewClient;
+    activePreviewClient.on('message', (topic, payload) => {
       const raw = decodeMqttPayload(payload);
-      const decryptedRaw = await decryptLobbyPayload(raw);
-      try {
+      previewInboundQueue = previewInboundQueue.then(async () => {
+        if (previewClient !== activePreviewClient) {
+          return;
+        }
+
         const parsedTopic = parsePresenceTopic(topic);
         if (!parsedTopic || parsedTopic.room !== previewRoom) {
           return;
         }
 
-        if (decryptedRaw === '') {
+        if (raw === '') {
           delete previewUsers[parsedTopic.user];
           return;
         }
 
-        previewUsers[parsedTopic.user] = JSON.parse(decryptedRaw) as UserPresence;
-      } catch {
-        // Ignore malformed presence payloads from third-party clients.
-      }
+        const decrypted = await decryptLobbyPayload(raw);
+        if (!decrypted.ok) {
+          // Still record the handle as taken: the user exists even if this
+          // client cannot read their presence details.
+          previewUsers[parsedTopic.user] = previewUsers[parsedTopic.user]
+            ?? ({ username: parsedTopic.user } as UserPresence);
+          return;
+        }
+
+        try {
+          previewUsers[parsedTopic.user] = JSON.parse(decrypted.text) as UserPresence;
+        } catch {
+          // Ignore malformed presence payloads from third-party clients.
+        }
+      });
     });
 
     previewClient.on('error', (err) => {
@@ -1562,38 +1685,74 @@ export function useLobbyChat() {
       stopPresenceHeartbeat();
     });
 
-    client.on('message', async (topic, payload) => {
+    const activeClient = client;
+    activeClient.on('message', (topic, payload) => {
       const raw = decodeMqttPayload(payload);
-      const decryptedRaw = await decryptLobbyPayload(raw);
+      inboundMessageQueue = inboundMessageQueue
+        .then(() => handleInboundLobbyMessage(activeClient, topic, raw))
+        .catch((error) => {
+          console.error('[LobbyChat] failed to handle lobby message', error);
+        });
+    });
+  }
 
-      if (parsePresenceTopic(topic)) {
-        try {
-          handlePresenceMessage(topic, decryptedRaw, { withAlerts: true });
-        } catch {
-          // Ignore malformed presence payloads from third-party clients.
-        }
+  function reportDecryptFailure(lobbyId: string, reason: LobbyDecryptFailure) {
+    if (reportedDecryptFailures.has(reason)) {
+      return;
+    }
+
+    reportedDecryptFailures.add(reason);
+    const notice = describeLobbyDecryptFailure(reason);
+    console.warn(`[LobbyChat] ${notice}`);
+    addMessageToLobby(lobbyId, 'SYSTEM', notice, true);
+  }
+
+  async function handleInboundLobbyMessage(sourceClient: mqtt.MqttClient, topic: string, raw: string) {
+    if (client !== sourceClient) {
+      // Stale message from a client that has since been replaced/disconnected.
+      return;
+    }
+
+    const presenceTopic = parsePresenceTopic(topic);
+    const targetRoomId = presenceTopic?.room ?? parseRoomFromChatTopic(topic);
+    if (!targetRoomId || !joinedLobbies.value.includes(targetRoomId)) {
+      return;
+    }
+
+    const decrypted = await decryptLobbyPayload(raw);
+    if (client !== sourceClient) {
+      return;
+    }
+    if (!decrypted.ok) {
+      reportDecryptFailure(targetRoomId, decrypted.reason);
+      return;
+    }
+    const decryptedRaw = decrypted.text;
+
+    if (presenceTopic) {
+      try {
+        handlePresenceMessage(topic, decryptedRaw, { withAlerts: true });
+      } catch {
+        // Ignore malformed presence payloads from third-party clients.
+      }
+      return;
+    }
+
+    try {
+      const data = JSON.parse(decryptedRaw);
+      if (!data || typeof data.u !== 'string' || typeof data.m !== 'string') {
         return;
       }
 
-      const targetRoomId = parseRoomFromChatTopic(topic);
-      if (targetRoomId && joinedLobbies.value.includes(targetRoomId)) {
-        try {
-          const data = JSON.parse(decryptedRaw);
-          if (!data || typeof data.u !== 'string' || typeof data.m !== 'string') {
-            return;
-          }
-
-          const isInbound = data.u !== username.value;
-          if (isInbound) {
-            playAlert('message');
-          }
-
-          addMessageToLobby(targetRoomId, data.u, data.m, false, isInbound);
-        } catch {
-          // Ignore malformed chat payloads from third-party clients.
-        }
+      const isInbound = data.u !== username.value;
+      if (isInbound) {
+        playAlert('message');
       }
-    });
+
+      addMessageToLobby(targetRoomId, data.u, data.m, false, isInbound);
+    } catch {
+      // Ignore malformed chat payloads from third-party clients.
+    }
   }
 
   function clearMessages() {
@@ -1631,17 +1790,9 @@ export function useLobbyChat() {
       setAway(false, 'system');
     }
 
-    const mqttClient = client;
+    // Resolve the topic now: the user may switch lobbies before encryption finishes.
     const outboundPayload = JSON.stringify({ u: username.value, m: outboundMessage });
-    void encryptLobbyPayload(outboundPayload)
-      .then((ciphertext) => {
-        if (mqttClient) {
-          mqttClient.publish(getChatTopic(activeLobbyId.value), ciphertext);
-        }
-      })
-      .catch((error) => {
-        console.error('[LobbyChat] failed to encrypt chat payload', error);
-      });
+    void enqueueLobbyPublish(client, getChatTopic(activeLobbyId.value), outboundPayload);
   }
 
   function switchLobby(targetLobbyId: string): boolean {
@@ -1712,7 +1863,10 @@ export function useLobbyChat() {
 
     client.unsubscribe(getChatTopic(normalizedLobbyId));
     client.unsubscribe(`${getPresenceTopicPrefix(normalizedLobbyId)}#`);
-    client.publish(`${getPresenceTopicPrefix(normalizedLobbyId)}${username.value}`, '', { retain: true });
+    // Queued behind any in-flight (encrypting) presence update for this lobby,
+    // so the retained clear always lands last.
+    void enqueueLobbyPublish(client, `${getPresenceTopicPrefix(normalizedLobbyId)}${username.value}`, '', { retain: true });
+    delete presenceSeenAt[normalizedLobbyId];
 
     joinedLobbies.value = joinedLobbies.value.filter((lobbyId) => lobbyId !== normalizedLobbyId);
     delete lobbyMessages[normalizedLobbyId];
@@ -1736,10 +1890,17 @@ export function useLobbyChat() {
     clearAutoAwayTimer();
     stopPresenceHeartbeat();
     if (client && isConnected.value) {
+      const closingClient = client;
       joinedLobbies.value.forEach((lobbyId) => {
-        client!.publish(`${getPresenceTopicPrefix(lobbyId)}${username.value}`, '', { retain: true });
+        void enqueueLobbyPublish(closingClient, `${getPresenceTopicPrefix(lobbyId)}${username.value}`, '', { retain: true });
       });
-      client.end();
+      // End only after queued publishes (including the presence clears) flush.
+      void outboundPublishQueue.then(() => closingClient.end());
+    } else if (client) {
+      // Not connected (e.g. mid-reconnect): stop it so a late 'connect' can't
+      // resurrect the session after logout.
+      client.removeAllListeners();
+      client.end(true);
     }
     isConnected.value = false;
     playAlert('shutdown');
@@ -1762,6 +1923,10 @@ export function useLobbyChat() {
     clearLobbyUsersRecord(lobbyUsers);
     clearUnreadRecord(lobbyUnread);
     clearTypingRecord(lobbyTyping);
+    Object.keys(presenceSeenAt).forEach((lobbyId) => {
+      delete presenceSeenAt[lobbyId];
+    });
+    reportedDecryptFailures.clear();
     client = null;
     startPresencePreview();
   }

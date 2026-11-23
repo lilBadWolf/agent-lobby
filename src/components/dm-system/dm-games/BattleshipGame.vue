@@ -3,7 +3,7 @@
     <div class="battleship-header">
       <div class="title-wrap">
         <span class="title">BATTLESHIP</span>
-        <span class="subtitle">Fleet Command Link: {{ peerName }}</span>
+        <span class="subtitle">{{ spectator ? `Spectating: ${user} vs ${peerName}` : `Fleet Command Link: ${peerName}` }}</span>
       </div>
       <div class="phase-chip" :class="`phase-${phase}`">{{ phaseLabel }}</div>
       <button class="header-btn" type="button" @click="closeGame">EXIT</button>
@@ -14,14 +14,14 @@
         <div class="status-bar">
           <span>{{ statusMessage }}</span>
           <span v-if="phase === 'battle'" class="turn-indicator" :class="{ active: localTurn }">
-            {{ localTurn ? 'YOUR TURN' : `${peerName} TURN` }}
+            {{ localTurn ? (spectator ? `${user} TURN` : 'YOUR TURN') : `${peerName} TURN` }}
           </span>
           <span v-if="phase === 'battle'" class="tactical-feed-inline">{{ combatFeed }}</span>
         </div>
 
         <div class="score-strip" v-if="phase === 'battle' || phase === 'finished'">
           <div class="score-card">
-            <span class="score-label">YOU</span>
+            <span class="score-label">{{ spectator ? user.toUpperCase() : 'YOU' }}</span>
             <span class="score-stat">H {{ localHits }}</span>
             <span class="score-stat">M {{ localMisses }}</span>
             <span class="score-stat">SUNK {{ localShipsSunk }} / {{ shipDefs.length }}</span>
@@ -34,7 +34,7 @@
           </div>
         </div>
 
-        <div class="controls" v-if="phase === 'placement'">
+        <div class="controls" v-if="phase === 'placement' && !spectator">
           <div class="controls-left">
             <button class="action-btn" type="button" @click="toggleOrientation">
               ORIENTATION: {{ orientationLabel }}
@@ -55,7 +55,8 @@
         </div>
 
         <div class="winner-banner" v-if="phase === 'finished'">
-          {{ winner === 'local' ? 'VICTORY' : 'DEFEAT' }}
+          <template v-if="spectator">{{ (winner === 'local' ? user : peerName).toUpperCase() }} WINS</template>
+          <template v-else>{{ winner === 'local' ? 'VICTORY' : 'DEFEAT' }}</template>
         </div>
       </aside>
 
@@ -64,7 +65,7 @@
           class="board-panel target-board"
           :class="{ 'impact-active': enemyImpactActive, 'chromatic-shock': enemyChromaticShock }"
         >
-          <div class="panel-title">TARGET GRID</div>
+          <div class="panel-title">{{ spectator ? `${peerName.toUpperCase()} WATERS` : 'TARGET GRID' }}</div>
           <div class="board-stage">
             <div class="board-ocean" aria-hidden="true">
               <span class="ocean-wave wave-a"></span>
@@ -104,7 +105,7 @@
           class="board-panel your-board"
           :class="{ 'impact-active': localImpactActive, 'chromatic-shock': localChromaticShock }"
         >
-          <div class="panel-title">YOUR GRID</div>
+          <div class="panel-title">{{ spectator ? `${user.toUpperCase()} WATERS` : 'YOUR GRID' }}</div>
           <div class="board-stage">
             <div class="board-ocean" aria-hidden="true">
               <span class="ocean-wave wave-a"></span>
@@ -142,7 +143,7 @@
                 @mouseleave="clearPlacementPreview"
                 @blur="clearPlacementPreview"
               >
-                <span class="cell-marker sunk-marker" v-if="isLocalSunkCell(cell - 1)">✕</span>
+                <span class="cell-marker sunk-marker" v-if="isLocalSunkCell(cell - 1) || spectatorLocalSunkCells.has(cell - 1)">✕</span>
                 <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'hit'">✹</span>
                 <span class="cell-marker" v-else-if="incomingShots.get(cell - 1) === 'miss'">◌</span>
                 <span
@@ -202,6 +203,12 @@ const props = defineProps<{
   dataChannel: RTCDataChannel | null;
   startSignal: number;
   waitingForAcceptance?: boolean;
+  /**
+   * Read-only view of a match between `user` and `peerName` (group DM
+   * spectators). Fleets are secret, so both grids are rebuilt from the shot
+   * results each player reports.
+   */
+  spectator?: boolean;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -233,6 +240,10 @@ const localShots = ref<Map<number, ShotOutcome>>(new Map());
 const incomingShots = ref<Map<number, ShotOutcome>>(new Map());
 const pendingOutgoingShot = ref<number | null>(null);
 const placementPreviewStart = ref<number | null>(null);
+// Spectator mode: sunk ships in `user`'s waters (their ship layout is unknown,
+// so sinkings come from the results `user` reports).
+const spectatorLocalSunkCells = ref<Set<number>>(new Set());
+const spectatorLocalSunkIds = ref<Set<string>>(new Set());
 
 const flashOutgoingHit = ref<number | null>(null);
 const flashOutgoingMiss = ref<number | null>(null);
@@ -254,6 +265,9 @@ const phaseLabel = computed(() => {
   }
 
   if (phase.value === 'finished') {
+    if (props.spectator) {
+      return 'FINISHED';
+    }
     return winner.value === 'local' ? 'VICTORY' : 'DEFEAT';
   }
 
@@ -261,8 +275,8 @@ const phaseLabel = computed(() => {
 });
 const orientationLabel = computed(() => (orientation.value === 'horizontal' ? 'HORIZONTAL' : 'VERTICAL'));
 const nextShipToPlace = computed(() => shipDefs.find((ship) => !localShips.value.some((placed) => placed.id === ship.id)) ?? null);
-const canReady = computed(() => nextShipToPlace.value === null && !localReady.value && !showWaitingOverlay.value);
-const canFire = computed(() => phase.value === 'battle' && localTurn.value && pendingOutgoingShot.value === null);
+const canReady = computed(() => !props.spectator && nextShipToPlace.value === null && !localReady.value && !showWaitingOverlay.value);
+const canFire = computed(() => !props.spectator && phase.value === 'battle' && localTurn.value && pendingOutgoingShot.value === null);
 const placementPreviewCells = computed(() => {
   if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
     return [] as number[];
@@ -283,7 +297,11 @@ const localMisses = computed(() => countShots(localShots.value, 'miss'));
 const remoteHits = computed(() => countShots(incomingShots.value, 'hit'));
 const remoteMisses = computed(() => countShots(incomingShots.value, 'miss'));
 const localShipsSunk = computed(() => remoteSunkShipIds.value.size);
-const localShipsLost = computed(() => countSunkShips(localShips.value, incomingShots.value));
+const localShipsLost = computed(() => (
+  props.spectator
+    ? spectatorLocalSunkIds.value.size
+    : countSunkShips(localShips.value, incomingShots.value)
+));
 
 let audioContext: AudioContext | null = null;
 let currentChannel: RTCDataChannel | null = null;
@@ -530,6 +548,13 @@ function activateGameIfReady() {
     return;
   }
 
+  if (phase.value === 'invite' && props.spectator) {
+    phase.value = 'placement';
+    statusMessage.value = 'Fleets are deploying...';
+    combatFeed.value = `TACTICAL FEED: Spectating ${props.user} vs ${props.peerName}.`;
+    return;
+  }
+
   if (phase.value === 'invite') {
     phase.value = 'placement';
     statusMessage.value = localReady.value
@@ -575,6 +600,8 @@ function resetSession() {
   incomingShots.value = new Map();
   pendingOutgoingShot.value = null;
   placementPreviewStart.value = null;
+  spectatorLocalSunkCells.value = new Set();
+  spectatorLocalSunkIds.value = new Set();
   clearFlashes();
   stopReadyBroadcast();
   stopPendingShotRetry();
@@ -614,7 +641,7 @@ function canPlaceShip(startIndex: number, length: number): number[] | null {
 }
 
 function handleLocalCellClick(index: number) {
-  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+  if (props.spectator || phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
     return;
   }
 
@@ -663,7 +690,7 @@ function handleWindowKeydown(event: KeyboardEvent) {
     return;
   }
 
-  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+  if (props.spectator || phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
     return;
   }
 
@@ -680,7 +707,7 @@ function clearPlacement() {
 }
 
 function setPlacementPreview(index: number) {
-  if (phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
+  if (props.spectator || phase.value !== 'placement' || localReady.value || showWaitingOverlay.value) {
     placementPreviewStart.value = null;
     return;
   }
@@ -862,6 +889,11 @@ function handleIncomingShot(cell: number) {
     return;
   }
 
+  // A new (non-retried) shot is only legal on the opponent's turn of a live battle.
+  if (phase.value !== 'battle' || localTurn.value) {
+    return;
+  }
+
   const ship = shipAtCell(cell);
   const hit = Boolean(ship);
   incomingShots.value.set(cell, hit ? 'hit' : 'miss');
@@ -919,6 +951,13 @@ function handleShotResult(data: Record<string, unknown>) {
   const cell = typeof data.cell === 'number' ? data.cell : pendingOutgoingShot.value;
   if (typeof cell !== 'number' || !isValidCell(cell)) {
     pendingOutgoingShot.value = null;
+    return;
+  }
+
+  // Only accept the result for the shot we are actually waiting on. Shots are
+  // retried, so duplicate results (or stray ones) would otherwise replay the
+  // effects and flip the turn again.
+  if (pendingOutgoingShot.value === null || cell !== pendingOutgoingShot.value) {
     return;
   }
 
@@ -1093,6 +1132,9 @@ function isDuplicateBattleshipMessage(data: any): boolean {
     sunkShipId: data?.sunkShipId,
     gameOver: data?.gameOver,
     sunkShipCells: Array.isArray(data?.sunkShipCells) ? data.sunkShipCells : null,
+    // Spectators get both players' streams; the same message type and cell
+    // from different players is not a duplicate.
+    from: data?.spectatorFrom,
   });
 
   const now = performance.now();
@@ -1111,6 +1153,11 @@ function handleBattleshipDataMessage(data: any) {
   }
 
   if (isDuplicateBattleshipMessage(data)) {
+    return;
+  }
+
+  if (props.spectator) {
+    handleSpectatorBattleshipMessage(data);
     return;
   }
 
@@ -1135,8 +1182,13 @@ function handleBattleshipDataMessage(data: any) {
   if (data.type === 'battleship-begin') {
     if (typeof data.firstPlayer === 'string' && data.firstPlayer.trim()) {
       stopBattleBeginRetry();
-      enterBattle(data.firstPlayer);
       remoteReady.value = true;
+      // `begin` is retried several times. Once the battle is underway a late
+      // copy must not call enterBattle again: that resets the turn (letting a
+      // player fire twice) or revives a finished game.
+      if (phase.value === 'placement' || phase.value === 'invite') {
+        enterBattle(data.firstPlayer);
+      }
     }
     return;
   }
@@ -1153,7 +1205,144 @@ function handleBattleshipDataMessage(data: any) {
   }
 }
 
+function spectatorSender(data: any): 'user' | 'peer' | null {
+  const from = typeof data?.spectatorFrom === 'string' ? normalizeHandle(data.spectatorFrom) : '';
+  if (from && from === normalizeHandle(props.user)) {
+    return 'user';
+  }
+  if (from && from === normalizeHandle(props.peerName)) {
+    return 'peer';
+  }
+  return null;
+}
+
+function cellLabel(cell: number) {
+  return `${String.fromCharCode(65 + rowFromIndex(cell))}${colFromIndex(cell) + 1}`;
+}
+
+/**
+ * Spectator view of `user` vs `peerName`. Fleets stay secret, so the grids
+ * show only what the players report:
+ * - "peerName WATERS" (the target grid) holds `user`'s shots, resolved by the
+ *   results `peerName` sends back.
+ * - "user WATERS" (the local grid) holds `peerName`'s shots, resolved by the
+ *   results `user` sends back.
+ * `localTurn` means "`user` is firing". Repeated results for a cell that is
+ * already resolved are ignored, so retries can't flip the turn.
+ */
+function handleSpectatorBattleshipMessage(data: any) {
+  const sender = spectatorSender(data);
+  if (!sender) {
+    return;
+  }
+
+  const senderName = sender === 'user' ? props.user : props.peerName;
+
+  if (data.type === 'battleship-ready') {
+    if (phase.value === 'invite') {
+      phase.value = 'placement';
+    }
+    if (phase.value === 'placement') {
+      combatFeed.value = `TACTICAL FEED: ${senderName} fleet locked in.`;
+    }
+    return;
+  }
+
+  if (data.type === 'battleship-begin') {
+    if ((phase.value === 'placement' || phase.value === 'invite') && typeof data.firstPlayer === 'string' && data.firstPlayer.trim()) {
+      phase.value = 'battle';
+      localTurn.value = normalizeHandle(data.firstPlayer) === normalizeHandle(props.user);
+      statusMessage.value = 'Battle underway.';
+      combatFeed.value = `TACTICAL FEED: ${data.firstPlayer} has firing priority.`;
+    }
+    return;
+  }
+
+  if (phase.value !== 'battle') {
+    if (data.type === 'battleship-cancel') {
+      statusMessage.value = `${senderName} left the game.`;
+    }
+    return;
+  }
+
+  if (data.type === 'battleship-shot' && typeof data.cell === 'number' && isValidCell(data.cell)) {
+    if (sender === 'user' && !localShots.value.has(data.cell)) {
+      pendingOutgoingShot.value = data.cell;
+    }
+    combatFeed.value = `TACTICAL FEED: ${senderName} fires at ${cellLabel(data.cell)}.`;
+    return;
+  }
+
+  if (data.type === 'battleship-shot-result' && typeof data.cell === 'number' && isValidCell(data.cell)) {
+    const cell = data.cell;
+    const hit = Boolean(data.hit);
+    // The sender is the defender reporting on a shot into their own waters.
+    const shooterIsUser = sender === 'peer';
+    const shots = shooterIsUser ? localShots : incomingShots;
+    if (shots.value.has(cell)) {
+      return;
+    }
+
+    const nextShots = new Map(shots.value);
+    nextShots.set(cell, hit ? 'hit' : 'miss');
+    shots.value = nextShots;
+
+    const sunkShipId = typeof data.sunkShipId === 'string' && data.sunkShipId ? data.sunkShipId : null;
+    const sunkCells = Array.isArray(data.sunkShipCells)
+      ? data.sunkShipCells.filter((value: unknown): value is number => typeof value === 'number' && isValidCell(value))
+      : [];
+
+    if (sunkShipId) {
+      const ids = shooterIsUser ? remoteSunkShipIds : spectatorLocalSunkIds;
+      const cells = shooterIsUser ? sunkEnemyCells : spectatorLocalSunkCells;
+      ids.value = new Set([...ids.value, sunkShipId]);
+      cells.value = new Set([...cells.value, ...(sunkCells.length > 0 ? sunkCells : [cell])]);
+    }
+
+    if (shooterIsUser) {
+      pendingOutgoingShot.value = null;
+    }
+
+    if (hit) {
+      playHitSound();
+      triggerFlash(shooterIsUser ? 'outgoing-hit' : 'incoming-hit', cell);
+    } else {
+      playMissSound();
+      triggerFlash(shooterIsUser ? 'outgoing-miss' : 'incoming-miss', cell);
+    }
+
+    const shooterName = shooterIsUser ? props.user : props.peerName;
+    combatFeed.value = hit
+      ? `TACTICAL FEED: ${shooterName} hits ${cellLabel(cell)}${sunkShipId ? ` — ${sunkShipId.toUpperCase()} sunk` : ''}.`
+      : `TACTICAL FEED: ${shooterName} misses at ${cellLabel(cell)}.`;
+
+    if (data.gameOver) {
+      phase.value = 'finished';
+      winner.value = shooterIsUser ? 'local' : 'remote';
+      localTurn.value = false;
+      statusMessage.value = `${shooterName} won the battle.`;
+      return;
+    }
+
+    // After a resolved shot, the defender fires next.
+    localTurn.value = !shooterIsUser;
+    return;
+  }
+
+  if (data.type === 'battleship-cancel') {
+    statusMessage.value = `${senderName} left the game.`;
+    combatFeed.value = 'TACTICAL FEED: Match abandoned.';
+    pendingOutgoingShot.value = null;
+  }
+}
+
 function handleBridgeBattleshipMessage(event: Event) {
+  // With a directly attached channel its own listener already delivers every
+  // message; the window bridge event would be a duplicate.
+  if (currentChannel) {
+    return;
+  }
+
   const bridgeEvent = event as CustomEvent<BattleshipBridgeEventDetail>;
   const fromUser = bridgeEvent.detail?.from;
   if (!fromUser || normalizeHandle(fromUser) !== normalizeHandle(props.peerName)) {
@@ -1178,10 +1367,22 @@ function handleIncomingMessage(event: MessageEvent) {
   handleBattleshipDataMessage(data);
 }
 
-function attachDataChannelListener(channel: RTCDataChannel | null) {
-  if (currentChannel && dataChannelListener) {
-    currentChannel.removeEventListener('message', dataChannelListener);
+function handleChannelClosed() {
+  stopReadyBroadcast();
+  stopPendingShotRetry();
+  stopBattleBeginRetry();
+  pendingOutgoingShot.value = null;
+  if (phase.value === 'finished') {
+    return;
   }
+  localTurn.value = false;
+  statusMessage.value = `Link to ${props.peerName} lost.`;
+  combatFeed.value = 'TACTICAL FEED: Link lost. Exit to return to chat.';
+  phase.value = 'invite';
+}
+
+function attachDataChannelListener(channel: RTCDataChannel | null) {
+  detachDataChannelListener();
 
   currentChannel = channel;
   if (!currentChannel) {
@@ -1190,12 +1391,14 @@ function attachDataChannelListener(channel: RTCDataChannel | null) {
 
   dataChannelListener = handleIncomingMessage;
   currentChannel.addEventListener('message', dataChannelListener);
+  currentChannel.addEventListener('close', handleChannelClosed);
 }
 
 function detachDataChannelListener() {
   if (currentChannel && dataChannelListener) {
     currentChannel.removeEventListener('message', dataChannelListener);
   }
+  currentChannel?.removeEventListener('close', handleChannelClosed);
   currentChannel = null;
   dataChannelListener = null;
 }

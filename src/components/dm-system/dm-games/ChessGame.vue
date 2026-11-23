@@ -26,8 +26,8 @@
           <div class="scoreboard-note">{{ materialLeadLabel }}</div>
         </div>
 
-        <div class="player-card" :class="{ active: localColor === 'w' }">
-          <span class="player-color">WHITE</span>
+        <div class="player-card" :class="{ active: isGameLive && state.turn === 'w' }">
+          <span class="player-color">WHITE{{ localColor === 'w' && !spectator ? ' · YOU' : '' }}</span>
           <span class="player-name">{{ whitePlayer }}</span>
           <div class="captured-tray" aria-label="White lost pieces">
             <span
@@ -40,8 +40,8 @@
             </span>
           </div>
         </div>
-        <div class="player-card" :class="{ active: localColor === 'b' }">
-          <span class="player-color">BLACK</span>
+        <div class="player-card" :class="{ active: isGameLive && state.turn === 'b' }">
+          <span class="player-color">BLACK{{ localColor === 'b' && !spectator ? ' · YOU' : '' }}</span>
           <span class="player-name">{{ blackPlayer }}</span>
           <div class="captured-tray" aria-label="Black lost pieces">
             <span
@@ -54,14 +54,29 @@
             </span>
           </div>
         </div>
-        <div class="status-card">{{ statusText }}</div>
+        <div class="status-card">
+          {{ statusText }}
+          <div v-if="!spectator && score.wins + score.losses + score.draws > 0" class="session-score">
+            SESSION · {{ score.wins }}W {{ score.draws }}D {{ score.losses }}L
+          </div>
+        </div>
         <button
+          v-if="!spectator && isGameLive"
+          class="chess-action-btn resign"
+          type="button"
+          :disabled="!canSend"
+          @click="resignGame"
+        >
+          {{ confirmingResign ? 'CONFIRM RESIGN?' : 'RESIGN' }}
+        </button>
+        <button
+          v-else-if="!spectator"
           class="chess-action-btn rematch"
           type="button"
-          :disabled="!canSend || awaitingRematchAck"
+          :disabled="!canRequestRematch"
           @click="requestRematch"
         >
-          {{ awaitingRematchAck ? 'WAITING...' : 'REMATCH' }}
+          {{ rematchLabel }}
         </button>
       </div>
 
@@ -102,6 +117,25 @@
             >
               <span class="chess-piece-sprite" :class="pieceSpriteClass(remoteAnimation.capturedPiece)" aria-hidden="true" />
             </span>
+          </div>
+
+          <div v-if="pendingPromotion && localColor" class="promotion-picker" role="dialog" aria-label="Choose promotion piece">
+            <span class="promotion-title">PROMOTE TO</span>
+            <div class="promotion-options">
+              <button
+                v-for="type in PROMOTION_CHOICES"
+                :key="`promo-${type}`"
+                type="button"
+                class="promotion-option"
+                :aria-label="pieceName({ color: localColor, type })"
+                @click="choosePromotion(type)"
+              >
+                <span class="chess-piece" :class="pieceClass({ color: localColor, type })">
+                  <span class="chess-piece-sprite" :class="pieceSpriteClass({ color: localColor, type })" aria-hidden="true" />
+                </span>
+              </button>
+            </div>
+            <button type="button" class="chess-action-btn" @click="pendingPromotion = null">CANCEL</button>
           </div>
         </div>
       </div>
@@ -157,6 +191,8 @@ const props = defineProps<{
   startSignal: number;
   isInitiator?: boolean;
   waitingForAcceptance?: boolean;
+  /** Read-only view of a match between `user` and `peerName` (group DM spectators). */
+  spectator?: boolean;
 }>();
 
 const emit = defineEmits<{ close: [] }>();
@@ -175,6 +211,18 @@ const statusMessage = ref('Stand by for board sync...');
 const awaitingRematchAck = ref(false);
 const remoteMoveSeq = ref(-1);
 const localMoveSeq = ref(0);
+// Reactive mirror of the channel's readyState (RTCDataChannel is not reactive).
+const channelOpen = ref(false);
+const peerLeft = ref(false);
+const rematchRequestedByPeer = ref(false);
+const confirmingResign = ref(false);
+const resultReason = ref<'checkmate' | 'stalemate' | 'insufficient' | 'resign' | null>(null);
+const pendingPromotion = ref<Move | null>(null);
+const score = ref({ wins: 0, losses: 0, draws: 0 });
+const PROMOTION_CHOICES: PieceType[] = ['q', 'r', 'b', 'n'];
+let resignConfirmTimer: ReturnType<typeof setTimeout> | null = null;
+// Spectator mode: last applied move sequence number per player.
+const spectatorMoveSeq = { user: -1, peer: -1 };
 
 const remoteAnimation = ref<{
   piece: Piece;
@@ -186,7 +234,20 @@ const remoteAnimation = ref<{
 } | null>(null);
 
 const showWaitingOverlay = computed(() => Boolean(props.waitingForAcceptance));
-const canSend = computed(() => Boolean(currentChannel && currentChannel.readyState === 'open'));
+const canSend = computed(() => channelOpen.value && !props.spectator);
+const isGameLive = computed(() => Boolean(localColor.value) && !winner.value && !peerLeft.value);
+const canRequestRematch = computed(() => (
+  canSend.value
+  && !peerLeft.value
+  && Boolean(winner.value)
+  && !awaitingRematchAck.value
+));
+const rematchLabel = computed(() => {
+  if (awaitingRematchAck.value) {
+    return 'WAITING...';
+  }
+  return rematchRequestedByPeer.value ? 'ACCEPT REMATCH' : 'REMATCH';
+});
 const displayedBoard = computed(() => animationBoard.value ?? state.value.board);
 const whiteMaterial = computed(() => materialScoreFor('w', state.value.board));
 const blackMaterial = computed(() => materialScoreFor('b', state.value.board));
@@ -207,7 +268,7 @@ const scoreboardStateLabel = computed(() => {
   }
 
   if (winner.value) {
-    return 'Checkmate';
+    return resultReason.value === 'resign' ? 'Resigned' : 'Checkmate';
   }
 
   if (checkColor.value) {
@@ -218,11 +279,16 @@ const scoreboardStateLabel = computed(() => {
 });
 const whitePlayer = computed(() => (localColor.value === 'w' ? props.user : props.peerName));
 const blackPlayer = computed(() => (localColor.value === 'b' ? props.user : props.peerName));
-const turnLabel = computed(() => (state.value.turn === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE'));
+const turnLabel = computed(() => {
+  if (winner.value || peerLeft.value) {
+    return 'GAME OVER';
+  }
+  return state.value.turn === 'w' ? 'WHITE TO MOVE' : 'BLACK TO MOVE';
+});
 const turnClass = computed(() => (state.value.turn === 'w' ? 'turn-white' : 'turn-black'));
 const isBoardFlipped = computed(() => localColor.value === 'b');
 const canInteract = computed(() => {
-  if (showWaitingOverlay.value || winner.value || remoteAnimation.value || !localColor.value) {
+  if (props.spectator || showWaitingOverlay.value || winner.value || remoteAnimation.value || !localColor.value || peerLeft.value || pendingPromotion.value) {
     return false;
   }
 
@@ -234,17 +300,26 @@ const statusText = computed(() => {
     return 'Waiting for opponent to accept CHESS';
   }
 
-  if (!localColor.value) {
+  if (!localColor.value || peerLeft.value) {
     return statusMessage.value;
   }
 
   if (winner.value === 'draw') {
-    return 'Stalemate. The game is a draw.';
+    return resultReason.value === 'insufficient'
+      ? 'Draw by insufficient material.'
+      : 'Stalemate. The game is a draw.';
+  }
+
+  if (props.spectator) {
+    return spectatorStatusText();
   }
 
   if (winner.value) {
-    const winnerName = winner.value === localColor.value ? 'You' : props.peerName;
-    return `${winnerName} won by checkmate.`;
+    const localWon = winner.value === localColor.value;
+    if (resultReason.value === 'resign') {
+      return localWon ? `${props.peerName} resigned. You win.` : 'You resigned.';
+    }
+    return `${localWon ? 'You' : props.peerName} won by checkmate.`;
   }
 
   if (checkColor.value) {
@@ -254,6 +329,26 @@ const statusText = computed(() => {
 
   return state.value.turn === localColor.value ? 'Your move.' : `${props.peerName} is thinking...`;
 });
+
+function playerNameFor(color: Color) {
+  return color === localColor.value ? props.user : props.peerName;
+}
+
+function spectatorStatusText() {
+  if (winner.value && winner.value !== 'draw') {
+    const winnerName = playerNameFor(winner.value);
+    if (resultReason.value === 'resign') {
+      return `${playerNameFor(oppositeColor(winner.value))} resigned. ${winnerName} wins.`;
+    }
+    return `${winnerName} won by checkmate.`;
+  }
+
+  if (checkColor.value) {
+    return `${playerNameFor(checkColor.value)} is in check.`;
+  }
+
+  return `${playerNameFor(state.value.turn)} is thinking...`;
+}
 
 const boardSquares = computed(() => {
   const values: Array<{ index: number; rank: number; file: number; labelRank: number; labelFile: string }> = [];
@@ -276,6 +371,7 @@ const boardSquares = computed(() => {
 let currentChannel: RTCDataChannel | null = null;
 let channelMessageListener: ((event: MessageEvent) => void) | null = null;
 let channelOpenListener: ((event: Event) => void) | null = null;
+let channelCloseListener: ((event: Event) => void) | null = null;
 let animationTimer: ReturnType<typeof setTimeout> | null = null;
 
 function createInitialState(): ChessState {
@@ -401,7 +497,9 @@ function missingPiecesFor(color: Color, board: Array<Piece | null>) {
 
   const pieces: Piece[] = [];
   (Object.keys(remaining) as PieceType[]).forEach((type) => {
-    const count = initialCounts[type] - remaining[type];
+    // `remaining` now holds how many of this type are missing from the board
+    // (negative after promotions, e.g. a second queen).
+    const count = Math.max(0, remaining[type]);
     for (let index = 0; index < count; index += 1) {
       pieces.push({ color, type });
     }
@@ -485,6 +583,10 @@ function handleSquareClick(index: number) {
   if (selectedSquare.value !== null && legalTargets.value.has(index)) {
     const move = createMoveFromSelection(selectedSquare.value, index);
     clearSelection();
+    if (move?.promotion) {
+      pendingPromotion.value = move;
+      return;
+    }
     if (move) {
       executeLocalMove(move);
     }
@@ -524,6 +626,12 @@ function sendChessMessage(payload: Record<string, unknown>) {
 }
 
 function startNewGame(whiteUser: string, broadcast = false) {
+  // A pending remote-move animation would otherwise commit the previous game's
+  // position onto the fresh board and desync the peers.
+  if (animationTimer) {
+    clearTimeout(animationTimer);
+    animationTimer = null;
+  }
   state.value = createInitialState();
   animationBoard.value = null;
   remoteAnimation.value = null;
@@ -531,6 +639,10 @@ function startNewGame(whiteUser: string, broadcast = false) {
   winner.value = null;
   checkColor.value = null;
   awaitingRematchAck.value = false;
+  rematchRequestedByPeer.value = false;
+  resultReason.value = null;
+  pendingPromotion.value = null;
+  confirmingResign.value = false;
   remoteMoveSeq.value = -1;
   localMoveSeq.value = 0;
   lastMove.value = null;
@@ -546,13 +658,42 @@ function startNewGame(whiteUser: string, broadcast = false) {
   }
 }
 
+function isPromotionPiece(value: unknown): value is PieceType {
+  return typeof value === 'string' && (PROMOTION_CHOICES as string[]).includes(value);
+}
+
+/**
+ * Validates a requested move against the legal move list for the side to move.
+ * Move generation always proposes a queen for promotions; the requested piece
+ * (queen, rook, bishop or knight) is honoured when valid.
+ */
+function confirmLegalMove(move: Move): Move | null {
+  const legalMoves = generateLegalMovesForSquare(state.value, move.from, state.value.turn);
+  const confirmed = legalMoves.find((candidate) => candidate.to === move.to);
+  if (!confirmed) {
+    return null;
+  }
+
+  if (confirmed.promotion && isPromotionPiece(move.promotion)) {
+    return { ...confirmed, promotion: move.promotion };
+  }
+  return confirmed;
+}
+
+function choosePromotion(type: PieceType) {
+  const move = pendingPromotion.value;
+  pendingPromotion.value = null;
+  if (move) {
+    executeLocalMove({ ...move, promotion: type });
+  }
+}
+
 function executeLocalMove(move: Move) {
   if (!localColor.value || state.value.turn !== localColor.value || winner.value) {
     return;
   }
 
-  const legalMoves = generateLegalMovesForSquare(state.value, move.from, state.value.turn);
-  const confirmedMove = legalMoves.find((candidate) => candidate.to === move.to);
+  const confirmedMove = confirmLegalMove(move);
   if (!confirmedMove) {
     return;
   }
@@ -575,8 +716,7 @@ function executeRemoteMove(move: Move, seq: number | null) {
     return;
   }
 
-  const legalMoves = generateLegalMovesForSquare(state.value, move.from, state.value.turn);
-  const confirmedMove = legalMoves.find((candidate) => candidate.to === move.to);
+  const confirmedMove = confirmLegalMove(move);
   if (!confirmedMove) {
     return;
   }
@@ -651,29 +791,29 @@ function animateRemoteMove(move: Move) {
 }
 
 function createAnimationBoard(board: Array<Piece | null>, move: Move) {
-  return board.map((entry, index) => {
+  const next = board.map((entry, index) => {
     if (index === move.from || index === move.to || index === move.capturedAt) {
       return null;
     }
-
-    if (entry && move.from === toIndex(7, 4) && move.to === toIndex(7, 6) && index === toIndex(7, 7)) {
-      return null;
-    }
-
-    if (entry && move.from === toIndex(7, 4) && move.to === toIndex(7, 2) && index === toIndex(7, 0)) {
-      return null;
-    }
-
-    if (entry && move.from === toIndex(0, 4) && move.to === toIndex(0, 6) && index === toIndex(0, 7)) {
-      return null;
-    }
-
-    if (entry && move.from === toIndex(0, 4) && move.to === toIndex(0, 2) && index === toIndex(0, 0)) {
-      return null;
-    }
-
     return entry ? { ...entry } : null;
   });
+
+  // Castling: only the king is animated, so show the rook already on its new
+  // square (previously it vanished for the whole animation). Keyed on the moving
+  // piece being a king, not on fixed squares, so a rook e1→g1 isn't mistaken
+  // for castling.
+  const movingPiece = board[move.from];
+  if (movingPiece?.type === 'k' && Math.abs(fileOf(move.to) - fileOf(move.from)) === 2) {
+    const rank = rankOf(move.from);
+    const kingside = fileOf(move.to) > fileOf(move.from);
+    const rookFrom = toIndex(rank, kingside ? 7 : 0);
+    const rookTo = toIndex(rank, kingside ? 5 : 3);
+    const rook = board[rookFrom];
+    next[rookFrom] = null;
+    next[rookTo] = rook ? { ...rook } : null;
+  }
+
+  return next;
 }
 
 function createOverlayStyle(transform: string, squareSize: number) {
@@ -835,15 +975,94 @@ function commitStateAfterMove(next: ChessState, move: Move) {
 
   const nextMoves = generateAllLegalMoves(next, next.turn);
   if (nextMoves.length === 0) {
-    winner.value = checkColor.value ? oppositeColor(next.turn) : 'draw';
+    finishGame(checkColor.value ? oppositeColor(next.turn) : 'draw', checkColor.value ? 'checkmate' : 'stalemate');
+    return;
+  }
+
+  if (hasInsufficientMaterial(next.board)) {
+    finishGame('draw', 'insufficient');
     return;
   }
 
   winner.value = null;
 }
 
+function finishGame(result: Color | 'draw', reason: NonNullable<typeof resultReason.value>) {
+  if (winner.value) {
+    return;
+  }
+
+  winner.value = result;
+  resultReason.value = reason;
+  pendingPromotion.value = null;
+  confirmingResign.value = false;
+
+  if (result === 'draw') {
+    score.value.draws += 1;
+  } else if (result === localColor.value) {
+    score.value.wins += 1;
+  } else {
+    score.value.losses += 1;
+  }
+}
+
+/** K vs K, K+minor vs K, and K+B vs K+B with same-coloured bishops. */
+function hasInsufficientMaterial(board: Array<Piece | null>) {
+  const minors: Array<{ type: PieceType; squareColor: number }> = [];
+  for (let index = 0; index < 64; index += 1) {
+    const piece = board[index];
+    if (!piece || piece.type === 'k') {
+      continue;
+    }
+    if (piece.type !== 'n' && piece.type !== 'b') {
+      return false;
+    }
+    minors.push({ type: piece.type, squareColor: (rankOf(index) + fileOf(index)) % 2 });
+  }
+
+  if (minors.length <= 1) {
+    return true;
+  }
+
+  return minors.every((minor) => minor.type === 'b' && minor.squareColor === minors[0].squareColor);
+}
+
+function resignGame() {
+  if (!isGameLive.value || !localColor.value) {
+    return;
+  }
+
+  if (!confirmingResign.value) {
+    confirmingResign.value = true;
+    if (resignConfirmTimer) {
+      clearTimeout(resignConfirmTimer);
+    }
+    resignConfirmTimer = setTimeout(() => {
+      confirmingResign.value = false;
+    }, 3000);
+    return;
+  }
+
+  sendChessMessage({ type: 'chess-resign' });
+  finishGame(oppositeColor(localColor.value), 'resign');
+}
+
+function nextWhiteUser() {
+  // Alternate colours each rematch. Both peers derive the same answer, so
+  // crossed rematch requests can't produce two white players.
+  if (!localColor.value) {
+    return randomWhiteUser();
+  }
+  return localColor.value === 'w' ? props.peerName : props.user;
+}
+
 function requestRematch() {
-  if (!canSend.value) {
+  if (!canRequestRematch.value) {
+    return;
+  }
+
+  if (rematchRequestedByPeer.value) {
+    acceptRemoteRematch();
     return;
   }
 
@@ -858,11 +1077,95 @@ function acceptRemoteRematch() {
 
   sendChessMessage({ type: 'chess-rematch-accept' });
   awaitingRematchAck.value = false;
-  startNewGame(randomWhiteUser(), true);
+  startNewGame(nextWhiteUser(), true);
+}
+
+function spectatorSender(data: any): 'user' | 'peer' | null {
+  const from = typeof data?.spectatorFrom === 'string' ? data.spectatorFrom.trim().toLowerCase() : '';
+  if (from && from === props.user.trim().toLowerCase()) {
+    return 'user';
+  }
+  if (from && from === props.peerName.trim().toLowerCase()) {
+    return 'peer';
+  }
+  return null;
+}
+
+/**
+ * Spectator view: `user` and `peerName` are the two players, and every message
+ * carries its real sender. Both players' moves are validated and applied
+ * straight away (no animation): with two remote movers a fast reply could
+ * otherwise arrive mid-animation, before the turn flips, and be dropped.
+ * Rematch handshakes are ignored; the accepting player always broadcasts an
+ * explicit `chess-init`.
+ */
+function handleSpectatorMessage(data: any) {
+  const sender = spectatorSender(data);
+
+  if (data.type === 'chess-init' && typeof data.whiteUser === 'string') {
+    startNewGame(data.whiteUser, false);
+    spectatorMoveSeq.user = -1;
+    spectatorMoveSeq.peer = -1;
+    return;
+  }
+
+  if (!sender || !localColor.value) {
+    return;
+  }
+
+  const senderColor = sender === 'user' ? localColor.value : oppositeColor(localColor.value);
+
+  if (data.type === 'chess-move' && typeof data.from === 'number' && typeof data.to === 'number') {
+    if (winner.value || state.value.turn !== senderColor) {
+      return;
+    }
+
+    if (typeof data.seq === 'number') {
+      if (data.seq <= spectatorMoveSeq[sender]) {
+        return;
+      }
+      spectatorMoveSeq[sender] = data.seq;
+    }
+
+    const move = confirmLegalMove({ from: data.from, to: data.to, promotion: data.promotion });
+    if (move) {
+      commitStateAfterMove(applyMove(state.value, move), move);
+    }
+    return;
+  }
+
+  if (data.type === 'chess-resign') {
+    if (!winner.value) {
+      finishGame(oppositeColor(senderColor), 'resign');
+    }
+    return;
+  }
+
+  if (data.type === 'chess-cancel') {
+    markPeerLeft(`${sender === 'user' ? props.user : props.peerName} left CHESS.`);
+  }
+}
+
+function markPeerLeft(message: string) {
+  if (peerLeft.value) {
+    return;
+  }
+
+  peerLeft.value = true;
+  awaitingRematchAck.value = false;
+  rematchRequestedByPeer.value = false;
+  pendingPromotion.value = null;
+  clearSelection();
+  statusMessage.value = message;
 }
 
 function handleGameDataMessage(data: any) {
   if (!data?.type?.startsWith('chess-')) {
+    return;
+  }
+
+  if (props.spectator) {
+    handleSpectatorMessage(data);
     return;
   }
 
@@ -877,23 +1180,46 @@ function handleGameDataMessage(data: any) {
   }
 
   if (data.type === 'chess-rematch-request') {
-    statusMessage.value = `${props.peerName} requested a rematch.`;
-    acceptRemoteRematch();
+    if (isGameLive.value) {
+      // Never wipe a game in progress on the peer's say-so.
+      sendChessMessage({ type: 'chess-rematch-decline' });
+      return;
+    }
+
+    if (awaitingRematchAck.value) {
+      // Requests crossed: both want a rematch.
+      acceptRemoteRematch();
+      return;
+    }
+
+    rematchRequestedByPeer.value = true;
     return;
   }
 
-  if (data.type === 'chess-rematch-accept') {
+  if (data.type === 'chess-rematch-accept' || data.type === 'chess-rematch-decline') {
     awaitingRematchAck.value = false;
     return;
   }
 
+  if (data.type === 'chess-resign') {
+    if (isGameLive.value && localColor.value) {
+      finishGame(localColor.value, 'resign');
+    }
+    return;
+  }
+
   if (data.type === 'chess-cancel') {
-    winner.value = null;
-    statusMessage.value = `${props.peerName} canceled CHESS.`;
+    markPeerLeft(`${props.peerName} left CHESS.`);
   }
 }
 
 function handleBridgeMessage(event: Event) {
+  // With a directly attached channel its own listener already delivers every
+  // message; the window bridge event would be a duplicate.
+  if (currentChannel) {
+    return;
+  }
+
   const bridgeEvent = event as CustomEvent<ChessBridgeEventDetail>;
   if (!bridgeEvent.detail?.from || bridgeEvent.detail.from !== props.peerName) {
     return;
@@ -911,11 +1237,21 @@ function attachDataChannel(channel: RTCDataChannel | null) {
     currentChannel.removeEventListener('open', channelOpenListener);
   }
 
+  if (currentChannel && channelCloseListener) {
+    currentChannel.removeEventListener('close', channelCloseListener);
+  }
+
   currentChannel = channel;
+  channelOpen.value = Boolean(channel && channel.readyState === 'open');
 
   if (!currentChannel) {
     return;
   }
+
+  channelCloseListener = () => {
+    channelOpen.value = false;
+    markPeerLeft(props.spectator ? 'Spectator feed ended.' : `Connection to ${props.peerName} was lost.`);
+  };
 
   channelMessageListener = (event: MessageEvent) => {
     try {
@@ -927,6 +1263,7 @@ function attachDataChannel(channel: RTCDataChannel | null) {
   };
 
   channelOpenListener = () => {
+    channelOpen.value = true;
     if (props.isInitiator && props.startSignal > 0 && !showWaitingOverlay.value && !localColor.value) {
       startNewGame(randomWhiteUser(), true);
     }
@@ -934,6 +1271,7 @@ function attachDataChannel(channel: RTCDataChannel | null) {
 
   currentChannel.addEventListener('message', channelMessageListener);
   currentChannel.addEventListener('open', channelOpenListener);
+  currentChannel.addEventListener('close', channelCloseListener);
 }
 
 function closeGame() {
@@ -1393,7 +1731,9 @@ watch(
 onMounted(() => {
   window.addEventListener('dm-chess-message', handleBridgeMessage as EventListener);
 
-  if (!props.waitingForAcceptance) {
+  if (props.spectator) {
+    statusMessage.value = `Spectating ${props.user} vs ${props.peerName}. Waiting for the board...`;
+  } else if (!props.waitingForAcceptance) {
     statusMessage.value = 'Ready to start CHESS.';
   }
 
@@ -1413,9 +1753,18 @@ onBeforeUnmount(() => {
     currentChannel.removeEventListener('open', channelOpenListener);
   }
 
+  if (currentChannel && channelCloseListener) {
+    currentChannel.removeEventListener('close', channelCloseListener);
+  }
+
   if (animationTimer) {
     clearTimeout(animationTimer);
     animationTimer = null;
+  }
+
+  if (resignConfirmTimer) {
+    clearTimeout(resignConfirmTimer);
+    resignConfirmTimer = null;
   }
 });
 </script>
@@ -1685,6 +2034,62 @@ onBeforeUnmount(() => {
 
 .chess-cell.last-move {
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-chat-warning) 20%, transparent);
+}
+
+/* Keep the legal-target ring visible on the opponent's last-move square (recaptures). */
+.chess-cell.last-move.target {
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--color-chat-warning) 20%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--color-sidebar-dm-active) 72%, transparent);
+}
+
+.session-score {
+  margin-top: 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+}
+
+.chess-action-btn.resign {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+}
+
+.promotion-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--color-chat-overlay, #000) 78%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.promotion-title {
+  color: var(--color-text-primary);
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+}
+
+.promotion-options {
+  display: flex;
+  gap: 10px;
+}
+
+.promotion-option {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
+  background: color-mix(in srgb, var(--color-chat-surface, #111) 80%, black);
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+
+.promotion-option:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-accent);
 }
 
 .chess-cell.check-cell {
